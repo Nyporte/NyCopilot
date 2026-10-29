@@ -266,13 +266,20 @@ enum BrandGlyph {
     private static let (left, right, archY, bottom, corner): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) = (54, 106, 63, 123, 22)
     private static let reach: CGFloat = 24
     private static let dotPull: CGFloat = 0.75
-    private static let dot = NSPoint(x: left + corner - corner * dotPull * 0.7071, y: bottom - corner + corner * dotPull * 0.7071)
-    private static let stemEnd = dot.y - (reach * reach - pow(dot.x - left, 2)).squareRoot()
+    private static let dot: NSPoint = {
+        let offset: CGFloat = corner * dotPull * 0.7071
+        return NSPoint(x: left + corner - offset, y: bottom - corner + offset)
+    }()
+    private static let stemEnd: CGFloat = {
+        let dx: CGFloat = dot.x - left
+        return dot.y - (reach * reach - dx * dx).squareRoot()
+    }()
     private static let tailAngle: CGFloat = {
-        let (vx, vy) = (dot.x - (right - corner), dot.y - (bottom - corner))
-        let distance = (vx * vx + vy * vy).squareRoot()
-        let spread = acos((corner * corner + distance * distance - reach * reach) / (2 * corner * distance))
-        return (atan2(vy, vx) - spread) * 180 / .pi
+        let vx: CGFloat = dot.x - (right - corner)
+        let vy: CGFloat = dot.y - (bottom - corner)
+        let distance: CGFloat = (vx * vx + vy * vy).squareRoot()
+        let cosine: CGFloat = (corner * corner + distance * distance - reach * reach) / (2 * corner * distance)
+        return (atan2(vy, vx) - acos(cosine)) * 180 / .pi
     }()
     /// The mark's extent in tile units, including stroke width.
     private static let bounds = NSRect(x: left - stroke / 2, y: archY - (right - left) / 2 - stroke / 2,
