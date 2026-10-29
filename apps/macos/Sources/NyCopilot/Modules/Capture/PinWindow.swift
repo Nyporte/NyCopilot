@@ -182,11 +182,17 @@ private final class PinView: NSView {
     private let badge = Design.label("", size: 12, weight: .semibold, color: .white)
     private var hideBadge: DispatchWorkItem?
 
-    var showsFocus = false {
-        didSet {
-            layer?.borderWidth = showsFocus ? 1 : 0
-            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.7).cgColor
-        }
+    /// The accent border fades in faintly while the pointer is over the pin and turns solid once the
+    /// pin is selected.
+    private let borderLayer = CALayer()
+    var showsFocus = false { didSet { if showsFocus != oldValue { updateBorder() } } }
+    private var isHovered = false { didSet { if isHovered != oldValue { updateBorder() } } }
+
+    private func updateBorder() {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.18)
+        borderLayer.opacity = showsFocus ? 0.85 : isHovered ? 0.3 : 0
+        CATransaction.commit()
     }
 
     override init(frame: NSRect) {
@@ -201,6 +207,17 @@ private final class PinView: NSView {
         imageLayer.magnificationFilter = .linear
         imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
         layer?.addSublayer(imageLayer)
+        borderLayer.frame = bounds
+        borderLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        borderLayer.borderWidth = 1
+        borderLayer.borderColor = NSColor.controlAccentColor.cgColor
+        borderLayer.opacity = 0
+        // Only opacity animates; the border follows zooming exactly.
+        borderLayer.actions = ["bounds": NSNull(), "position": NSNull()]
+        layer?.addSublayer(borderLayer)
+        // Pins float over other apps, so track the pointer even while NyCopilot isn't active.
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
         badge.wantsLayer = true
         badge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
         badge.layer?.cornerRadius = 5
@@ -234,6 +251,9 @@ private final class PinView: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { pin?.close(); return }

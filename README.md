@@ -112,7 +112,8 @@ dragging it to the edge of the screen.
   straight to your folder, or **Esc** (or right-click) to cancel.
 
 **F3** pins whatever is on the clipboard: an image as is, a `#RRGGBB` color as a swatch, other text as
-a card. **⇧F3** hides or shows all pins. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
+a card. **⇧F3** hides or shows all pins. A faint blue border fades in while the pointer is over a pin
+and turns solid when you click it. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
 **1–4** to rotate and flip, **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
 close. Right-click for opacity, shadow, click-through, and **Close All Pins**; **Make Pins Clickable**
 in the menu bar menu brings click-through pins back.
