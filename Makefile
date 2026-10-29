@@ -4,8 +4,14 @@ SWIFT_FLAGS := --disable-sandbox --package-path apps/macos --cache-path apps/mac
 	--config-path apps/macos/.build/config --security-path apps/macos/.build/security
 export CLANG_MODULE_CACHE_PATH := $(CURDIR)/apps/macos/.build/module-cache
 APP := dist/NyCopilot.app
-# Local builds use an ad-hoc signature; pass SIGN_IDENTITY for a stable Apple signing identity.
-SIGN_IDENTITY ?= -
+# macOS ties Accessibility and Keychain grants to the app's signing identity. An ad-hoc signature
+# changes with every build and silently invalidates them, so sign with a certificate when one exists:
+# Developer ID Application (also what distribution needs), else Apple Development. Override with
+# SIGN_IDENTITY=… if the chosen certificate has expired.
+SIGN_IDENTITY ?= $(or \
+	$(shell security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/"Developer ID Application:/ { print $$2; exit }'), \
+	$(shell security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/"Apple Development:/ { print $$2; exit }'), \
+	-)
 
 .PHONY: build core test test-core test-macos run icon clean
 
@@ -17,8 +23,10 @@ build: core
 	cp apps/macos/.build/release/NyCopilot "$(APP)/Contents/MacOS/NyCopilot"
 	cp apps/macos/Resources/Info.plist "$(APP)/Contents/Info.plist"
 	cp apps/macos/Resources/AppIcon.icns "$(APP)/Contents/Resources/AppIcon.icns"
-	codesign --force --sign "$(SIGN_IDENTITY)" "$(APP)"
+	@if [ "$(SIGN_IDENTITY)" = "-" ]; then echo "warning: no signing certificate found; ad-hoc builds lose Accessibility and Keychain access on every rebuild"; fi
+	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" "$(APP)"
 	codesign --verify --strict "$(APP)"
+	@codesign -d -r- "$(APP)" 2>&1 | grep designated
 
 core:
 	cargo build --release -p ny-ffi

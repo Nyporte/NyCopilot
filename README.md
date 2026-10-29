@@ -30,9 +30,11 @@ make run     # build and open
 make test    # Rust tests (incl. loopback HTTP) + Swift tests; no permissions, no real API
 ```
 
-Move the app to a stable location such as `/Applications` before granting Accessibility. Rebuilding
-with the ad-hoc signature may require granting it again. For distribution, use
-`make build SIGN_IDENTITY='Developer ID Application: …'` and notarize.
+Builds are signed with your Developer ID Application certificate (or Apple Development if that's
+all you have) with the hardened runtime. macOS keys Accessibility and Keychain access to that
+identity, so grants survive rebuilds and reinstalls. Without a certificate the build falls back to
+an ad-hoc signature, prints a warning, and loses those grants on every rebuild. Pick a specific
+certificate with `make build SIGN_IDENTITY='…'`. Notarize before sharing the app with others.
 
 ## First run
 
