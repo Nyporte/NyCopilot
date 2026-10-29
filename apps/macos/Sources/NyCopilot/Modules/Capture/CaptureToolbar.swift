@@ -1,6 +1,6 @@
 import AppKit
 
-/// The bar under a selection: drawing tools, undo and redo, then pin, save, cancel, and copy. While a
+/// The bar under a selection: drawing tools, undo and redo, then save, pin, cancel, and copy. While a
 /// tool is active, a second row offers colors and line widths.
 @MainActor
 final class CaptureToolbar: NSView {
@@ -66,7 +66,7 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), pin, save, cancel, copy], spacing: 2)
+        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), save, pin, cancel, copy], spacing: 2)
 
         for color in palette {
             let swatch = Swatch(color: color)

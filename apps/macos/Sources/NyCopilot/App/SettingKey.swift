@@ -17,6 +17,7 @@ enum SettingKey: String {
     case captureColor = "capture.color"
     case captureStroke = "capture.stroke"
     case pinShadow = "capture.pin_shadow"
+    case hideOwnWindows = "capture.hide_own_windows"
     case welcomeCompleted = "client.welcome_completed"
     case migratedNyTranslate = "client.migrated_nytranslate"
     case rectangleImportChecked = "client.windows.rectangle_import_checked"

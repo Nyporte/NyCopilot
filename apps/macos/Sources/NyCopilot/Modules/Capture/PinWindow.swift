@@ -7,6 +7,12 @@ final class PinWindow: NSPanel {
     var onSave: ((NSImage) -> Void)?
     var onClose: ((PinWindow) -> Void)?
     var onCloseAll: (() -> Void)?
+    /// Clicked: the board unfocuses every other pin.
+    var onFocus: ((PinWindow) -> Void)?
+
+    /// Shows the accent border. Pins never activate NyCopilot, so macOS doesn't tell them when a
+    /// click lands in another app; the board clears this instead.
+    var isFocused = false { didSet { if isFocused != oldValue { pinView.needsDisplay = true } } }
 
     let original: NSImage
     private let pinView: PinView
@@ -32,6 +38,11 @@ final class PinWindow: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    override func resignKey() {
+        super.resignKey()
+        isFocused = false
+    }
 
     /// The image as currently shown: rotated and flipped.
     var displayedImage: NSImage {
@@ -178,7 +189,8 @@ private final class PinView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         image?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
                     hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)])
-        NSColor.controlAccentColor.withAlphaComponent(window?.isKeyWindow == true ? 0.7 : 0).setStroke()
+        guard pin?.isFocused == true else { return }
+        NSColor.controlAccentColor.withAlphaComponent(0.7).setStroke()
         NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)).stroke()
     }
 
@@ -199,14 +211,21 @@ private final class PinView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { pin?.close(); return }
-        window?.makeKey()
+        focus()
         window?.performDrag(with: event)
-        needsDisplay = true
     }
 
     override func rightMouseDown(with event: NSEvent) {
         guard let pin else { return }
+        focus()
         NSMenu.popUpContextMenu(pin.menu(), with: event, for: self)
+    }
+
+    private func focus() {
+        guard let pin else { return }
+        pin.makeKey()
+        pin.isFocused = true
+        pin.onFocus?(pin)
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -242,13 +261,22 @@ final class PinBoard {
     var onSave: ((NSImage) -> Void)?
     private(set) var pins: [PinWindow] = []
     private(set) var areHidden = false
+    /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
+    private var outsideClicks: Any?
 
     func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) {
         let pin = PinWindow(image: image, frame: frame, shadow: shadow)
         pin.onSave = { [weak self] image in self?.onSave?(image) }
-        pin.onClose = { [weak self] closed in self?.pins.removeAll { $0 === closed } }
+        pin.onClose = { [weak self] closed in
+            self?.pins.removeAll { $0 === closed }
+            self?.updateMonitor()
+        }
         pin.onCloseAll = { [weak self] in self?.closeAll() }
+        pin.onFocus = { [weak self] focused in
+            for other in self?.pins ?? [] where other !== focused { other.isFocused = false }
+        }
         pins.append(pin)
+        updateMonitor()
         if areHidden { showAll() }
         pin.orderFrontRegardless()
     }
@@ -268,6 +296,19 @@ final class PinBoard {
     func closeAll() { pins.forEach { $0.close() } }
 
     var hasClickThrough: Bool { pins.contains { $0.isClickThrough } }
+
+    private func updateMonitor() {
+        if pins.isEmpty, let monitor = outsideClicks {
+            NSEvent.removeMonitor(monitor)
+            outsideClicks = nil
+        } else if !pins.isEmpty, outsideClicks == nil {
+            outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                MainActor.assumeIsolated { self?.unfocusAll() }
+            }
+        }
+    }
+
+    func unfocusAll() { pins.forEach { $0.isFocused = false } }
 
     func makeAllClickable() { pins.forEach { $0.setClickThrough(false) } }
 }

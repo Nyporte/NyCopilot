@@ -291,8 +291,21 @@ mod tests {
         std::thread::spawn(move || {
             for stream in listener.incoming().take(2) {
                 let mut stream = stream.unwrap();
-                let mut buffer = [0u8; 65536];
-                let _ = stream.read(&mut buffer);
+                // Read the whole request (headers and declared body) before replying; answering
+                // early can reset the connection while the client is still sending.
+                let mut request = Vec::new();
+                let mut chunk = [0u8; 65536];
+                while let Ok(count) = stream.read(&mut chunk) {
+                    if count == 0 { break; }
+                    request.extend_from_slice(&chunk[..count]);
+                    let text = String::from_utf8_lossy(&request);
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let length = text[..end].lines()
+                            .find_map(|l| l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                            .unwrap_or(0);
+                        if request.len() >= end + 4 + length { break; }
+                    }
+                }
                 let body = r#"{"choices":[{"message":{"content":"\n  Bonjour  \n"},"finish_reason":"stop"}]}"#;
                 let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
             }

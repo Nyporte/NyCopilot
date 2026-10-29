@@ -257,13 +257,13 @@ final class CaptureView: NSView, NSTextFieldDelegate {
         pointer = point
         switch drag {
         case .creating(let start):
-            selection = CGRect(corners: start, point)
+            selection = snapped(CGRect(corners: start, point))
             toolbar.isHidden = true
         case .moving(let start, let original):
             var moved = original.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
             moved.origin.x = min(max(moved.minX, 0), bounds.width - moved.width)
             moved.origin.y = min(max(moved.minY, 0), bounds.height - moved.height)
-            selection = moved
+            selection = snapped(moved)
             placeToolbar()
         case .resizing(let handle, let original):
             selection = resized(original, handle: handle, to: point)
@@ -282,8 +282,10 @@ final class CaptureView: NSView, NSTextFieldDelegate {
     override func mouseUp(with event: NSEvent) {
         switch drag {
         case .creating:
+            // The selection is already on pixel boundaries; keeping it as is means the size shown
+            // while dragging is exactly the size captured.
             if let rect = selection, rect.width >= 4, rect.height >= 4 {
-                selection = rect.integral
+                selection = rect
             } else {
                 // A click without a drag takes the highlighted window (or nothing).
                 selection = hoverWindow
@@ -355,7 +357,15 @@ final class CaptureView: NSView, NSTextFieldDelegate {
         case .bottomLeft: minX = point.x; maxY = point.y
         case .left: minX = point.x
         }
-        return CGRect(corners: CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: maxY)).integral
+        return snapped(CGRect(corners: CGPoint(x: minX, y: minY), CGPoint(x: maxX, y: maxY)))
+    }
+
+    /// Each edge to its nearest pixel. Rounding outward (`integral`) grew selections by a point —
+    /// two pixels on Retina — whenever the pointer sat between pixels.
+    private func snapped(_ rect: CGRect) -> CGRect {
+        let scale = frozen.scale
+        func pixel(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+        return CGRect(corners: CGPoint(x: pixel(rect.minX), y: pixel(rect.minY)), CGPoint(x: pixel(rect.maxX), y: pixel(rect.maxY)))
     }
 
     private func updateCursor(at point: CGPoint) {

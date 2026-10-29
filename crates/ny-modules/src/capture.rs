@@ -60,6 +60,8 @@ impl Module for CaptureModule {
                 SettingSpec::new("capture.color", json!(PALETTE[0]), Scope::Synced, "Annotation color last used."),
                 SettingSpec::new("capture.stroke", json!(3), Scope::Synced, "Annotation line width last used, in points."),
                 SettingSpec::new("capture.pin_shadow", json!(true), Scope::Synced, "Draw a shadow around pinned images."),
+                SettingSpec::new("capture.hide_own_windows", json!(false), Scope::Synced,
+                                 "Leave NyCopilot's own windows, pins included, out of captures."),
             ],
             commands: vec![
                 CommandSpec::new("palette", "Annotation colors: [\"#RRGGBB\"]."),
@@ -148,6 +150,10 @@ mod tests {
         }
         core.call("settings.set", json!({ "key": "capture.format", "value": "jpg" })).unwrap();
         core.call("settings.set", json!({ "key": "capture.color", "value": "#0a84ff" })).unwrap();
+        // NyCopilot's own windows appear in captures unless the user opts out.
+        assert!(!core.setting::<bool>("capture.hide_own_windows").unwrap());
+        assert!(core.call("settings.set", json!({ "key": "capture.hide_own_windows", "value": "no" })).is_err());
+        core.call("settings.set", json!({ "key": "capture.hide_own_windows", "value": true })).unwrap();
         let name = core.call("capture.file_name", json!({ "date": [2026, 1, 2, 3, 4, 5] })).unwrap();
         assert_eq!(name["name"], "NyCopilot 2026-01-02 at 03.04.05.jpg");
     }

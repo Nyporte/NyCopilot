@@ -114,8 +114,8 @@ close. Right-click for opacity, shadow, click-through, and **Close All Pins**; *
 in the menu bar menu brings click-through pins back.
 
 **Settings → Screenshot** sets the save folder (Pictures/NyCopilot by default), PNG or JPEG, a
-file name pattern with `{date}`, `{time}`, and `{n}`, pin shadows, and the shortcuts. NyCopilot's own
-windows, including pins, never appear in a capture.
+file name pattern with `{date}`, `{time}`, and `{n}`, pin shadows, and the shortcuts. **Hide NyCopilot
+windows** (off by default) leaves pins and other NyCopilot windows out of captures.
 
 ## Shortcuts
 

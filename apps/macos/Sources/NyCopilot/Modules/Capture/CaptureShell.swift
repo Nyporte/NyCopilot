@@ -86,7 +86,7 @@ final class CaptureShell: ModuleShell {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let frozen = try await ScreenGrabber.freezeAll()
+                let frozen = try await ScreenGrabber.freezeAll(hidingOwnWindows: services.core.setting(.hideOwnWindows, default: false))
                 let recent = ((try? services.core.call("capture.recent_regions", ["limit": 20], as: [Region].self)) ?? [])
                     .map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }
                 let palette = ((try? services.core.call("capture.palette") as? [String]) ?? []).compactMap(NSColor.init(hex:))

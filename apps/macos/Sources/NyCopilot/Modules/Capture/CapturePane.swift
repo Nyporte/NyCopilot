@@ -1,7 +1,7 @@
 import AppKit
 
-/// Screenshot & Pin settings: Screen Recording permission, where and how captures are saved, pins,
-/// and shortcuts — with the capture keys listed for reference.
+/// Screenshot & Pin settings: Screen Recording permission, what captures include, where and how they
+/// are saved, pins, and shortcuts — with the capture keys listed for reference.
 @MainActor
 final class CapturePane: SettingsPane, NSTextFieldDelegate {
     private let services: CopilotServices
@@ -11,6 +11,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
     private let format = NSPopUpButton()
     private let pattern = NSTextField()
     private let shadowSwitch = NSSwitch()
+    private let hideSwitch = NSSwitch()
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private lazy var shortcuts = ShortcutEditor(services: services)
     private static let formats = [("png", "PNG"), ("jpg", "JPEG")]
@@ -36,12 +37,17 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         pattern.widthAnchor.constraint(equalToConstant: 220).isActive = true
         shadowSwitch.target = self
         shadowSwitch.action = #selector(toggleShadow)
+        hideSwitch.target = self
+        hideSwitch.action = #selector(toggleHide)
         message.isHidden = true
 
         return [
             FormSection("Permissions", rows: [
                 FormRow("Screen Recording", subtitle: "Lets NyCopilot capture what’s on your screens.",
                         accessory: Design.hstack([permissionBadge, permissionButton], spacing: 12))
+            ]),
+            FormSection("Capturing", rows: [
+                FormRow("Hide NyCopilot windows", subtitle: "Leave pins and other NyCopilot windows out of captures.", accessory: hideSwitch)
             ]),
             FormSection("Saving", footer: "⌘S in a capture asks where to save; ⇧⌘S saves straight to this folder. The pattern understands {date}, {time}, and {n}.", rows: [
                 FormRow("Folder", accessory: Design.hstack([folderLabel, choose], spacing: 8)),
@@ -70,6 +76,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         format.selectItem(at: Self.formats.firstIndex { $0.0 == current } ?? 0)
         pattern.stringValue = services.core.setting(.captureFileName, default: "")
         shadowSwitch.state = services.core.setting(.pinShadow, default: true) ? .on : .off
+        hideSwitch.state = services.core.setting(.hideOwnWindows, default: false) ? .on : .off
         message.isHidden = true
         shortcuts.refresh()
     }
@@ -112,4 +119,5 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
     }
 
     @objc private func toggleShadow() { try? services.core.setSetting(.pinShadow, shadowSwitch.state == .on) }
+    @objc private func toggleHide() { try? services.core.setSetting(.hideOwnWindows, hideSwitch.state == .on) }
 }

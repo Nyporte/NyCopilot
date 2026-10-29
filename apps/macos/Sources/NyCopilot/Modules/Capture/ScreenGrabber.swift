@@ -23,25 +23,26 @@ enum ScreenGrabber {
         }
     }
 
-    /// Every display, captured as close to the same instant as possible.
-    static func freezeAll() async throws -> [FrozenScreen] {
-        let windows = visibleWindows()
+    /// Every display, captured as close to the same instant as possible. With `hidingOwnWindows`,
+    /// NyCopilot's windows (pins included) are left out of both the pixels and window detection.
+    static func freezeAll(hidingOwnWindows: Bool) async throws -> [FrozenScreen] {
+        let windows = visibleWindows(includingOwn: !hidingOwnWindows)
         var frozen: [FrozenScreen] = []
         for screen in NSScreen.screens {
-            guard let image = try await capture(screen) else { continue }
+            guard let image = try await capture(screen, hidingOwnWindows: hidingOwnWindows) else { continue }
             frozen.append(FrozenScreen(screen: screen, image: image, windows: windows.compactMap { local($0, on: screen) }))
         }
         guard !frozen.isEmpty else { throw Failure.captureFailed }
         return frozen
     }
 
-    private static func capture(_ screen: NSScreen) async throws -> CGImage? {
+    private static func capture(_ screen: NSScreen, hidingOwnWindows: Bool) async throws -> CGImage? {
         guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
         if #available(macOS 14.0, *) {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
-            // NyCopilot's own windows (pins included) are left out, so they never end up in a capture.
-            let own = content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier }
+            let own = hidingOwnWindows
+                ? content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier } : []
             let configuration = SCStreamConfiguration()
             configuration.width = Int(screen.frame.width * screen.backingScaleFactor)
             configuration.height = Int(screen.frame.height * screen.backingScaleFactor)
@@ -50,15 +51,25 @@ enum ScreenGrabber {
             return try await SCScreenshotManager.captureImage(
                 contentFilter: SCContentFilter(display: display, excludingWindows: own), configuration: configuration)
         }
-        return CGDisplayCreateImage(id)
+        guard hidingOwnWindows else { return CGDisplayCreateImage(id) }
+        // macOS 13: compose the display from every on-screen window except NyCopilot's.
+        let own = ProcessInfo.processInfo.processIdentifier
+        let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
+        let ids = list.compactMap { info -> CGWindowID? in
+            (info[kCGWindowOwnerPID as String] as? pid_t) == own ? nil : info[kCGWindowNumber as String] as? CGWindowID
+        }
+        // CGWindowListCreateImageFromArray takes a CFArray of raw window numbers, not objects.
+        var pointers = ids.map { UnsafeRawPointer(bitPattern: UInt($0)) }
+        guard let array = pointers.withUnsafeMutableBufferPointer({ CFArrayCreate(nil, $0.baseAddress, $0.count, nil) }) else { return nil }
+        return CGImage(windowListFromArrayScreenBounds: CGDisplayBounds(id), windowArray: array, imageOption: .bestResolution)
     }
 
     /// Normal windows, menus, and the Dock, front to back, in global top-left coordinates.
-    private static func visibleWindows() -> [CGRect] {
+    private static func visibleWindows(includingOwn: Bool) -> [CGRect] {
         let own = ProcessInfo.processInfo.processIdentifier
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         return list.compactMap { info in
-            guard (info[kCGWindowOwnerPID as String] as? pid_t) != own,
+            guard includingOwn || (info[kCGWindowOwnerPID as String] as? pid_t) != own,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.05,
                   (info[kCGWindowLayer as String] as? Int ?? 0) < Int(CGWindowLevelForKey(.screenSaverWindow)),
                   let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
