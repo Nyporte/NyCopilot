@@ -1,5 +1,8 @@
 import AppKit
 import MacPlatform
+import os
+
+private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "composer")
 
 /// macOS half of the Translate module: capture the focused field, show the composer, ask the core
 /// to translate, then paste the result back (or copy it when the field can't take a paste).
@@ -201,9 +204,13 @@ final class TranslateShell: ModuleShell {
     /// field if it is a single line or so. Web apps often report their whole page as the field,
     /// which would put the composer far from where you're typing; the pointer is closer then.
     private static func anchor(for target: InputTarget?) -> CGRect? {
-        if let caret = target?.caret { return caret }
-        if let frame = target?.frame, frame.height <= 120 { return frame }
-        return nil
+        let anchor: CGRect?
+        let source: String
+        if let caret = target?.caret { (anchor, source) = (caret, "caret") }
+        else if let frame = target?.frame, frame.height <= 120 { (anchor, source) = (frame, "field") }
+        else { (anchor, source) = (nil, "pointer") }
+        log.notice("composer anchored to \(source, privacy: .public) \(String(describing: anchor), privacy: .public)")
+        return anchor
     }
 
     private static func appKitRect(_ ax: CGRect) -> NSRect {

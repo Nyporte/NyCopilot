@@ -2,6 +2,10 @@ import AppKit
 import ApplicationServices
 import Carbon
 import MacPlatform
+import os
+
+/// Geometry and roles only; captured text is never logged.
+private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "capture")
 
 /// An immutable snapshot binds a composition to one field, its contents, and its original selection.
 final class InputTarget: @unchecked Sendable {
@@ -51,9 +55,15 @@ final class InputTarget: @unchecked Sendable {
                 && readAXValue(element, name: kAXSizeAttribute, type: .cgSize, into: &size)
             let window = elementAttribute(element, kAXWindowAttribute)
             if let window { AXUIElementSetMessagingTimeout(window, 0.5) }
+            let frame = hasFrame ? CGRect(origin: position, size: size) : nil
+            let appName = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
+            let caret = locateCaret(element, app: app, range: range, text: value as NSString, frame: frame, appName: appName)
+            log.notice("""
+                captured \(appName, privacy: .public) role=\(role ?? "?", privacy: .public) \
+                frame=\(String(describing: frame), privacy: .public) caret=\(String(describing: caret), privacy: .public)
+                """)
             return InputTarget(pid: pid, element: element, window: window, value: value, range: range,
-                               frame: hasFrame ? CGRect(origin: position, size: size) : nil,
-                               caret: caretBounds(element, range: range, text: value as NSString))
+                               frame: frame, caret: caret)
         }.value
     }
 
@@ -182,7 +192,40 @@ final class InputTarget: @unchecked Sendable {
         return unsafeBitCast(value, to: AXUIElement.self)
     }
 
-    /// Where the cursor is drawn. A selection reports its own bounds; an empty range often reports a
+    /// Where the cursor is drawn, trying in turn: the standard range bounds, WebKit/Chromium text
+    /// markers, and — for Electron apps, which build their accessibility tree only on request — both
+    /// again after asking for it. Results outside the field are rejected as bogus.
+    private static func locateCaret(_ element: AXUIElement, app: AXUIElement, range: CFRange, text: NSString,
+                                    frame: CGRect?, appName: String) -> CGRect? {
+        func plausible(_ rect: CGRect?, _ source: String) -> CGRect? {
+            guard let rect else { log.debug("\(appName, privacy: .public): \(source, privacy: .public) gave nothing"); return nil }
+            if let frame, !frame.insetBy(dx: -40, dy: -40).intersects(rect) {
+                log.notice("\(appName, privacy: .public): \(source, privacy: .public) rect \(String(describing: rect), privacy: .public) is outside the field")
+                return nil
+            }
+            log.notice("\(appName, privacy: .public): caret from \(source, privacy: .public)")
+            return rect
+        }
+        if let rect = plausible(caretBounds(element, range: range, text: text), "range bounds") { return rect }
+        if let rect = plausible(markerBounds(element), "text markers") { return rect }
+        guard AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success else { return nil }
+        return plausible(caretBounds(element, range: range, text: text), "range bounds (Electron)")
+            ?? plausible(markerBounds(element), "text markers (Electron)")
+    }
+
+    /// Chromium and WebKit describe the selection with opaque text markers rather than plain ranges.
+    private static func markerBounds(_ element: AXUIElement) -> CGRect? {
+        guard let markers = attribute(element, "AXSelectedTextMarkerRange") else { return nil }
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, "AXBoundsForTextMarkerRange" as CFString, markers, &result) == .success,
+              let result, CFGetTypeID(result) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(unsafeBitCast(result, to: AXValue.self), .cgRect, &rect),
+              rect.height > 0, rect.height < 200, rect.minX.isFinite, rect.minY.isFinite else { return nil }
+        return rect
+    }
+
+    /// The standard range bounds. A selection reports its own bounds; an empty range often reports a
     /// zero-size rect, so the character before the cursor stands in for its position.
     private static func caretBounds(_ element: AXUIElement, range: CFRange, text: NSString) -> CGRect? {
         func isLineBreak(_ index: Int) -> Bool {
