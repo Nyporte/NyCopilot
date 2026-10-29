@@ -50,24 +50,19 @@ final class TranslateShell: ModuleShell {
 
     private var language: String { services.core.setting("translate.target_language", default: "English") }
 
-    private struct Cycled: Decodable { let targetLanguage: String; let native: String }
-    private struct Native: Decodable { let native: String }
+    private struct Display: Decodable { let native: String; let code: String }
 
-    /// Every favorite in its own script, for sizing the composer's language column.
-    private var favoriteNames: [String] {
-        let favorites = (try? services.core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? []
-        return favorites.map(nativeName)
-    }
-
-    private func nativeName(_ language: String) -> String {
-        (try? services.core.call("translate.native_name", ["language": language], as: Native.self).native) ?? language
+    /// The badge code and own name the composer shows for a language.
+    private func display(_ language: String) -> ComposerPanel.Language {
+        let shown = try? services.core.call("translate.native_name", ["language": language], as: Display.self)
+        return .init(code: shown?.code ?? String(language.prefix(2)).uppercased(), name: shown?.native ?? language)
     }
 
     /// Tab in the composer: the core picks the next favorite and remembers it as the target.
     private func cycleLanguage(_ step: Int) {
         do {
-            let next = try services.core.call("translate.cycle", ["step": step], as: Cycled.self)
-            composer.setLanguage(next.native)
+            let next = try services.core.call("translate.cycle", ["step": step], as: Display.self)
+            composer.setLanguage(.init(code: next.code, name: next.native))
         } catch {
             composer.showError(error.localizedDescription)
         }
@@ -102,7 +97,7 @@ final class TranslateShell: ModuleShell {
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
             target = captured
             composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste,
-                             language: nativeName(language), languages: favoriteNames)
+                             language: display(language))
         }
     }
 

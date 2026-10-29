@@ -142,7 +142,8 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
             outline.topAnchor.constraint(equalTo: card.topAnchor),
             outline.bottomAnchor.constraint(equalTo: card.bottomAnchor),
             root.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Self.horizontalPadding),
-            root.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Self.horizontalPadding + 4),
+            // Same margin on both sides, which keeps the badge clear of the card's edge.
+            root.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Self.horizontalPadding),
             root.topAnchor.constraint(equalTo: card.topAnchor, constant: Self.verticalPadding),
             root.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Self.verticalPadding),
             row.widthAnchor.constraint(equalTo: root.widthAnchor),
@@ -156,14 +157,14 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
 
     var isVisible: Bool { window?.isVisible == true }
 
+    /// A target language as the composer shows it: a short badge code (EN, 中, 日) and its own name.
+    struct Language { let code: String; let name: String }
+
     /// Open a fresh card at the text cursor (AX coordinates), or near the pointer when there is none.
-    /// `language` is the display name, e.g. 日本語; `languages` are all names Tab can reach, so the
-    /// label column can be as wide as the widest and switching never re-wraps the text.
-    func present(over axFrame: CGRect?, mode: Mode, language: String, languages: [String]) {
+    func present(over axFrame: CGRect?, mode: Mode, language: Language) {
         guard let window else { return }
         self.mode = mode
         scroll.scrollerStyle = .overlay
-        languageLabel.reserveWidth(for: languages + [language])
         editor.string = ""
         editor.undoManager?.removeAllActions()
         editor.placeholder = mode == .paste ? "Type to translate…" : "Type to translate and copy…"
@@ -204,7 +205,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func setLanguage(_ language: String, animated: Bool = true) {
+    func setLanguage(_ language: Language, animated: Bool = true) {
         languageLabel.set(language, animated: animated && isVisible)
     }
 
@@ -332,7 +333,8 @@ private final class TopAnchoredView: NSView {
     override var isFlipped: Bool { true }
 }
 
-/// The target language as a faint label with a ⇥ key cap: Tab (or a click) steps to the next one.
+/// The target language as a pair of small icons: a badge with its short code (EN, 中, 日) and the ⇥
+/// key that steps to the next one. The badge has a fixed size, so switching never moves the text.
 /// While translating, a small spinner takes the key cap's place.
 private final class TargetLanguageLabel: NSStackView {
     var onClick: (() -> Void)?
@@ -342,55 +344,64 @@ private final class TargetLanguageLabel: NSStackView {
             key.isHidden = isBusy
             spinner.isHidden = !isBusy
             isBusy ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
-            name.textColor = isBusy ? .quaternaryLabelColor : .tertiaryLabelColor
+            code.textColor = isBusy ? .tertiaryLabelColor : .secondaryLabelColor
         }
     }
-    private let name = Design.label("", size: 13, color: .tertiaryLabelColor)
-    private lazy var nameWidth = name.widthAnchor.constraint(equalToConstant: 0)
+    private let badge = AppearanceView()
+    private let code = Design.label("", size: 10.5, weight: .semibold, color: .secondaryLabelColor)
     private let key = KeyCap("⇥")
     private let spinner = NSProgressIndicator()
+    private static let badgeSize = NSSize(width: 24, height: 18)
 
     init() {
         super.init(frame: .zero)
         orientation = .horizontal
         alignment = .centerY
-        spacing = 6
+        spacing = 4
+        badge.radius = 5
+        badge.fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor.white.withAlphaComponent(0.1) : NSColor.black.withAlphaComponent(0.06) }
+        code.alignment = .center
+        code.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(code)
+        badge.translatesAutoresizingMaskIntoConstraints = false
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isHidden = true
-        addArrangedSubview(name)
+        addArrangedSubview(badge)
         addArrangedSubview(key)
         addArrangedSubview(spinner)
+        NSLayoutConstraint.activate([
+            badge.widthAnchor.constraint(equalToConstant: Self.badgeSize.width),
+            badge.heightAnchor.constraint(equalToConstant: Self.badgeSize.height),
+            key.heightAnchor.constraint(equalToConstant: Self.badgeSize.height),
+            code.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
+            code.centerYAnchor.constraint(equalTo: badge.centerYAnchor)
+        ])
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
-        toolTip = "Press Tab for the next language, Shift+Tab for the previous one"
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
-    /// A fixed column as wide as the widest of `names`; the current name sits right-aligned in it.
-    func reserveWidth(for names: [String]) {
-        let font = name.font ?? .systemFont(ofSize: 13)
-        nameWidth.constant = ceil(names.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0)
-        nameWidth.isActive = true
-        name.alignment = .right
-    }
-
-    func set(_ language: String, animated: Bool) {
-        setAccessibilityLabel("Target language: \(language). Press Tab to change.")
-        guard animated, name.stringValue != language else {
-            name.stringValue = language
-            onChange?()
-            return
-        }
-        // A quick crossfade makes each Tab press visible without moving anything.
-        NSAnimationContext.runAnimationGroup({ $0.duration = 0.08; name.animator().alphaValue = 0 }, completionHandler: { [weak self] in
+    func set(_ language: ComposerPanel.Language, animated: Bool) {
+        toolTip = "Translating into \(language.name). Tab for the next language, Shift+Tab for the previous one."
+        setAccessibilityLabel("Target language: \(language.name). Press Tab to change.")
+        let apply = { [weak self] in
             guard let self else { return }
-            name.stringValue = language
+            code.stringValue = language.code
+            // CJK glyphs read better a size larger than Latin letters in the same badge.
+            let wide = language.code.unicodeScalars.first.map { $0.value > 0x2E80 } ?? false
+            code.font = .systemFont(ofSize: wide ? 12 : 10.5, weight: .semibold)
             onChange?()
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.12; self.name.animator().alphaValue = 1 }
+        }
+        guard animated, code.stringValue != language.code else { apply(); return }
+        // A quick crossfade makes each Tab press visible without moving anything.
+        NSAnimationContext.runAnimationGroup({ $0.duration = 0.08; code.animator().alphaValue = 0 }, completionHandler: { [weak self] in
+            apply()
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.12; self?.code.animator().alphaValue = 1 }
         })
     }
 

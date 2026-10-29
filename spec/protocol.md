@@ -65,9 +65,9 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `llm.complete` | `{system, user, api_key?}` | `{text}` |
 | `llm.test` | `{endpoint, model, api_key?}` | `{elapsed_ms}` |
 | `translate.run` | `{text, target_language?, api_key?, request_id?}` | `{text, target_language, record}` — saved to `translate.history` before returning |
-| `translate.languages` | — | `[{name, native}]` — suggested languages with their own names |
-| `translate.cycle` | `{step: 1 or -1}` | `{target_language, native}` — steps through the favorites and saves the result as the target |
-| `translate.native_name` | `{language}` | `{native}` (the name as given when unknown) |
+| `translate.languages` | — | `[{name, native, code}]` — suggested languages with their own names and badge codes |
+| `translate.cycle` | `{step: 1 or -1}` | `{target_language, native, code}` — steps through the favorites and saves the result as the target |
+| `translate.native_name` | `{language}` | `{native, code}` — own name (as given when unknown) and badge code (EN, 中, 日; a mentioned language's code, else two letters) |
 | `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
 | `windows.actions` | — | `[{id, title, group}]` in menu order |
 | `windows.compute` | `{action, window, screen, repeat?}` | `{frame}` — `screen` is the usable area; `repeat` counts consecutive presses. With `windows.repeat = move_across_displays`, a repeated side layout returns `{frame: null, move: {direction, action}}`: apply `action` on the nearest display in `direction` |

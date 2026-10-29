@@ -51,8 +51,8 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
 
 ## Using Translate
 
-- **⌥⌘T** opens the composer: one input line at your text cursor, with the target language shown
-  faintly at its right edge (English, 简体中文, 日本語…). **Tab** steps to the next of your favorite
+- **⌥⌘T** opens the composer: one input line at your text cursor, with a small badge at its right
+  edge showing the target language (EN, 中, 日…) next to a ⇥ key. **Tab** steps to the next of your favorite
   languages and **Shift+Tab** goes back; the choice is remembered. **Return** translates and
   replaces your selection, **Shift+Return** adds a line, **Esc** cancels and returns you to your
   app. Return confirms an input-method candidate first, and nothing is ever submitted in the target app.
