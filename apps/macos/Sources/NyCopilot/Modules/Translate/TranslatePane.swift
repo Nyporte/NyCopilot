@@ -44,7 +44,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         let instructionsBar = Design.hstack([instructionsStatus, Design.spacer(), restoreButton, saveButton])
         return [
             FormSection("Favorite Languages",
-                        footer: "In the translate box, Tab steps through these in this order and Shift+Tab goes back. Drag to reorder.",
+                        footer: "In the translate box, Tab steps through these in this order and Shift+Tab goes back. Use ▲ ▼ to change the order.",
                         rows: [favorites]),
             message,
             FormSection("Result", rows: [

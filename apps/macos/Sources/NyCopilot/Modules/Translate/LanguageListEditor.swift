@@ -1,6 +1,6 @@
 import AppKit
 
-/// Favorite languages as an ordered list: drag to reorder, − to remove, + to add from suggestions or
+/// Favorite languages as an ordered list: ▲ ▼ to reorder, − to remove, + to add from suggestions or
 /// by name. The order is the order Tab steps through in the composer. Every change is saved at once.
 @MainActor
 final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelegate {
@@ -20,7 +20,6 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     private var describe: (String) -> Language = { Language(name: $0, native: $0, code: String($0.prefix(2)).uppercased()) }
     private static let rowHeight: CGFloat = 36
     private static let maximum = 8
-    private static let rowType = NSPasteboard.PasteboardType("dev.nycopilot.language-row")
 
     init() {
         super.init(frame: .zero)
@@ -35,8 +34,6 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
         table.gridStyleMask = []
         table.dataSource = self
         table.delegate = self
-        table.registerForDraggedTypes([Self.rowType])
-        table.draggingDestinationFeedbackStyle = .gap
         table.setAccessibilityLabel("Favorite languages, in Tab order")
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         column.resizingMask = .autoresizingMask
@@ -122,7 +119,7 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let shown = language(names[row])
-        let cell = LanguageRow(language: shown, canRemove: names.count > 1, isLast: row == names.count - 1)
+        let cell = LanguageRow(language: shown, isFirst: row == 0, isLast: row == names.count - 1, canRemove: names.count > 1)
         // Cells are rebuilt on every change, so the row index is always current.
         cell.onRemove = { [weak self] in
             guard let self, names.indices.contains(row) else { return }
@@ -130,60 +127,17 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
             updated.remove(at: row)
             commit(updated)
         }
+        cell.onMove = { [weak self] step in self?.move(row, by: step) }
         return cell
     }
 
-    // MARK: Reordering
-
-    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> NSPasteboardWriting? {
-        let item = NSPasteboardItem()
-        item.setString(String(row), forType: Self.rowType)
-        return item
-    }
-
-    /// Plain row views give the table no drag image, so it invents one pinned by its corner to the
-    /// pointer — the row appears to jump. Instead, drag a snapshot of the row placed exactly where the
-    /// row is, so the spot you pressed stays under the pointer.
-    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint,
-                   forRowIndexes rowIndexes: IndexSet) {
-        guard let row = rowIndexes.first, let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) else { return }
-        let frame = tableView.rect(ofRow: row)
-        let image = Self.liftedSnapshot(of: view, size: frame.size)
-        session.enumerateDraggingItems(options: [], for: tableView, classes: [NSPasteboardItem.self], searchOptions: [:]) { item, _, _ in
-            item.setDraggingFrame(frame, contents: image)
-        }
-        session.animatesToStartingPositionsOnCancelOrFail = true
-    }
-
-    /// The row drawn on a rounded, slightly translucent card so it reads as picked up.
-    private static func liftedSnapshot(of view: NSView, size: NSSize) -> NSImage {
-        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
-        if let rep { view.cacheDisplay(in: view.bounds, to: rep) }
-        return NSImage(size: size, flipped: false) { rect in
-            NSColor.controlBackgroundColor.withAlphaComponent(0.92).setFill()
-            NSBezierPath(roundedRect: rect.insetBy(dx: 4, dy: 1), xRadius: 6, yRadius: 6).fill()
-            rep?.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-            return true
-        }
-    }
-
-    func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
-                   proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
-        guard info.draggingSource as? NSTableView === table else { return [] }
-        tableView.setDropRow(row, dropOperation: .above)
-        return .move
-    }
-
-    func tableView(_ tableView: NSTableView, acceptDrop info: NSDraggingInfo, row: Int,
-                   dropOperation: NSTableView.DropOperation) -> Bool {
-        guard let source = info.draggingPasteboard.string(forType: Self.rowType).flatMap(Int.init),
-              names.indices.contains(source) else { return false }
+    /// Swap a language with its neighbour above (-1) or below (+1).
+    func move(_ row: Int, by step: Int) {
+        let target = row + step
+        guard names.indices.contains(row), names.indices.contains(target) else { return }
         var updated = names
-        let moved = updated.remove(at: source)
-        updated.insert(moved, at: source < row ? row - 1 : row)
-        guard updated != names else { return false }
+        updated.swapAt(row, target)
         commit(updated)
-        return true
     }
 
     // MARK: Adding
@@ -229,14 +183,13 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     }
 }
 
-/// One favorite: drag handle, badge, own name with the English name beside it, and a remove button.
+/// One favorite: badge, own name with the English name beside it, then move up, move down, remove.
 private final class LanguageRow: NSView {
     var onRemove: (() -> Void)?
+    var onMove: ((Int) -> Void)?
 
-    init(language: LanguageListEditor.Language, canRemove: Bool, isLast: Bool) {
+    init(language: LanguageListEditor.Language, isFirst: Bool, isLast: Bool, canRemove: Bool) {
         super.init(frame: .zero)
-        let grip = Design.symbol("line.3.horizontal", size: 11, color: .tertiaryLabelColor)
-        grip.toolTip = "Drag to reorder"
         let badge = AppearanceView()
         badge.radius = 5
         badge.fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -248,16 +201,14 @@ private final class LanguageRow: NSView {
         badge.translatesAutoresizingMaskIntoConstraints = false
         let native = Design.label(language.native, size: 13)
         let english = Design.label(language.native == language.name ? "" : language.name, size: 12, color: .secondaryLabelColor)
-        let remove = NSButton(image: NSImage(systemSymbolName: "minus.circle", accessibilityDescription: "Remove \(language.name)")!,
-                              target: nil, action: nil)
-        remove.isBordered = false
-        remove.contentTintColor = .secondaryLabelColor
-        remove.isEnabled = canRemove
+        let up = Self.button("chevron.up", "Move \(language.name) up", enabled: !isFirst, action: #selector(moveRowUp), target: self)
+        let down = Self.button("chevron.down", "Move \(language.name) down", enabled: !isLast, action: #selector(moveRowDown), target: self)
+        let remove = Self.button("minus.circle", "Remove \(language.name)", enabled: canRemove, action: #selector(removeTapped), target: self)
         remove.toolTip = canRemove ? "Remove" : "Keep at least one language"
-        remove.target = self
-        remove.action = #selector(removeTapped)
-        let row = Design.hstack([grip, badge, native, english, Design.spacer(), remove], spacing: 10)
+        let controls = Design.hstack([up, down], spacing: 2)
+        let row = Design.hstack([badge, native, english, Design.spacer(), controls, remove], spacing: 10)
         row.setCustomSpacing(8, after: native)
+        row.setCustomSpacing(14, after: controls)
         row.translatesAutoresizingMaskIntoConstraints = false
         addSubview(row)
         var constraints = [
@@ -283,11 +234,23 @@ private final class LanguageRow: NSView {
             ]
         }
         NSLayoutConstraint.activate(constraints)
-        setAccessibilityElement(true)
-        setAccessibilityLabel(language.native == language.name ? language.name : "\(language.native), \(language.name)")
     }
 
-    required init?(coder: NSCoder) { fatalError("Use init(language:canRemove:isLast:)") }
+    required init?(coder: NSCoder) { fatalError("Use init(language:isFirst:isLast:canRemove:)") }
 
+    /// A small borderless icon button; a disabled one fades, so the first row has no ▲ to press.
+    private static func button(_ symbol: String, _ label: String, enabled: Bool, action: Selector, target: AnyObject) -> NSButton {
+        let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: target, action: action)
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+        button.isEnabled = enabled
+        button.toolTip = label
+        button.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        return button
+    }
+
+    @objc private func moveRowUp() { onMove?(-1) }
+    @objc private func moveRowDown() { onMove?(1) }
     @objc private func removeTapped() { onRemove?() }
 }
