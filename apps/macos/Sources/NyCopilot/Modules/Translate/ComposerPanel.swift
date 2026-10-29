@@ -1,7 +1,7 @@
 import AppKit
 
-/// The floating card you type into. It sits over the captured field, grows with the text,
-/// and keeps failures inline so a retry is one keystroke away.
+/// The floating composer: a bare input card, and beside it a tiny language chip that opens into a
+/// short list when clicked. The card grows with the text and shows failures only when there is one.
 @MainActor
 final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDelegate {
     /// `paste` replaces text in the captured field; `copy` puts the result on the clipboard.
@@ -15,23 +15,22 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
 
     private let editor = ComposerTextView()
     private let scroll = NSScrollView()
-    private let languageButton = PillButton()
-    private let progress = NSProgressIndicator()
-    private var accessory: NSStackView!
+    private let card = NSVisualEffectView.roundedMaterial(.popover, radius: 14)
+    private let chip = LanguageChip()
     private let errorIcon = Design.symbol("exclamationmark.triangle.fill", size: 11, color: .systemOrange)
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let errorAction = NSButton()
     private var errorRow: NSStackView!
     private var errorHandler: (() -> Void)?
     private var editorHeight: NSLayoutConstraint!
+    private var cardWidth: NSLayoutConstraint!
     private var mode: Mode = .paste
-    private var languages: [String] = []
     private static let (horizontalPadding, verticalPadding, lineHeight): (CGFloat, CGFloat, CGFloat) = (16, 12, 24)
+    /// Space between the card and the chip; the chip centres on the card's first line.
+    private static let (chipGap, chipTop): (CGFloat, CGFloat) = (8, 9)
 
-    /// One quiet row: what you type, and the target language at the trailing edge. Return translates,
-    /// Shift+Return adds a line, Esc cancels; errors appear underneath only when there is one.
     init() {
-        let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 48),
+        let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 478, height: 48),
                                    styleMask: [.borderless], backing: .buffered, defer: false)
         panel.title = "NyCopilot"
         panel.level = .floating
@@ -45,16 +44,17 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         super.init(window: panel)
         panel.delegate = self
 
-        // The native material supplies blur; a hairline that traces the mask keeps the edge crisp.
-        let material = NSVisualEffectView.roundedMaterial(.popover, radius: 14)
-        panel.contentView = material
+        let container = TopAnchoredView()
+        panel.contentView = container
+        card.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(card)
         let outline = AppearanceView()
         outline.radius = 14
         outline.continuousCorners = false
         outline.border = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.1) }
         outline.translatesAutoresizingMaskIntoConstraints = false
-        material.addSubview(outline)
+        card.addSubview(outline)
 
         editor.font = .systemFont(ofSize: 15)
         editor.textColor = .labelColor
@@ -71,11 +71,13 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = false
         editor.textContainer?.widthTracksTextView = true
-        editor.frame = NSRect(x: 0, y: 0, width: 340, height: Self.lineHeight)
+        editor.frame = NSRect(x: 0, y: 0, width: 408, height: Self.lineHeight)
         editor.delegate = self
         editor.setAccessibilityLabel("Text to translate")
         editor.onSubmit = { [weak self] in self?.submit() }
         editor.onCancel = { [weak self] in self?.cancel() }
+        editor.onActivity = { [weak self] in self?.chip.collapse() }
+        editor.onActivityConsumesEscape = { [weak self] in self?.chip.isExpanded == true }
         scroll.documentView = editor
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -83,17 +85,6 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         scroll.drawsBackground = false
         scroll.contentView.drawsBackground = false
         scroll.borderType = .noBorder
-
-        languageButton.symbolName = ""
-        languageButton.isQuiet = true
-        languageButton.toolTip = "Target language — click to change"
-        languageButton.onPress = { [weak self] in self?.showLanguageMenu() }
-        progress.style = .spinning
-        progress.controlSize = .small
-        progress.isDisplayedWhenStopped = false
-        accessory = Design.hstack([progress, languageButton], spacing: 4)
-        accessory.setContentHuggingPriority(.required, for: .horizontal)
-        accessory.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         errorLabel.font = .systemFont(ofSize: 12)
         errorLabel.textColor = .secondaryLabelColor
@@ -108,25 +99,39 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         errorRow.alignment = .firstBaseline
         errorRow.isHidden = true
 
-        let row = Design.hstack([scroll, accessory], spacing: 10)
-        row.alignment = .top
-        let root = Design.vstack([row, errorRow], spacing: 8)
+        let root = Design.vstack([scroll, errorRow], spacing: 8)
         root.translatesAutoresizingMaskIntoConstraints = false
-        material.addSubview(root)
+        card.addSubview(root)
+
+        chip.translatesAutoresizingMaskIntoConstraints = false
+        chip.onChoose = { [weak self] language in
+            self?.onChooseLanguage?(language)
+            self?.window?.makeFirstResponder(self?.editor)
+        }
+        chip.onOther = { [weak self] in self?.onOtherLanguage?() }
+        chip.onResize = { [weak self] in self?.fitWindow() }
+        container.addSubview(chip)
+
         editorHeight = scroll.heightAnchor.constraint(equalToConstant: Self.lineHeight)
+        cardWidth = card.widthAnchor.constraint(equalToConstant: 440)
         NSLayoutConstraint.activate([
-            outline.leadingAnchor.constraint(equalTo: material.leadingAnchor),
-            outline.trailingAnchor.constraint(equalTo: material.trailingAnchor),
-            outline.topAnchor.constraint(equalTo: material.topAnchor),
-            outline.bottomAnchor.constraint(equalTo: material.bottomAnchor),
-            root.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: Self.horizontalPadding),
-            root.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -Self.horizontalPadding + 4),
-            root.topAnchor.constraint(equalTo: material.topAnchor, constant: Self.verticalPadding),
-            root.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -Self.verticalPadding),
-            row.widthAnchor.constraint(equalTo: root.widthAnchor),
+            card.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            card.topAnchor.constraint(equalTo: container.topAnchor),
+            cardWidth,
+            outline.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            outline.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            outline.topAnchor.constraint(equalTo: card.topAnchor),
+            outline.bottomAnchor.constraint(equalTo: card.bottomAnchor),
+            root.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: Self.horizontalPadding),
+            root.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Self.horizontalPadding),
+            root.topAnchor.constraint(equalTo: card.topAnchor, constant: Self.verticalPadding),
+            root.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Self.verticalPadding),
+            scroll.widthAnchor.constraint(equalTo: root.widthAnchor),
             errorRow.widthAnchor.constraint(equalTo: root.widthAnchor),
-            accessory.heightAnchor.constraint(equalToConstant: Self.lineHeight),
-            editorHeight
+            editorHeight,
+            // The chip keeps its right edge and top fixed, so it opens down and to the left.
+            chip.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            chip.topAnchor.constraint(equalTo: container.topAnchor, constant: Self.chipTop)
         ])
     }
 
@@ -138,7 +143,8 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     func present(over axFrame: CGRect?, mode: Mode, language: String, languages: [String]) {
         guard let window else { return }
         self.mode = mode
-        self.languages = languages
+        chip.collapse(animated: false)
+        chip.languages = languages
         editor.string = ""
         editor.undoManager?.removeAllActions()
         editor.placeholder = mode == .paste ? "Type to translate…" : "Type to translate and copy…"
@@ -151,11 +157,14 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
             let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-            let width = min(max(anchor?.width ?? 440, 380), min(520, visible.width))
-            let x = max(visible.minX, min(anchor?.minX ?? point.x - width / 2, visible.maxX - width))
+            let side = Self.chipGap + LanguageChip.collapsedSize
+            let width = min(max(anchor?.width ?? 440, 360), min(500, visible.width - side))
+            cardWidth.constant = width
+            errorLabel.preferredMaxLayoutWidth = width - Self.horizontalPadding * 2 - 120
+            let x = max(visible.minX, min(anchor?.minX ?? point.x - width / 2, visible.maxX - width - side))
             let top = anchor.map { $0.maxY + 6 } ?? point.y + 12
             let y = max(visible.minY, min(top - 48, visible.maxY - 48))
-            window.setFrame(NSRect(x: x, y: y, width: width, height: 48), display: false)
+            window.setFrame(NSRect(x: x, y: y, width: width + side, height: 48), display: false)
         }
         resizeToContent()
         NSApp.activate(ignoringOtherApps: true)
@@ -170,18 +179,15 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         window?.makeKeyAndOrderFront(nil)
     }
 
-    func setLanguage(_ language: String) {
-        languageButton.title = language
-        languageButton.setAccessibilityLabel("Target language: \(language)")
-    }
+    func setLanguage(_ language: String) { chip.language = language }
 
-    /// Pause editing while the model works; the text dims and a spinner sits beside the language.
+    /// Pause editing while the model works; the text dims and the chip shows a spinner.
     func showLoading(language: String) {
+        chip.collapse()
         editor.isEditable = false
         editor.textColor = .secondaryLabelColor
-        languageButton.isEnabled = false
+        chip.isBusy = true
         hideError()
-        progress.startAnimation(nil)
         resizeToContent()
     }
 
@@ -204,8 +210,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private func setIdle() {
         editor.isEditable = true
         editor.textColor = .labelColor
-        languageButton.isEnabled = true
-        progress.stopAnimation(nil)
+        chip.isBusy = false
     }
 
     private func hideError() {
@@ -219,10 +224,10 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         resizeToContent()
     }
 
-    /// Keep the top edge fixed while the card grows with wrapped text, up to a scrolling limit.
+    /// Grow the card with wrapped text, up to a scrolling limit, keeping its top edge fixed.
     private func resizeToContent() {
-        guard let window, let container = editor.textContainer, let layout = editor.layoutManager else { return }
-        let width = window.frame.width - Self.horizontalPadding * 2 + 4 - accessory.fittingSize.width - 10
+        guard let container = editor.textContainer, let layout = editor.layoutManager else { return }
+        let width = cardWidth.constant - Self.horizontalPadding * 2
         container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         editor.setFrameSize(NSSize(width: width, height: editor.frame.height))
         layout.ensureLayout(for: container)
@@ -232,48 +237,31 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         let visibleTextHeight = min(max(textHeight, Self.lineHeight), 200)
         editorHeight.constant = visibleTextHeight
         editor.setFrameSize(NSSize(width: width, height: max(textHeight, visibleTextHeight)))
+        fitWindow()
+    }
+
+    /// The window wraps the card and the chip (which may be open); its top edge never moves.
+    private func fitWindow() {
+        guard let window else { return }
         window.contentView?.layoutSubtreeIfNeeded()
-        let height = (window.contentView?.fittingSize.height ?? 48)
+        let height = max(card.fittingSize.height, Self.chipTop + chip.currentSize.height)
         var frame = window.frame
         frame.origin.y = frame.maxY - height
         frame.size.height = height
+        frame.size.width = cardWidth.constant + Self.chipGap + LanguageChip.collapsedSize
         if let screen = window.screen {
             frame.origin.y = max(screen.visibleFrame.minY + 10, min(frame.minY, screen.visibleFrame.maxY - height - 10))
         }
         window.setFrame(frame, display: true)
-        // The shadow follows the mask's shape only once it is recomputed for the new size.
+        // The shadow follows the masks' shapes only once it is recomputed for the new size.
         window.invalidateShadow()
     }
 
-    private func showLanguageMenu() {
-        let menu = NSMenu()
-        let current = languageButton.title
-        var list = languages
-        if !list.contains(current) { list.insert(current, at: 0) }
-        for language in list {
-            let item = NSMenuItem(title: language, action: #selector(chooseLanguage(_:)), keyEquivalent: "")
-            item.target = self
-            item.state = language == current ? .on : .off
-            menu.addItem(item)
-        }
-        menu.addItem(.separator())
-        let other = NSMenuItem(title: "Other Language…", action: #selector(otherLanguage), keyEquivalent: "")
-        other.target = self
-        menu.addItem(other)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: languageButton.bounds.maxY + 4), in: languageButton)
-    }
-
-    @objc private func chooseLanguage(_ sender: NSMenuItem) {
-        setLanguage(sender.title)
-        onChooseLanguage?(sender.title)
-        window?.makeFirstResponder(editor)
-    }
-
-    @objc private func otherLanguage() { onOtherLanguage?() }
     @objc private func performErrorAction() { errorHandler?() }
 
     @objc private func submit() {
         guard editor.isEditable else { return }
+        chip.collapse()
         onSubmit?(editor.string)
     }
 
@@ -284,12 +272,20 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         onCancel?()
     }
 
+    func windowDidResignKey(_ notification: Notification) { chip.collapse() }
+
     func windowWillClose(_ notification: Notification) {
-        progress.stopAnimation(nil)
+        chip.isBusy = false
+        chip.collapse(animated: false)
         editor.string = ""
         editor.undoManager?.removeAllActions()
         onClose?()
     }
+}
+
+/// Lays out from the top-left, so growing the window downward never moves the card.
+private final class TopAnchoredView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 /// Borderless panels must explicitly accept keyboard focus for native editing and input methods.
@@ -304,6 +300,10 @@ private final class ComposerWindow: NSPanel {
 private final class ComposerTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
+    /// Typing or clicking in the text means the user is done with anything else, like the language list.
+    var onActivity: (() -> Void)?
+    /// When this returns true (the language list is open), Esc closes the list instead of the composer.
+    var onActivityConsumesEscape: (() -> Bool)?
     var placeholder = "" { didSet { needsDisplay = true } }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -319,72 +319,19 @@ private final class ComposerTextView: NSTextView {
     /// IME candidate confirmation wins over submission; Shift+Enter inserts a newline.
     override func keyDown(with event: NSEvent) {
         if !hasMarkedText() {
+            if event.keyCode == 53, let onActivity, onActivityConsumesEscape?() == true { onActivity(); return }
             if event.keyCode == 53 { onCancel?(); return }
             if event.keyCode == 36 || event.keyCode == 76 {
                 if event.modifierFlags.contains(.shift) { insertNewline(nil) } else { onSubmit?() }
                 return
             }
         }
+        onActivity?()
         super.keyDown(with: event)
     }
-}
 
-/// A compact rounded button with an icon, a title, and a disclosure chevron.
-final class PillButton: AppearanceView {
-    var onPress: (() -> Void)?
-    var symbolName = "" {
-        didSet {
-            icon.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-            icon.isHidden = symbolName.isEmpty
-        }
-    }
-    /// Quiet buttons show a background only while hovered.
-    var isQuiet = false { didSet { updateFill() } }
-    var title: String {
-        get { label.stringValue }
-        set { label.stringValue = newValue }
-    }
-    var isEnabled = true { didSet { alphaValue = isEnabled ? 1 : 0.5 } }
-
-    private let icon = Design.symbol("globe", size: 11, weight: .medium)
-    private let label = Design.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
-    private let chevron = Design.symbol("chevron.up.chevron.down", size: 8, weight: .semibold, color: .tertiaryLabelColor)
-    private var hovering = false { didSet { updateFill() } }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        radius = 6
-        let row = Design.hstack([icon, label, chevron], spacing: 5)
-        row.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(row)
-        NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
-            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
-            row.centerYAnchor.constraint(equalTo: centerYAnchor),
-            heightAnchor.constraint(equalToConstant: 24)
-        ])
-        updateFill()
-        setAccessibilityRole(.popUpButton)
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
-    }
-
-    override func mouseEntered(with event: NSEvent) { hovering = true }
-    override func mouseExited(with event: NSEvent) { hovering = false }
-    override func mouseDown(with event: NSEvent) { if isEnabled { onPress?() } }
-    override func accessibilityPerformPress() -> Bool { onPress?(); return true }
-
-    private func updateFill() {
-        fill = NSColor(name: nil) { [hovering, isQuiet] appearance in
-            let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            let resting: CGFloat = isQuiet ? 0 : (dark ? 0.07 : 0.045)
-            return (dark ? NSColor.white : NSColor.black).withAlphaComponent(hovering ? (dark ? 0.12 : 0.08) : resting)
-        }
+    override func mouseDown(with event: NSEvent) {
+        onActivity?()
+        super.mouseDown(with: event)
     }
 }
