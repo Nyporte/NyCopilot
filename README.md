@@ -58,6 +58,8 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
   app. Return confirms an input-method candidate first, and nothing is ever submitted in the target app.
 - **Settings → Translate → Favorite languages** sets which languages Tab steps through, in order.
   Any language name works, such as "Brazilian Portuguese" or "formal Japanese".
+- **Settings → Translate → Trim spaces and line breaks** (on by default) removes whitespace and
+  blank lines a model adds at the start or end of a translation; line breaks inside are kept.
 - **Settings → Translate → Instructions** lets you rewrite what the model is told, for example to
   keep a casual tone, preserve product names, or always use British spelling. `{language}` is
   replaced with the target language. Your text is always sent separately as the user message.

@@ -88,6 +88,12 @@ pub fn validate_language(language: &str) -> Result<()> {
     Ok(())
 }
 
+/// Models often wrap a reply in stray blank lines or spaces; with `trim` on, those are removed from
+/// both ends, while whitespace and line breaks inside the text are kept exactly.
+pub fn finish(reply: String, trim: bool) -> String {
+    if trim { reply.trim().to_string() } else { reply }
+}
+
 /// Custom instructions may be long and multi-line, but never empty.
 pub fn validate_instructions(instructions: &str) -> Result<()> {
     if instructions.trim().is_empty() || instructions.chars().count() > MAX_INSTRUCTIONS_CHARS {
@@ -117,6 +123,8 @@ impl Module for TranslateModule {
                                  "Language that text is translated into."),
                 SettingSpec::new("translate.instructions", json!(DEFAULT_INSTRUCTIONS), Scope::Synced,
                                  "System instructions for the model; {language} becomes the target language."),
+                SettingSpec::new("translate.trim_whitespace", json!(true), Scope::Synced,
+                                 "Remove spaces, tabs, and line breaks from the start and end of each translation."),
                 SettingSpec::new("translate.favorite_languages", json!(DEFAULT_FAVORITES), Scope::Synced,
                                  "Languages that Tab steps through in the composer, in order."),
             ],
@@ -143,7 +151,8 @@ impl Module for TranslateModule {
                 let language = language.trim().to_string();
                 validate_language(&language)?;
                 let instructions = core.setting::<String>("translate.instructions")?;
-                let text = ny_llm::complete(&prompt(&p.text, &language, &instructions), &ProviderConfig::from_core(core)?, &p.api_key)?;
+                let reply = ny_llm::complete(&prompt(&p.text, &language, &instructions), &ProviderConfig::from_core(core)?, &p.api_key)?;
+                let text = finish(reply, core.setting("translate.trim_whitespace")?);
                 request.check()?;
                 // Saved before the client attempts to paste, so a failed paste never loses the result.
                 let record = core.insert_record(HISTORY, json!({ "text": text, "target_language": language }),
@@ -179,9 +188,11 @@ impl Module for TranslateModule {
     fn validate_setting(&self, key: &str, value: &Value) -> Result<()> {
         let text = value.as_str().unwrap_or_default();
         match key {
+            "translate.target_language" => validate_language(text),
             "translate.instructions" => validate_instructions(text),
             "translate.favorite_languages" => validate_favorites(value),
-            _ => validate_language(text),
+            // Booleans such as trim_whitespace are already type-checked against their default.
+            _ => Ok(()),
         }
     }
 }
@@ -263,6 +274,37 @@ mod tests {
         }
         core.call("settings.set", json!({ "key": "translate.target_language", "value": "Japanese" })).unwrap();
         assert_eq!(core.setting::<String>("translate.target_language").unwrap(), "Japanese");
+    }
+
+    #[test]
+    fn replies_are_trimmed_at_both_ends_unless_turned_off() {
+        assert_eq!(finish("\n\n  Hello,\n\n  world!  \n\t".into(), true), "Hello,\n\n  world!");
+        assert_eq!(finish("\u{3000}你好\u{3000}\n".into(), true), "你好");
+        assert_eq!(finish("  kept  \n".into(), false), "  kept  \n");
+    }
+
+    #[test]
+    fn run_applies_the_trim_setting_to_history_and_result() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let mut stream = stream.unwrap();
+                let mut buffer = [0u8; 65536];
+                let _ = stream.read(&mut buffer);
+                let body = r#"{"choices":[{"message":{"content":"\n  Bonjour  \n"},"finish_reason":"stop"}]}"#;
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            }
+        });
+        let core = core();
+        core.call("settings.set", json!({ "key": "llm.endpoint", "value": format!("http://127.0.0.1:{port}/v1/chat/completions") })).unwrap();
+        core.call("settings.set", json!({ "key": "llm.model", "value": "test" })).unwrap();
+        let trimmed = core.call("translate.run", json!({ "text": "Hello" })).unwrap();
+        assert_eq!(trimmed["text"], "Bonjour");
+        assert_eq!(trimmed["record"]["data"]["text"], "Bonjour");
+        core.call("settings.set", json!({ "key": "translate.trim_whitespace", "value": false })).unwrap();
+        assert_eq!(core.call("translate.run", json!({ "text": "Hello" })).unwrap()["text"], "\n  Bonjour  \n");
     }
 
     #[test]

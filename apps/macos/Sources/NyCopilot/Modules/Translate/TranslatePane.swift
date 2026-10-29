@@ -9,6 +9,7 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
     private let favorites = NSTokenField()
     private var suggestions: [(name: String, native: String)] = []
     private var savedFavorites: [String] = []
+    private let trimSwitch = NSSwitch()
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private let instructions = NSTextView()
     private let instructionsStatus = Design.label("", size: 11.5, color: .secondaryLabelColor)
@@ -35,6 +36,8 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
         favorites.placeholderString = "English, Japanese…"
         favorites.cell?.wraps = true
         favorites.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        trimSwitch.target = self
+        trimSwitch.action = #selector(toggleTrim)
         message.isHidden = true
 
         let open = Design.button("Open History", target: self, action: #selector(showHistory))
@@ -49,6 +52,10 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
                         footer: "In the translate box, Tab steps through these in order and Shift+Tab goes back. Type any language, such as “Brazilian Portuguese” or “formal Japanese”.",
                         rows: [FormRow("Favorite languages", accessory: favorites)]),
             message,
+            FormSection("Result", rows: [
+                FormRow("Trim spaces and line breaks", subtitle: "Removes them from the start and end of each translation.",
+                        accessory: trimSwitch)
+            ]),
             FormSection("Instructions",
                         footer: "Sent to the model with every translation. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
                         rows: [makeEditor()]),
@@ -65,6 +72,7 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
     override func paneWillAppear() {
         savedFavorites = (try? services.core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? []
         favorites.objectValue = savedFavorites
+        trimSwitch.state = services.core.setting("translate.trim_whitespace", default: true) ? .on : .off
         message.isHidden = true
         loadInstructions()
         shortcuts.refresh()
@@ -187,6 +195,12 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
             message.stringValue = error.localizedDescription
             message.isHidden = false
             favorites.objectValue = savedFavorites
+        }
+    }
+
+    @objc private func toggleTrim() {
+        do { try services.core.setSetting("translate.trim_whitespace", trimSwitch.state == .on) } catch {
+            trimSwitch.state = trimSwitch.state == .on ? .off : .on
         }
     }
 

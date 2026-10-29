@@ -78,7 +78,8 @@ Window rectangles are `{x, y, w, h}` in points with a top-left origin and y grow
 
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
 `translate.target_language` (synced, `"English"`), `translate.favorite_languages` (synced, 1–8
-distinct names, default English, Simplified Chinese, Japanese), and `translate.instructions` (synced; the
+distinct names, default English, Simplified Chinese, Japanese), `translate.trim_whitespace` (synced,
+`true`: trims leading and trailing whitespace from results), and `translate.instructions` (synced; the
 system message for translations, at most 8,000 characters, where `{language}` is replaced with the
 target language; `settings.reset` restores the built-in text), `windows.gap` (synced, `0`, 0–60
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and
