@@ -32,8 +32,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private var scrollerObserver: NSObjectProtocol?
     private static let (horizontalPadding, verticalPadding, lineHeight): (CGFloat, CGFloat, CGFloat) = (16, 12, 24)
     private static let maximumTextHeight: CGFloat = 200
-    /// Room left after the last glyph on a line, so wide glyphs and their overhang never touch the clip.
-    private static let edgeMargin: CGFloat = 2
+    /// A lane at the right of the scrolling area that text never enters: the floating scroller
+    /// lives there instead of over the last characters, and wide glyphs never touch the clip.
+    private static let scrollerLane: CGFloat = 14
 
     init() {
         let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 48),
@@ -123,7 +124,8 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         errorRow.isHidden = true
 
         // The language label is its own column on the right, the full height of the text.
-        let row = Design.hstack([scroll, languageLabel], spacing: 12)
+        // The scroller lane sits in what used to be the gap before the label, so text keeps its width.
+        let row = Design.hstack([scroll, languageLabel], spacing: 4)
         row.alignment = .top
         let root = Design.vstack([row, errorRow], spacing: 8)
         root.translatesAutoresizingMaskIntoConstraints = false
@@ -262,7 +264,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         window.contentView?.layoutSubtreeIfNeeded()
         let width = max(scroll.contentSize.width, 1)
         // Only a real change of width re-wraps; the width is constant while typing.
-        let wrapWidth = max(width - Self.edgeMargin, 1)
+        let wrapWidth = max(width - Self.scrollerLane, 1)
         if container.containerSize.width != wrapWidth {
             container.containerSize = NSSize(width: wrapWidth, height: .greatestFiniteMagnitude)
         }
