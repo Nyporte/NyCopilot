@@ -83,6 +83,11 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         editor.onSubmit = { [weak self] in self?.submit() }
         editor.onCancel = { [weak self] in self?.cancel() }
         editor.onTab = { [weak self] step in self?.cycle(step) }
+        // Grow with uncommitted input-method text too, not only once it is confirmed.
+        editor.onMarkedTextChange = { [weak self] in
+            self?.editor.needsDisplay = true
+            self?.resizeToContent()
+        }
         scroll.documentView = editor
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -380,6 +385,9 @@ private final class ComposerTextView: NSTextView {
     var onCancel: (() -> Void)?
     /// Tab steps forward through the favorite languages, Shift+Tab back.
     var onTab: ((Int) -> Void)?
+    /// Input-method composition (marked text) changes the text without the usual text-did-change
+    /// notification, which only arrives once the candidate is confirmed.
+    var onMarkedTextChange: (() -> Void)?
     var placeholder = "" { didSet { needsDisplay = true } }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -390,6 +398,16 @@ private final class ComposerTextView: NSTextView {
             .foregroundColor: NSColor.placeholderTextColor
         ]
         (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width, y: textContainerInset.height), withAttributes: attributes)
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        onMarkedTextChange?()
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        onMarkedTextChange?()
     }
 
     /// IME candidate confirmation wins over submission; Shift+Enter inserts a newline.
