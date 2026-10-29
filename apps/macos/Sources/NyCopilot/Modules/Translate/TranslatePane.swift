@@ -2,13 +2,11 @@ import AppKit
 
 /// Translate's Settings tab: favorite languages, model instructions, shortcuts, and history.
 @MainActor
-final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegate {
+final class TranslatePane: SettingsPane, NSTextViewDelegate {
     private let services: CopilotServices
     private let openHistory: () -> Void
     /// Tokens hold language names (English); they display in each language's own script.
-    private let favorites = NSTokenField()
-    private var suggestions: [(name: String, native: String)] = []
-    private var savedFavorites: [String] = []
+    private let favorites = LanguageListEditor()
     private let trimSwitch = NSSwitch()
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private let instructions = NSTextView()
@@ -28,14 +26,11 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
     required init?(coder: NSCoder) { fatalError("Use init(services:openHistory:)") }
 
     override func makeSections() -> [NSView] {
-        struct Suggestion: Decodable { let name: String; let native: String }
-        suggestions = ((try? services.core.call("translate.languages", as: [Suggestion].self)) ?? []).map { ($0.name, $0.native) }
-        favorites.delegate = self
-        favorites.tokenStyle = .rounded
-        favorites.completionDelay = 0
-        favorites.placeholderString = "English, Japanese…"
-        favorites.cell?.wraps = true
-        favorites.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        favorites.onChange = { [weak self] names in
+            guard let self else { return nil }
+            do { try services.core.setSetting("translate.favorite_languages", names); return nil }
+            catch { return error.localizedDescription }
+        }
         trimSwitch.target = self
         trimSwitch.action = #selector(toggleTrim)
         message.isHidden = true
@@ -48,9 +43,9 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
         saveButton.action = #selector(saveInstructions)
         let instructionsBar = Design.hstack([instructionsStatus, Design.spacer(), restoreButton, saveButton])
         return [
-            FormSection("Languages",
-                        footer: "In the translate box, Tab steps through these in order and Shift+Tab goes back. Type any language, such as “Brazilian Portuguese” or “formal Japanese”.",
-                        rows: [FormRow("Favorite languages", accessory: favorites)]),
+            FormSection("Favorite Languages",
+                        footer: "In the translate box, Tab steps through these in this order and Shift+Tab goes back. Drag to reorder.",
+                        rows: [favorites]),
             message,
             FormSection("Result", rows: [
                 FormRow("Trim spaces and line breaks", subtitle: "Removes them from the start and end of each translation.",
@@ -70,8 +65,14 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
     }
 
     override func paneWillAppear() {
-        savedFavorites = (try? services.core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? []
-        favorites.objectValue = savedFavorites
+        let core = services.core
+        favorites.load((try? core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? [],
+                       suggestions: (try? core.call("translate.languages", as: [LanguageListEditor.Language].self)) ?? [],
+                       describe: { name in
+                           struct Shown: Decodable { let native: String; let code: String }
+                           let shown = try? core.call("translate.native_name", ["language": name], as: Shown.self)
+                           return .init(name: name, native: shown?.native ?? name, code: shown?.code ?? String(name.prefix(2)).uppercased())
+                       })
         trimSwitch.state = services.core.setting("translate.trim_whitespace", default: true) ? .on : .off
         message.isHidden = true
         loadInstructions()
@@ -164,38 +165,6 @@ final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegat
               let settings = translate["settings"] as? [[String: Any]],
               let spec = settings.first(where: { $0["key"] as? String == "translate.instructions" }) else { return "" }
         return spec["default"] as? String ?? ""
-    }
-
-    func tokenField(_ tokenField: NSTokenField, completionsForSubstring substring: String,
-                    indexOfToken tokenIndex: Int, indexOfSelectedItem selectedIndex: UnsafeMutablePointer<Int>?) -> [Any]? {
-        let query = substring.lowercased()
-        return suggestions.filter { $0.name.lowercased().hasPrefix(query) || $0.native.lowercased().hasPrefix(query) }.map(\.name)
-    }
-
-    func tokenField(_ tokenField: NSTokenField, displayStringForRepresentedObject representedObject: Any) -> String? {
-        guard let name = representedObject as? String else { return nil }
-        return suggestions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.native ?? name
-    }
-
-    func tokenField(_ tokenField: NSTokenField, representedObjectForEditing editingString: String) -> Any? {
-        let trimmed = editingString.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Typing a language's own name (日本語) stores its English name, like picking a suggestion.
-        return suggestions.first { $0.native == trimmed || $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }?.name ?? trimmed
-    }
-
-    func controlTextDidEndEditing(_ obj: Notification) {
-        guard (obj.object as? NSTokenField) === favorites else { return }
-        let names = (favorites.objectValue as? [Any] ?? []).compactMap { $0 as? String }.filter { !$0.isEmpty }
-        guard names != savedFavorites else { return }
-        do {
-            try services.core.setSetting("translate.favorite_languages", names)
-            savedFavorites = names
-            message.isHidden = true
-        } catch {
-            message.stringValue = error.localizedDescription
-            message.isHidden = false
-            favorites.objectValue = savedFavorites
-        }
     }
 
     @objc private func toggleTrim() {

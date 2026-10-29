@@ -56,8 +56,9 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
   languages and **Shift+Tab** goes back; the choice is remembered. **Return** translates and
   replaces your selection, **Shift+Return** adds a line, **Esc** cancels and returns you to your
   app. Return confirms an input-method candidate first, and nothing is ever submitted in the target app.
-- **Settings → Translate → Favorite languages** sets which languages Tab steps through, in order.
-  Any language name works, such as "Brazilian Portuguese" or "formal Japanese".
+- **Settings → Translate → Favorite Languages** lists the languages Tab steps through (up to 8):
+  drag rows to reorder, − to remove, **Add Language** to pick from the list or type any name, such
+  as "Brazilian Portuguese" or "formal Japanese".
 - **Settings → Translate → Trim spaces and line breaks** (on by default) removes whitespace and
   blank lines a model adds at the start or end of a translation; line breaks inside are kept.
 - **Settings → Translate → Instructions** lets you rewrite what the model is told, for example to

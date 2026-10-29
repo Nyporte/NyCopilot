@@ -336,13 +336,14 @@ private final class TopAnchoredView: NSView {
 
 /// The target language as a pair of small icons: a badge with its short code (EN, 中, 日) and the ⇥
 /// key that steps to the next one. The badge has a fixed size, so switching never moves the text.
-/// While translating, a small spinner takes the key cap's place.
+/// While translating, a small spinner replaces the arrow inside the key's box, so the column's width
+/// (and with it every line of text) stays exactly the same.
 private final class TargetLanguageLabel: NSStackView {
     var onClick: (() -> Void)?
     var onChange: (() -> Void)?
     var isBusy = false {
         didSet {
-            key.isHidden = isBusy
+            arrow.isHidden = isBusy
             spinner.isHidden = !isBusy
             isBusy ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
             code.textColor = isBusy ? .tertiaryLabelColor : .secondaryLabelColor
@@ -374,11 +375,12 @@ private final class TargetLanguageLabel: NSStackView {
         }
         code.alignment = .center
         spinner.style = .spinning
-        spinner.controlSize = .small
+        spinner.controlSize = .mini
         spinner.isHidden = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        key.addSubview(spinner)
         addArrangedSubview(badge)
         addArrangedSubview(key)
-        addArrangedSubview(spinner)
         // Letters are centered on their visible height (cap height), not the font's line box.
         codeBaseline = code.firstBaselineAnchor.constraint(equalTo: badge.centerYAnchor)
         NSLayoutConstraint.activate([
@@ -389,7 +391,9 @@ private final class TargetLanguageLabel: NSStackView {
             code.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
             codeBaseline,
             arrow.centerXAnchor.constraint(equalTo: key.centerXAnchor),
-            arrow.centerYAnchor.constraint(equalTo: key.centerYAnchor)
+            arrow.centerYAnchor.constraint(equalTo: key.centerYAnchor),
+            spinner.centerXAnchor.constraint(equalTo: key.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: key.centerYAnchor)
         ])
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)

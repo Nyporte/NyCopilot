@@ -188,7 +188,9 @@ final class FormRow: NSView {
         let labels = Design.vstack([titleLabel] + (subtitleLabel.map { [$0] } ?? []), spacing: 2)
         labels.setContentHuggingPriority(.defaultLow, for: .horizontal)
         labels.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let row = Design.hstack([labels] + (accessory.map { [$0] } ?? []), spacing: 16)
+        // The spacer takes the slack, so the control always sits at the right edge, however long
+        // or short the title and subtitle are.
+        let row = Design.hstack([labels, Design.spacer()] + (accessory.map { [$0] } ?? []), spacing: 16)
         row.translatesAutoresizingMaskIntoConstraints = false
         accessory?.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         accessory?.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
