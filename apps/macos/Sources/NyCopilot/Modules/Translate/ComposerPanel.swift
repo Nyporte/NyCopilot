@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 
 /// The floating composer: one input card with the target language as a faint label at its right
 /// edge. Tab steps through your favorite languages; failures show underneath only when there is one.
@@ -349,7 +350,11 @@ private final class TargetLanguageLabel: NSStackView {
     }
     private let badge = AppearanceView()
     private let code = Design.label("", size: 10.5, weight: .semibold, color: .secondaryLabelColor)
-    private let key = KeyCap("⇥")
+    /// The Tab key as a symbol rather than the ⇥ character: a glyph sits on its font's baseline and
+    /// line height, so it never looks centered; a symbol image centers on its actual shape.
+    private let key = AppearanceView()
+    private let arrow = Design.symbol("arrow.right.to.line", size: 8.5, weight: .bold)
+    private var codeBaseline: NSLayoutConstraint!
     private let spinner = NSProgressIndicator()
     private static let badgeSize = NSSize(width: 24, height: 18)
 
@@ -358,25 +363,33 @@ private final class TargetLanguageLabel: NSStackView {
         orientation = .horizontal
         alignment = .centerY
         spacing = 4
-        badge.radius = 5
-        badge.fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.1) : NSColor.black.withAlphaComponent(0.06) }
+        for (box, content) in [(badge, code), (key, arrow)] as [(AppearanceView, NSView)] {
+            box.radius = 5
+            box.fill = fill
+            box.translatesAutoresizingMaskIntoConstraints = false
+            content.translatesAutoresizingMaskIntoConstraints = false
+            box.addSubview(content)
+        }
         code.alignment = .center
-        code.translatesAutoresizingMaskIntoConstraints = false
-        badge.addSubview(code)
-        badge.translatesAutoresizingMaskIntoConstraints = false
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isHidden = true
         addArrangedSubview(badge)
         addArrangedSubview(key)
         addArrangedSubview(spinner)
+        // Letters are centered on their visible height (cap height), not the font's line box.
+        codeBaseline = code.firstBaselineAnchor.constraint(equalTo: badge.centerYAnchor)
         NSLayoutConstraint.activate([
             badge.widthAnchor.constraint(equalToConstant: Self.badgeSize.width),
             badge.heightAnchor.constraint(equalToConstant: Self.badgeSize.height),
+            key.widthAnchor.constraint(equalToConstant: Self.badgeSize.width - 2),
             key.heightAnchor.constraint(equalToConstant: Self.badgeSize.height),
             code.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
-            code.centerYAnchor.constraint(equalTo: badge.centerYAnchor)
+            codeBaseline,
+            arrow.centerXAnchor.constraint(equalTo: key.centerXAnchor),
+            arrow.centerYAnchor.constraint(equalTo: key.centerYAnchor)
         ])
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -394,7 +407,12 @@ private final class TargetLanguageLabel: NSStackView {
             code.stringValue = language.code
             // CJK glyphs read better a size larger than Latin letters in the same badge.
             let wide = language.code.unicodeScalars.first.map { $0.value > 0x2E80 } ?? false
-            code.font = .systemFont(ofSize: wide ? 12 : 10.5, weight: .semibold)
+            let font = NSFont.systemFont(ofSize: wide ? 12 : 10.5, weight: .semibold)
+            code.font = font
+            // Center the ink, not the line box: measure where the glyphs actually draw relative to
+            // the baseline, and put the middle of that on the badge's middle. Works for any script.
+            let line = CTLineCreateWithAttributedString(NSAttributedString(string: language.code, attributes: [.font: font]))
+            codeBaseline.constant = CTLineGetImageBounds(line, nil).midY
             onChange?()
         }
         guard animated, code.stringValue != language.code else { apply(); return }
