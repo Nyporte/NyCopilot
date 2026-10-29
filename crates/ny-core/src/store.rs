@@ -178,16 +178,17 @@ impl Store {
     }
 
     /// Replace content with a tombstone: the text is gone immediately, the deletion can still sync.
-    pub fn delete(&mut self, id: &str) -> Result<bool> {
+    /// Returns the collection the record belonged to, or `None` if there was nothing to delete.
+    pub fn delete(&mut self, id: &str) -> Result<Option<String>> {
         let tx = self.conn.transaction()?;
         let rev = Self::next_rev(&tx)?;
-        let changed = tx.execute(
+        let collection: Option<String> = tx.query_row(
             "UPDATE records SET deleted = 1, data = 'null', search = '', updated_at = ?2, origin = ?3, rev = ?4
-             WHERE id = ?1 AND deleted = 0",
-            params![id, now_millis(), self.device, rev],
-        )?;
-        tx.commit()?;
-        Ok(changed > 0)
+             WHERE id = ?1 AND deleted = 0 RETURNING collection",
+            params![id, now_millis(), self.device, rev], |r| r.get(0)).optional()?;
+        // A delete that changed nothing must not advance the revision a sync client reads.
+        if collection.is_some() { tx.commit()?; }
+        Ok(collection)
     }
 
     pub fn clear(&mut self, collection: &str) -> Result<usize> {
@@ -198,7 +199,7 @@ impl Store {
              WHERE collection = ?1 AND deleted = 0",
             params![collection, now_millis(), self.device, rev],
         )?;
-        tx.commit()?;
+        if changed > 0 { tx.commit()?; }
         Ok(changed)
     }
 
@@ -304,8 +305,12 @@ mod tests {
         let a = store.insert("t.items", json!("secret"), "secret", None).unwrap();
         store.insert("t.items", json!("other"), "other", None).unwrap();
         let before = store.revision().unwrap();
-        assert!(store.delete(&a.id).unwrap());
-        assert!(!store.delete(&a.id).unwrap());
+        assert_eq!(store.delete(&a.id).unwrap().as_deref(), Some("t.items"));
+        let after = store.revision().unwrap();
+        // Deleting again (or clearing an empty collection) changes nothing, so the revision stays.
+        assert_eq!(store.delete(&a.id).unwrap(), None);
+        assert_eq!(store.clear("t.empty").unwrap(), 0);
+        assert_eq!(store.revision().unwrap(), after);
         assert!(store.get(&a.id).unwrap().is_none());
         let changes = store.changes_since(before, 100).unwrap();
         assert_eq!(changes.len(), 1);

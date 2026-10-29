@@ -23,7 +23,7 @@ can't provide them doesn't load the module.
 | Module | Core (Rust) | macOS shell | Status |
 | --- | --- | --- | --- |
 | `llm` — Model | Provider settings, Chat Completions client, connection test | Model pane in Settings, Keychain | Shipped |
-| `translate` — Translate | Prompt, language validation, history collection, legacy import | Composer overlay, capture & paste, History window, Translate pane | Shipped |
+| `translate` — Translate | Editable instructions, favorite languages and Tab cycling, badge codes and native names, whitespace trimming, history collection, legacy import | Composer at the text cursor, capture and paste, History window, Translate pane (language list, instructions, shortcuts) | Shipped |
 | `windows` — Window Layouts | Layout geometry (halves, corners, thirds, maximize, center, resize), gaps, size cycling, display moves, drag snap areas | Shortcuts, Accessibility window moves, restore memory, drag monitor and preview, Windows pane | Shipped |
 
 ## Planned

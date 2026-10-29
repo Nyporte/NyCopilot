@@ -64,7 +64,7 @@ enum RectangleImport {
         var summary = result.shortcuts.isEmpty
             ? "Rectangle uses its default shortcuts, which NyCopilot already matches."
             : "Imported \(result.shortcuts.count) shortcut\(result.shortcuts.count == 1 ? "" : "s") from Rectangle."
-        if let mode = result.repeatMode, (try? services.core.setSetting("windows.repeat", mode)) != nil {
+        if let mode = result.repeatMode, (try? services.core.setSetting(.windowRepeat, mode)) != nil {
             summary += mode == "move_across_displays" ? " Repeating a shortcut now moves the window to the next display."
                 : mode == "nothing" ? " Repeating a shortcut now does nothing." : ""
         }

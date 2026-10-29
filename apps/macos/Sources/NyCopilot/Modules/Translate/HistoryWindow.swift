@@ -57,7 +57,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
 
         observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
             guard let event = note.userInfo?["event"] as? [String: Any],
-                  event["type"] as? String == "records.changed", event["collection"] as? String == "translate.history" else { return }
+                  event["type"] as? String == "records.changed", event["collection"] as? String == CoreCollection.translateHistory.rawValue else { return }
             MainActor.assumeIsolated {
                 if self?.window?.isVisible == true { self?.reload() }
             }
@@ -164,7 +164,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
 
     private func load(reset: Bool) {
         if !reset && next == nil { return }
-        var params: [String: Any] = ["collection": "translate.history", "limit": 100]
+        var params: [String: Any] = ["collection": CoreCollection.translateHistory.rawValue, "limit": 100]
         if !reset, let next { params["before"] = next }
         if !search.isEmpty { params["search"] = search }
         let selectedID = selectedItem?.id

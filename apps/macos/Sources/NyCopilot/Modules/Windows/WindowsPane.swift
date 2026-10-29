@@ -66,10 +66,10 @@ final class WindowsPane: SettingsPane {
     }
 
     override func paneWillAppear() {
-        dragSwitch.state = services.core.setting("windows.drag_snap", default: true) ? .on : .off
-        let mode: String = services.core.setting("windows.repeat", default: "cycle_sizes")
+        dragSwitch.state = services.core.setting(.dragSnap, default: true) ? .on : .off
+        let mode: String = services.core.setting(.windowRepeat, default: "cycle_sizes")
         repeatMode.selectItem(at: Self.repeatModes.firstIndex { $0.0 == mode } ?? 0)
-        let gap: Double = services.core.setting("windows.gap", default: 0)
+        let gap: Double = services.core.setting(.windowGap, default: 0)
         gapSlider.doubleValue = gap
         gapValue.stringValue = "\(Int(gap)) pt"
         shortcuts.refresh()
@@ -83,14 +83,14 @@ final class WindowsPane: SettingsPane {
         paneWillAppear()
     }
 
-    @objc private func toggleDrag() { try? services.core.setSetting("windows.drag_snap", dragSwitch.state == .on) }
+    @objc private func toggleDrag() { try? services.core.setSetting(.dragSnap, dragSwitch.state == .on) }
     @objc private func changeRepeat() {
-        try? services.core.setSetting("windows.repeat", Self.repeatModes[max(repeatMode.indexOfSelectedItem, 0)].0)
+        try? services.core.setSetting(.windowRepeat, Self.repeatModes[max(repeatMode.indexOfSelectedItem, 0)].0)
     }
 
     @objc private func changeGap() {
         let gap = gapSlider.doubleValue.rounded()
         gapValue.stringValue = "\(Int(gap)) pt"
-        try? services.core.setSetting("windows.gap", gap)
+        try? services.core.setSetting(.windowGap, gap)
     }
 }

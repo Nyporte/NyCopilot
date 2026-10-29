@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func showSettings(pane: String?) {
         if settingsWindow == nil {
-            let panes = [GeneralPane(services: services), ProviderPane(services: services)] + modules.compactMap { $0.makeSettingsPane() }
+            let panes = [GeneralPane(services: services), ModelPane(services: services)] + modules.compactMap { $0.makeSettingsPane() }
             settingsWindow = SettingsWindow(panes: panes)
         }
         settingsWindow?.present(pane: pane)

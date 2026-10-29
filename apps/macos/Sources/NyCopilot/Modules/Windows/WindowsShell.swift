@@ -46,12 +46,12 @@ final class WindowsShell: ModuleShell {
         actions = (try? services.core.call("windows.actions", as: [ActionInfo].self)) ?? []
         snapper = SnapController(core: services.core)
         snapper.onSnap = { [weak self] window, frame, display in self?.apply(frame, to: window, on: display, action: nil) }
-        snapper.isEnabled = services.core.setting("windows.drag_snap", default: true)
+        snapper.isEnabled = services.core.setting(.dragSnap, default: true)
         observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any], event["key"] as? String == "windows.drag_snap" else { return }
+            guard let event = note.userInfo?["event"] as? [String: Any], event["key"] as? String == SettingKey.dragSnap.rawValue else { return }
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.snapper.isEnabled = self.services.core.setting("windows.drag_snap", default: true)
+                self.snapper.isEnabled = self.services.core.setting(.dragSnap, default: true)
             }
         }
     }
@@ -60,14 +60,14 @@ final class WindowsShell: ModuleShell {
     /// shortcuts carried over automatically, once, unless they already customized NyCopilot's.
     func importRectangleOnce() {
         // The repeat behaviour arrived after the shortcut import, so it has its own one-time check.
-        if !services.core.setting("client.windows.rectangle_repeat_checked", default: false) {
-            try? services.core.setSetting("client.windows.rectangle_repeat_checked", true)
+        if !services.core.setting(.rectangleRepeatChecked, default: false) {
+            try? services.core.setSetting(.rectangleRepeatChecked, true)
             if RectangleImport.isAvailable, let mode = RectangleImport.read().repeatMode {
-                try? services.core.setSetting("windows.repeat", mode)
+                try? services.core.setSetting(.windowRepeat, mode)
             }
         }
-        guard !services.core.setting("client.windows.rectangle_import_checked", default: false) else { return }
-        try? services.core.setSetting("client.windows.rectangle_import_checked", true)
+        guard !services.core.setting(.rectangleImportChecked, default: false) else { return }
+        try? services.core.setSetting(.rectangleImportChecked, true)
         guard RectangleImport.isAvailable,
               !services.hotKeys.isCustomized(actions.map { "windows.\($0.id)" }) else { return }
         let result = RectangleImport.read()

@@ -16,7 +16,7 @@ pieces fit together and the rules that keep them portable.
 ├──────────────────────────────── ny_call(method, json) ─────────────────────┤
 │ ny-ffi       C ABI: open / call / free / close + an event callback         │
 ├────────────────────────────────────────────────────────────────────────────┤
-│ ny-modules   platform-neutral module logic (translate today)               │
+│ ny-modules   platform-neutral module logic (translate, windows)            │
 │ ny-llm       provider settings, bounded Chat Completions client            │
 │ ny-core      records, settings, events, module registry, cancellation      │
 └────────────────────────────────────────────────────────────────────────────┘

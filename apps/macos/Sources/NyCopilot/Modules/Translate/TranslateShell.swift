@@ -12,6 +12,12 @@ final class TranslateShell: ModuleShell {
     let title = "Translate"
     let symbolName = "character.bubble"
 
+    /// Global shortcut action ids; HotKeyCenter stores each one's shortcut under `client.hotkey.<id>`.
+    enum Action {
+        static let compose = "translate.compose"
+        static let history = "translate.history"
+    }
+
     private let services: CopilotServices
     private let composer = ComposerPanel()
     private var historyWindow: HistoryWindow?
@@ -29,17 +35,17 @@ final class TranslateShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: "translate.compose", title: "Translate as you type",
+        [.init(id: Action.compose, title: "Translate as you type",
                defaultCombination: .init(keyCode: 17, modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.beginComposition() }),
-         .init(id: "translate.history", title: "Open translation history",
+         .init(id: Action.history, title: "Open translation history",
                defaultCombination: .init(keyCode: 4, modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.showHistory() })]
     }
 
     func menuItems() -> [NSMenuItem] {
-        [services.menuItem("Translate…", symbol: "character.bubble", hotKey: "translate.compose", target: self, action: #selector(beginFromMenu)),
-         services.menuItem("Translation History", symbol: "clock.arrow.circlepath", hotKey: "translate.history", target: self, action: #selector(showHistory))]
+        [services.menuItem("Translate…", symbol: "character.bubble", hotKey: Action.compose, target: self, action: #selector(beginFromMenu)),
+         services.menuItem("Translation History", symbol: "clock.arrow.circlepath", hotKey: Action.history, target: self, action: #selector(showHistory))]
     }
 
     func makeSettingsPane() -> SettingsPane? {
@@ -48,7 +54,7 @@ final class TranslateShell: ModuleShell {
 
     func shutdown() { cancelOperation() }
 
-    private var language: String { services.core.setting("translate.target_language", default: "English") }
+    private var language: String { services.core.setting(.targetLanguage, default: "English") }
 
     private struct Display: Decodable { let native: String; let code: String }
 
@@ -112,7 +118,7 @@ final class TranslateShell: ModuleShell {
         operationID = UUID()
         let id = operationID
         let language = language
-        composer.showLoading(language: language)
+        composer.showLoading()
         let core = services.core
         operation = Task { [weak self] in
             let result: RunResult

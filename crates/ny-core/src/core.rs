@@ -163,18 +163,17 @@ impl Core {
             }
             "delete" => {
                 let p: Id = parse(params)?;
-                let collection = self.store()?.get(&p.id)?.map(|r| r.collection);
-                let deleted = self.store()?.delete(&p.id)?;
-                if let (true, Some(collection)) = (deleted, collection) {
+                let collection = self.store()?.delete(&p.id)?;
+                if let Some(collection) = &collection {
                     self.emit(json!({ "type": "records.changed", "collection": collection, "id": p.id, "change": "deleted" }));
                 }
-                Ok(json!({ "deleted": deleted }))
+                Ok(json!({ "deleted": collection.is_some() }))
             }
             "clear" => {
                 let p: Collection = parse(params)?;
                 self.owned_collection(&p.collection)?;
                 let count = self.store()?.clear(&p.collection)?;
-                self.emit(json!({ "type": "records.changed", "collection": p.collection, "change": "cleared" }));
+                if count > 0 { self.emit(json!({ "type": "records.changed", "collection": p.collection, "change": "cleared" })); }
                 Ok(json!({ "deleted": count }))
             }
             "changes" => {

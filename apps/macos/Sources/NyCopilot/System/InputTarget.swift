@@ -169,11 +169,6 @@ final class InputTarget: @unchecked Sendable {
         })
     }
 
-    /// Only an explicit permission-button click asks macOS to show its authorization prompt.
-    static func requestPermission() {
-        _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-    }
-
     /// Bound every attribute call through the timeout already set on the AX element.
     private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         var value: CFTypeRef?

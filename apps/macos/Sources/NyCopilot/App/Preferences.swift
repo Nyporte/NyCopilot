@@ -17,7 +17,7 @@ final class Preferences {
     }
 
     var provider: Provider {
-        Provider(endpoint: core.setting("llm.endpoint", default: ""), model: core.setting("llm.model", default: ""))
+        Provider(endpoint: core.setting(.llmEndpoint, default: ""), model: core.setting(.llmModel, default: ""))
     }
 
     /// Validated by the core. The model is checked first so an invalid pair never half-saves.
@@ -25,16 +25,16 @@ final class Preferences {
         let endpoint = provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = provider.model.trimmingCharacters(in: .whitespacesAndNewlines)
         let previous = self.provider
-        try core.setSetting("llm.model", model)
-        do { try core.setSetting("llm.endpoint", endpoint) } catch {
-            try? core.setSetting("llm.model", previous.model)
+        try core.setSetting(.llmModel, model)
+        do { try core.setSetting(.llmEndpoint, endpoint) } catch {
+            try? core.setSetting(.llmModel, previous.model)
             throw error
         }
     }
 
     var hasCompletedWelcome: Bool {
-        get { core.setting("client.welcome_completed", default: false) }
-        set { try? core.setSetting("client.welcome_completed", newValue) }
+        get { core.setting(.welcomeCompleted, default: false) }
+        set { try? core.setSetting(.welcomeCompleted, newValue) }
     }
 
     /// Absent means "use the action's default"; an empty string means the user turned it off.
@@ -53,20 +53,20 @@ final class Preferences {
 
     /// Carry settings, shortcuts, and history over from the app's previous identity, exactly once.
     func migrateFromNyTranslate() {
-        guard !core.setting("client.migrated_nytranslate", default: false) else { return }
-        try? core.setSetting("client.migrated_nytranslate", true)
+        guard !core.setting(.migratedNyTranslate, default: false) else { return }
+        try? core.setSetting(.migratedNyTranslate, true)
         if let legacy = UserDefaults(suiteName: "dev.nycopilot.NyTranslate") {
             let endpoint = legacy.string(forKey: "endpoint") ?? ""
             let model = legacy.string(forKey: "model") ?? ""
             if !endpoint.isEmpty || !model.isEmpty {
-                try? core.setSetting("llm.endpoint", endpoint)
-                try? core.setSetting("llm.model", model)
+                try? core.setSetting(.llmEndpoint, endpoint)
+                try? core.setSetting(.llmModel, model)
                 hasCompletedWelcome = true
             }
             if let language = legacy.string(forKey: "targetLanguage") {
-                try? core.setSetting("translate.target_language", language)
+                try? core.setSetting(.targetLanguage, language)
             }
-            for (old, action, keyCode) in [("shortcut", "translate.compose", UInt32(17)), ("historyShortcut", "translate.history", 4)] {
+            for (old, action, keyCode) in [("shortcut", TranslateShell.Action.compose, UInt32(17)), ("historyShortcut", TranslateShell.Action.history, 4)] {
                 switch HotKeyCombination.legacy(legacy.string(forKey: old) ?? "", keyCode: keyCode) {
                 case .combination(let combination): setHotKey(combination, for: action)
                 case .disabled: setHotKey(nil, for: action)

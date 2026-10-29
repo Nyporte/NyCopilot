@@ -28,7 +28,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     override func makeSections() -> [NSView] {
         favorites.onChange = { [weak self] names in
             guard let self else { return nil }
-            do { try services.core.setSetting("translate.favorite_languages", names); return nil }
+            do { try services.core.setSetting(.favoriteLanguages, names); return nil }
             catch { return error.localizedDescription }
         }
         trimSwitch.target = self
@@ -56,7 +56,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
                         rows: [makeEditor()]),
             instructionsBar,
             shortcuts.section("Shortcuts", footer: "Click a shortcut and press a new combination. Press Delete to turn it off.",
-                              actions: ["translate.compose", "translate.history"]),
+                              actions: [TranslateShell.Action.compose, TranslateShell.Action.history]),
             shortcuts.errorLabel,
             FormSection("History",
                         footer: "Every translation is saved on this Mac so you can copy it again. Your original text is never stored.",
@@ -66,14 +66,14 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
 
     override func paneWillAppear() {
         let core = services.core
-        favorites.load((try? core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? [],
+        favorites.load(core.setting(.favoriteLanguages, default: [String]()),
                        suggestions: (try? core.call("translate.languages", as: [LanguageListEditor.Language].self)) ?? [],
                        describe: { name in
                            struct Shown: Decodable { let native: String; let code: String }
                            let shown = try? core.call("translate.native_name", ["language": name], as: Shown.self)
                            return .init(name: name, native: shown?.native ?? name, code: shown?.code ?? String(name.prefix(2)).uppercased())
                        })
-        trimSwitch.state = services.core.setting("translate.trim_whitespace", default: true) ? .on : .off
+        trimSwitch.state = services.core.setting(.trimWhitespace, default: true) ? .on : .off
         message.isHidden = true
         loadInstructions()
         shortcuts.refresh()
@@ -117,7 +117,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     }
 
     private func loadInstructions() {
-        savedInstructions = services.core.setting("translate.instructions", default: "")
+        savedInstructions = services.core.setting(.instructions, default: "")
         instructions.string = savedInstructions
         instructionsStatus.stringValue = ""
         updateInstructionButtons()
@@ -140,8 +140,8 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
 
     @objc private func saveInstructions() {
         do {
-            try services.core.setSetting("translate.instructions", instructions.string)
-            savedInstructions = services.core.setting("translate.instructions", default: "")
+            try services.core.setSetting(.instructions, instructions.string)
+            savedInstructions = services.core.setting(.instructions, default: "")
             instructionsStatus.stringValue = instructions.string.contains("{language}")
                 ? "Saved" : "Saved — without {language}, the target language setting is ignored"
             instructionsStatus.textColor = instructions.string.contains("{language}") ? .secondaryLabelColor : .systemOrange
@@ -153,7 +153,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     }
 
     @objc private func restoreInstructions() {
-        _ = try? services.core.call("settings.reset", ["key": "translate.instructions"])
+        try? services.core.resetSetting(.instructions)
         loadInstructions()
         instructionsStatus.stringValue = "Default instructions restored"
     }
@@ -163,12 +163,12 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         guard let modules = try? core.call("core.modules") as? [[String: Any]],
               let translate = modules.first(where: { $0["id"] as? String == "translate" }),
               let settings = translate["settings"] as? [[String: Any]],
-              let spec = settings.first(where: { $0["key"] as? String == "translate.instructions" }) else { return "" }
+              let spec = settings.first(where: { $0["key"] as? String == SettingKey.instructions.rawValue }) else { return "" }
         return spec["default"] as? String ?? ""
     }
 
     @objc private func toggleTrim() {
-        do { try services.core.setSetting("translate.trim_whitespace", trimSwitch.state == .on) } catch {
+        do { try services.core.setSetting(.trimWhitespace, trimSwitch.state == .on) } catch {
             trimSwitch.state = trimSwitch.state == .on ? .off : .on
         }
     }
@@ -185,7 +185,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            _ = try? self?.services.core.call("records.clear", ["collection": "translate.history"])
+            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.translateHistory.rawValue])
         }
     }
 }

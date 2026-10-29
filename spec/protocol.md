@@ -52,8 +52,8 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `settings.list` | `{prefix?}` | `{key: value}` including defaults |
 | `records.list` | `{collection, before?, limit?=100, search?}` | `{records: [Record], next?}` newest first |
 | `records.get` | `{id}` | `Record` |
-| `records.delete` | `{id}` | `{deleted: bool}` (tombstone) |
-| `records.clear` | `{collection}` | `{deleted: count}` |
+| `records.delete` | `{id}` | `{deleted: bool}` (tombstone; deleting nothing changes nothing, including the revision) |
+| `records.clear` | `{collection}` | `{deleted: count}` (an empty collection leaves the revision and emits no event) |
 | `records.changes` | `{since?=0, limit?=100}` | `{records, revision}` including tombstones |
 
 `Record` = `{id, collection, data, created_at, updated_at, deleted, origin, rev}` (times in Unix ms).
