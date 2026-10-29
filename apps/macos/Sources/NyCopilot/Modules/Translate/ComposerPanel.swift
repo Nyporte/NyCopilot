@@ -29,6 +29,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private var origin = NSPoint.zero
     private var floor: CGFloat = 0
     private var wasOverflowing = false
+    private var scrollerObserver: NSObjectProtocol?
     private static let (horizontalPadding, verticalPadding, lineHeight): (CGFloat, CGFloat, CGFloat) = (16, 12, 24)
     private static let maximumTextHeight: CGFloat = 200
     /// Room left after the last glyph on a line, so wide glyphs and their overhang never touch the clip.
@@ -91,7 +92,15 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         scroll.documentView = editor
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
+        // Overlay scrollers float over the text and never take width from it. macOS switches scroll
+        // views to space-taking scrollers when a mouse is attached; that would narrow the text the
+        // moment it overflows and re-wrap lines already typed, so keep overlay whatever the setting.
         scroll.scrollerStyle = .overlay
+        scrollerObserver = NotificationCenter.default.addObserver(
+            forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            // Runs after the scroll view applies the system style, so overlay wins.
+            Task { @MainActor [weak self] in self?.scroll.scrollerStyle = .overlay }
+        }
         scroll.drawsBackground = false
         scroll.contentView.drawsBackground = false
         scroll.borderType = .noBorder
@@ -146,10 +155,13 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     var isVisible: Bool { window?.isVisible == true }
 
     /// Open a fresh card at the text cursor (AX coordinates), or near the pointer when there is none.
-    /// `language` is the display name, e.g. 日本語.
-    func present(over axFrame: CGRect?, mode: Mode, language: String) {
+    /// `language` is the display name, e.g. 日本語; `languages` are all names Tab can reach, so the
+    /// label column can be as wide as the widest and switching never re-wraps the text.
+    func present(over axFrame: CGRect?, mode: Mode, language: String, languages: [String]) {
         guard let window else { return }
         self.mode = mode
+        scroll.scrollerStyle = .overlay
+        languageLabel.reserveWidth(for: languages + [language])
         editor.string = ""
         editor.undoManager?.removeAllActions()
         editor.placeholder = mode == .paste ? "Type to translate…" : "Type to translate and copy…"
@@ -249,7 +261,11 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         // the last character of a wrapped line — most visibly a wide CJK glyph — is cut in half.
         window.contentView?.layoutSubtreeIfNeeded()
         let width = max(scroll.contentSize.width, 1)
-        container.containerSize = NSSize(width: max(width - Self.edgeMargin, 1), height: .greatestFiniteMagnitude)
+        // Only a real change of width re-wraps; the width is constant while typing.
+        let wrapWidth = max(width - Self.edgeMargin, 1)
+        if container.containerSize.width != wrapWidth {
+            container.containerSize = NSSize(width: wrapWidth, height: .greatestFiniteMagnitude)
+        }
         editor.setFrameSize(NSSize(width: width, height: editor.frame.height))
         layout.ensureLayout(for: container)
         // Include the empty line after a trailing newline so the caret remains visible immediately.
@@ -328,6 +344,7 @@ private final class TargetLanguageLabel: NSStackView {
         }
     }
     private let name = Design.label("", size: 13, color: .tertiaryLabelColor)
+    private lazy var nameWidth = name.widthAnchor.constraint(equalToConstant: 0)
     private let key = KeyCap("⇥")
     private let spinner = NSProgressIndicator()
 
@@ -350,6 +367,14 @@ private final class TargetLanguageLabel: NSStackView {
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
+
+    /// A fixed column as wide as the widest of `names`; the current name sits right-aligned in it.
+    func reserveWidth(for names: [String]) {
+        let font = name.font ?? .systemFont(ofSize: 13)
+        nameWidth.constant = ceil(names.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0)
+        nameWidth.isActive = true
+        name.alignment = .right
+    }
 
     func set(_ language: String, animated: Bool) {
         setAccessibilityLabel("Target language: \(language). Press Tab to change.")

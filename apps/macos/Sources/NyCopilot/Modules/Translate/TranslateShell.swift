@@ -53,6 +53,12 @@ final class TranslateShell: ModuleShell {
     private struct Cycled: Decodable { let targetLanguage: String; let native: String }
     private struct Native: Decodable { let native: String }
 
+    /// Every favorite in its own script, for sizing the composer's language column.
+    private var favoriteNames: [String] {
+        let favorites = (try? services.core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? []
+        return favorites.map(nativeName)
+    }
+
     private func nativeName(_ language: String) -> String {
         (try? services.core.call("translate.native_name", ["language": language], as: Native.self).native) ?? language
     }
@@ -95,7 +101,8 @@ final class TranslateShell: ModuleShell {
             guard !Task.isCancelled, operationID == id,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
             target = captured
-            composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste, language: nativeName(language))
+            composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste,
+                             language: nativeName(language), languages: favoriteNames)
         }
     }
 
