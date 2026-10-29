@@ -56,6 +56,10 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
   confirms an input-method candidate first, and nothing is ever submitted in the target app.
 - The **language pill** in the composer switches the target language. **Settings → Translate**
   accepts any language name, such as "formal Japanese".
+- **Settings → Translate → Instructions** lets you rewrite what the model is told, for example to
+  keep a casual tone, preserve product names, or always use British spelling. `{language}` is
+  replaced with the target language. Your text is always sent separately as the user message.
+  **Restore Default** brings back the built-in instructions.
 - If a field can't be edited directly (some browsers and custom editors) or Accessibility is off,
   the composer opens in **copy mode** and the translation goes to your clipboard.
 - If anything changes before pasting (you switched apps, edited the field, or moved the cursor),

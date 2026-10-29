@@ -69,7 +69,9 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
 
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
-`translate.target_language` (synced, `"English"`).
+`translate.target_language` (synced, `"English"`), and `translate.instructions` (synced; the
+system message for translations, at most 8,000 characters, where `{language}` is replaced with the
+target language; `settings.reset` restores the built-in text).
 
 ## Events
 
