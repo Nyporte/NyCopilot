@@ -69,6 +69,9 @@ class AppearanceView: NSView {
     var fill: NSColor? { didSet { needsDisplay = true } }
     var border: NSColor? { didSet { needsDisplay = true } }
     var radius: CGFloat = Design.cornerRadius { didSet { needsDisplay = true } }
+    /// Continuous (squircle) corners suit most views; outlines that trace a `roundedMaterial`
+    /// mask use circular corners so the two shapes line up exactly.
+    var continuousCorners = true { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -87,7 +90,31 @@ class AppearanceView: NSView {
         }
         layer.borderWidth = border == nil ? 0 : 1 / (window?.backingScaleFactor ?? 2)
         layer.cornerRadius = radius
-        layer.cornerCurve = .continuous
+        layer.cornerCurve = continuousCorners ? .continuous : .circular
+    }
+}
+
+extension NSVisualEffectView {
+    /// A frosted background for borderless floating panels, rounded with a mask image.
+    ///
+    /// A layer `cornerRadius` only clips drawn content: the window server still blurs and shadows
+    /// the full rectangle, which shows as a square edge around the card. A mask image shapes the
+    /// blur and the window shadow itself.
+    static func roundedMaterial(_ material: NSVisualEffectView.Material, radius: CGFloat) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = material
+        view.blendingMode = .behindWindow
+        view.state = .active
+        let edge = radius * 2 + 1
+        let mask = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        mask.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        mask.resizingMode = .stretch
+        view.maskImage = mask
+        return view
     }
 }
 

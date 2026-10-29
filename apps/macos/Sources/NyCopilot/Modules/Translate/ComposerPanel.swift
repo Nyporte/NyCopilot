@@ -45,18 +45,12 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         super.init(window: panel)
         panel.delegate = self
 
-        // The native material supplies blur; a thin adaptive tint and hairline keep edges crisp.
-        let material = NSVisualEffectView()
-        material.material = .popover
-        material.blendingMode = .behindWindow
-        material.state = .active
-        material.wantsLayer = true
-        material.layer?.cornerRadius = 14
-        material.layer?.cornerCurve = .continuous
-        material.layer?.masksToBounds = true
+        // The native material supplies blur; a hairline that traces the mask keeps the edge crisp.
+        let material = NSVisualEffectView.roundedMaterial(.popover, radius: 14)
         panel.contentView = material
         let outline = AppearanceView()
         outline.radius = 14
+        outline.continuousCorners = false
         outline.border = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.1) }
         outline.translatesAutoresizingMaskIntoConstraints = false
@@ -258,6 +252,8 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
             frame.origin.y = max(screen.visibleFrame.minY + 10, min(frame.minY, screen.visibleFrame.maxY - height - 10))
         }
         window.setFrame(frame, display: true)
+        // The shadow follows the mask's shape only once it is recomputed for the new size.
+        window.invalidateShadow()
     }
 
     private func showLanguageMenu() {

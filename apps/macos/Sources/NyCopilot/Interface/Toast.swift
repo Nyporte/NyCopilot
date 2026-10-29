@@ -35,14 +35,7 @@ final class Toast {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
 
-        let material = NSVisualEffectView()
-        material.material = .hudWindow
-        material.blendingMode = .behindWindow
-        material.state = .active
-        material.wantsLayer = true
-        material.layer?.cornerRadius = 12
-        material.layer?.cornerCurve = .continuous
-        material.layer?.masksToBounds = true
+        let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 12)
         let titleLabel = Design.label(title, size: 13, weight: .semibold)
         var lines: [NSView] = [titleLabel]
         if let detail {
@@ -72,6 +65,7 @@ final class Toast {
             frame.origin.y = max(visible.minY, min(frame.minY, visible.maxY - frame.height))
         }
         panel.setFrame(frame, display: true)
+        panel.invalidateShadow()
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { $0.duration = 0.15; panel.animator().alphaValue = 1 }
