@@ -48,13 +48,13 @@ final class LanguageChip: NSView {
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: Self.collapsedSize, height: Self.collapsedSize))
-        let material = NSVisualEffectView.roundedMaterial(.popover, radius: 9)
-        highlight.radius = 9
+        let material = NSVisualEffectView.roundedMaterial(.popover, radius: ComposerPanel.cornerRadius)
+        highlight.radius = ComposerPanel.cornerRadius
         highlight.continuousCorners = false
         highlight.fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.1) : NSColor.black.withAlphaComponent(0.05) }
         highlight.isHidden = true
-        outline.radius = 9
+        outline.radius = ComposerPanel.cornerRadius
         outline.continuousCorners = false
         outline.border = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.1) }

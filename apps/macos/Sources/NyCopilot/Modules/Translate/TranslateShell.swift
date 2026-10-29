@@ -89,7 +89,7 @@ final class TranslateShell: ModuleShell {
             guard !Task.isCancelled, operationID == id,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
             target = captured
-            composer.present(over: captured?.frame, mode: captured == nil ? .copy : .paste, language: language, languages: languages)
+            composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste, language: language, languages: languages)
         }
     }
 
@@ -142,7 +142,7 @@ final class TranslateShell: ModuleShell {
     /// The result is already in history. Paste once into the verified field; anything less certain
     /// falls back to the clipboard with a short note.
     private func deliver(_ text: String, id: UUID) async {
-        let anchor = target?.frame.map(Self.appKitRect)
+        let anchor = Self.anchor(for: target).map(Self.appKitRect)
         guard let target else {
             composer.hideForInsertion()
             copy(text)
@@ -195,6 +195,15 @@ final class TranslateShell: ModuleShell {
     @objc private func showHistory() {
         if historyWindow == nil { historyWindow = HistoryWindow(core: services.core) }
         historyWindow?.present()
+    }
+
+    /// Where to put the composer and notices: the text cursor when the app reports it, otherwise the
+    /// field if it is a single line or so. Web apps often report their whole page as the field,
+    /// which would put the composer far from where you're typing; the pointer is closer then.
+    private static func anchor(for target: InputTarget?) -> CGRect? {
+        if let caret = target?.caret { return caret }
+        if let frame = target?.frame, frame.height <= 120 { return frame }
+        return nil
     }
 
     private static func appKitRect(_ ax: CGRect) -> NSRect {

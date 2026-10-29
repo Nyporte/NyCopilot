@@ -7,19 +7,22 @@ import MacPlatform
 final class InputTarget: @unchecked Sendable {
     let processIdentifier: pid_t
     let frame: CGRect?
+    /// The text cursor (or selection) on screen, in AX coordinates, when the app reports it.
+    let caret: CGRect?
     private let element: AXUIElement
     private let sourceWindow: AXUIElement?
     private let originalValue: String
     private let originalRange: CFRange
 
     /// Keep accessibility objects alive while the user composes without storing anything on disk.
-    private init(pid: pid_t, element: AXUIElement, window: AXUIElement?, value: String, range: CFRange, frame: CGRect?) {
+    private init(pid: pid_t, element: AXUIElement, window: AXUIElement?, value: String, range: CFRange, frame: CGRect?, caret: CGRect?) {
         processIdentifier = pid
         self.element = element
         sourceWindow = window
         originalValue = value
         originalRange = range
         self.frame = frame
+        self.caret = caret
     }
 
     /// Capture before opening our panel so the original application's focus is still available.
@@ -49,7 +52,8 @@ final class InputTarget: @unchecked Sendable {
             let window = elementAttribute(element, kAXWindowAttribute)
             if let window { AXUIElementSetMessagingTimeout(window, 0.5) }
             return InputTarget(pid: pid, element: element, window: window, value: value, range: range,
-                               frame: hasFrame ? CGRect(origin: position, size: size) : nil)
+                               frame: hasFrame ? CGRect(origin: position, size: size) : nil,
+                               caret: caretBounds(element, range: range, text: value as NSString))
         }.value
     }
 
@@ -176,6 +180,37 @@ final class InputTarget: @unchecked Sendable {
     private static func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
         guard let value = attribute(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
         return unsafeBitCast(value, to: AXUIElement.self)
+    }
+
+    /// Where the cursor is drawn. A selection reports its own bounds; an empty range often reports a
+    /// zero-size rect, so the character before the cursor stands in for its position.
+    private static func caretBounds(_ element: AXUIElement, range: CFRange, text: NSString) -> CGRect? {
+        func isLineBreak(_ index: Int) -> Bool {
+            index >= 0 && index < text.length && CharacterSet.newlines.contains(UnicodeScalar(text.character(at: index)) ?? " ")
+        }
+        var candidates: [(CFRange, atEnd: Bool)] = []
+        if range.length > 0 { candidates.append((range, false)) }
+        candidates.append((CFRange(location: range.location, length: 0), false))
+        // A line break's bounds sit at the end of the previous line, so it can't stand in for the cursor.
+        if range.location > 0, !isLineBreak(range.location - 1) {
+            candidates.append((CFRange(location: range.location - 1, length: 1), true))
+        }
+        if range.location < text.length, !isLineBreak(range.location) {
+            candidates.append((CFRange(location: range.location, length: 1), false))
+        }
+        for (candidate, atEnd) in candidates {
+            var query = candidate
+            guard let parameter = AXValueCreate(.cfRange, &query) else { continue }
+            var result: CFTypeRef?
+            guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
+                                                             parameter, &result) == .success,
+                  let result, CFGetTypeID(result) == AXValueGetTypeID() else { continue }
+            var rect = CGRect.zero
+            guard AXValueGetValue(unsafeBitCast(result, to: AXValue.self), .cgRect, &rect),
+                  rect.height > 0, rect.height < 200, rect.minX.isFinite, rect.minY.isFinite else { continue }
+            return atEnd ? CGRect(x: rect.maxX, y: rect.minY, width: 1, height: rect.height) : rect
+        }
+        return nil
     }
 
     /// AX text ranges are UTF-16 offsets, matching NSString and NSRange semantics.

@@ -15,7 +15,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
 
     private let editor = ComposerTextView()
     private let scroll = NSScrollView()
-    private let card = NSVisualEffectView.roundedMaterial(.popover, radius: 14)
+    /// The card and the language chip share one corner radius so their tops curve together.
+    static let cornerRadius: CGFloat = 10
+    private let card = NSVisualEffectView.roundedMaterial(.popover, radius: cornerRadius)
     private let chip = LanguageChip()
     private let errorIcon = Design.symbol("exclamationmark.triangle.fill", size: 11, color: .systemOrange)
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
@@ -54,7 +56,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         card.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(card)
         let outline = AppearanceView()
-        outline.radius = 14
+        outline.radius = Self.cornerRadius
         outline.continuousCorners = false
         outline.border = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor.white.withAlphaComponent(0.14) : NSColor.black.withAlphaComponent(0.1) }
@@ -144,7 +146,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
 
     var isVisible: Bool { window?.isVisible == true }
 
-    /// Open a fresh card over the field (AX coordinates), or near the pointer when there is none.
+    /// Open a fresh card at the text cursor (AX coordinates), or near the pointer when there is none.
     func present(over axFrame: CGRect?, mode: Mode, language: String, languages: [String]) {
         guard let window else { return }
         self.mode = mode
@@ -161,20 +163,25 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         let anchor = axFrame.map { NSRect(x: $0.minX, y: desktopTop - $0.maxY, width: $0.width, height: $0.height) }
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
-            // Place it once with room for the open language list to its right and below, so nothing
-            // ever has to move afterwards: the top-left stays put and the composer only grows down.
+            // Half the screen wide, starting where the cursor is so typed text lines up with it.
             let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
             let side = Self.chipGap + LanguageChip.expandedWidth
-            let width = min(max(anchor?.width ?? 440, 360), min(500, visible.width - side))
+            let width = min(max(visible.width / 2, 360), visible.width - side)
             cardWidth.constant = width
             errorLabel.preferredMaxLayoutWidth = width - Self.horizontalPadding * 2 - 120
-            let needed = max(Self.verticalPadding * 2 + Self.lineHeight, chip.expandedHeight)
-            let preferredTop = anchor.map { $0.maxY + 6 } ?? point.y + 12
-            origin = NSPoint(x: max(visible.minX, min(anchor?.minX ?? point.x - width / 2, visible.maxX - width - side)),
-                             y: min(visible.maxY, max(preferredTop, visible.minY + needed)))
+            let x = max(visible.minX, min((anchor?.minX ?? point.x) - Self.horizontalPadding, visible.maxX - width - side))
+            // Just below the cursor's line; if the open list wouldn't fit there, just above it instead.
+            // Placed once with room for the list, so the top-left never has to move afterwards.
+            let initial = Self.verticalPadding * 2 + Self.lineHeight
+            let needed = max(initial, chip.expandedHeight)
+            let below = (anchor?.minY ?? point.y) - 6
+            let top = below - needed >= visible.minY
+                ? below
+                : max((anchor?.maxY ?? point.y) + 6 + initial, visible.minY + needed)
+            origin = NSPoint(x: x, y: min(top, visible.maxY))
             floor = visible.minY
-            window.setFrame(NSRect(x: origin.x, y: origin.y - 48, width: width + Self.chipGap + LanguageChip.collapsedSize,
-                                   height: 48), display: false)
+            window.setFrame(NSRect(x: origin.x, y: origin.y - initial, width: width + Self.chipGap + LanguageChip.collapsedSize,
+                                   height: initial), display: false)
         }
         wasOverflowing = false
         resizeToContent()
