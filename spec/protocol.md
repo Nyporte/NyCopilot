@@ -90,8 +90,9 @@ target language; `settings.reset` restores the built-in text), `windows.gap` (sy
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and
 `windows.drag_snap` (synced, `true`), `capture.save_folder` (device, `""` = Pictures/NyCopilot),
 `capture.format` (synced, `"png"` or `"jpg"`), `capture.file_name` (synced, pattern with `{date}`,
-`{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.pin_shadow` (synced,
-`true`), and `capture.hide_own_windows` (synced, `false`).
+`{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
+object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the system font, `text_size` 6–144, `bold`,
+`italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), and `capture.hide_own_windows` (synced, `false`).
 
 ## Events
 

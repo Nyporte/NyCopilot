@@ -16,6 +16,7 @@ enum SettingKey: String {
     case captureFileName = "capture.file_name"
     case captureColor = "capture.color"
     case captureStroke = "capture.stroke"
+    case captureStyle = "capture.style"
     case pinShadow = "capture.pin_shadow"
     case hideOwnWindows = "capture.hide_own_windows"
     case welcomeCompleted = "client.welcome_completed"

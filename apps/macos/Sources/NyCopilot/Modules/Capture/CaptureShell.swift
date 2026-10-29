@@ -92,16 +92,17 @@ final class CaptureShell: ModuleShell {
                 let palette = ((try? services.core.call("capture.palette") as? [String]) ?? []).compactMap(NSColor.init(hex:))
                 let color = NSColor(hex: services.core.setting(.captureColor, default: "#FF3B30")) ?? .systemRed
                 let stroke = CGFloat(services.core.setting(.captureStroke, default: 3.0))
-                let session = CaptureSession(frozen: frozen, recent: recent, palette: palette, color: color, stroke: stroke) { [weak self] color, stroke in
+                let storedStyle = services.core.setting(.captureStyle, default: [String: Any]())
+                let style = (try? JSONSerialization.data(withJSONObject: storedStyle))
+                    .flatMap { try? JSONDecoder().decode(CaptureStyle.self, from: $0) } ?? CaptureStyle()
+                let session = CaptureSession(frozen: frozen, recent: recent, palette: palette, color: color, stroke: stroke,
+                                             style: style) { [weak self] color, stroke, style in
                     try? self?.services.core.setSetting(.captureColor, color.hexString)
                     try? self?.services.core.setSetting(.captureStroke, Double(stroke))
+                    try? self?.services.core.setSetting(.captureStyle, style.json)
                 }
                 session.onFinish = { [weak self] action, image, region, screen in self?.finish(action, image: image, region: region, screen: screen) }
                 session.onCancel = { [weak self] in self?.end() }
-                session.onColorCopied = { [weak self] hex in
-                    self?.end()
-                    self?.services.toast.show("Copied \(hex)", style: .success)
-                }
                 self.session = session
                 session.show()
             } catch {

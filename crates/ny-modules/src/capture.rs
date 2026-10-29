@@ -12,6 +12,30 @@ pub const HISTORY: &str = "capture.history";
 pub const FORMATS: &[&str] = &["png", "jpg"];
 pub const DEFAULT_PATTERN: &str = "NyCopilot {date} at {time}";
 /// Annotation colors offered in the toolbar, as `#RRGGBB`.
+/// Shape and text options, kept between captures. Missing keys fall back to these defaults.
+pub fn default_style() -> Value {
+    json!({ "corner_radius": 0, "filled": false, "font": "", "text_size": 20,
+            "bold": false, "italic": false, "underline": false, "strikethrough": false })
+}
+
+/// Known keys only, each of the right type and range; `font` is a family name ("" = system font).
+pub fn validate_style(value: &Value) -> Result<()> {
+    let invalid = |why: &str| NyError::invalid_setting(format!("Annotation style: {why}."));
+    let object = value.as_object().ok_or_else(|| invalid("expected an object"))?;
+    for (key, item) in object {
+        match key.as_str() {
+            "corner_radius" if !item.as_f64().is_some_and(|r| (0.0..=64.0).contains(&r)) => return Err(invalid("corner radius is 0–64")),
+            "text_size" if !item.as_f64().is_some_and(|s| (6.0..=144.0).contains(&s)) => return Err(invalid("text size is 6–144")),
+            "font" if !item.as_str().is_some_and(|f| f.chars().count() <= 100 && !f.contains(['\n', '\r'])) =>
+                return Err(invalid("font is a single-line family name")),
+            "filled" | "bold" | "italic" | "underline" | "strikethrough" if !item.is_boolean() => return Err(invalid("switches are true or false")),
+            "corner_radius" | "text_size" | "font" | "filled" | "bold" | "italic" | "underline" | "strikethrough" => {}
+            other => return Err(invalid(&format!("unknown option “{other}”"))),
+        }
+    }
+    Ok(())
+}
+
 pub const PALETTE: &[&str] = &["#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#0A84FF", "#AF52DE", "#FFFFFF", "#000000"];
 
 /// A captured area in points, in the platform's screen coordinates (top-left origin on macOS AX).
@@ -59,6 +83,8 @@ impl Module for CaptureModule {
                 SettingSpec::new("capture.file_name", json!(DEFAULT_PATTERN), Scope::Synced, "File name pattern: {date}, {time}, {n}."),
                 SettingSpec::new("capture.color", json!(PALETTE[0]), Scope::Synced, "Annotation color last used."),
                 SettingSpec::new("capture.stroke", json!(3), Scope::Synced, "Annotation line width last used, in points."),
+                SettingSpec::new("capture.style", default_style(), Scope::Synced,
+                                 "Corner radius, fill, and text font, size, and emphasis last used for annotations."),
                 SettingSpec::new("capture.pin_shadow", json!(true), Scope::Synced, "Draw a shadow around pinned images."),
                 SettingSpec::new("capture.hide_own_windows", json!(false), Scope::Synced,
                                  "Leave NyCopilot's own windows, pins included, out of captures."),
@@ -118,6 +144,7 @@ impl Module for CaptureModule {
             "capture.file_name" if text.trim().is_empty() || text.chars().count() > 120 =>
                 Err(NyError::invalid_setting("The file name pattern must be 1–120 characters.")),
             "capture.color" => validate_color(text),
+            "capture.style" => validate_style(value),
             "capture.stroke" if !value.as_f64().is_some_and(|w| (1.0..=24.0).contains(&w)) =>
                 Err(NyError::invalid_setting("Line width must be between 1 and 24 points.")),
             _ => Ok(()),
@@ -156,6 +183,20 @@ mod tests {
         core.call("settings.set", json!({ "key": "capture.hide_own_windows", "value": true })).unwrap();
         let name = core.call("capture.file_name", json!({ "date": [2026, 1, 2, 3, 4, 5] })).unwrap();
         assert_eq!(name["name"], "NyCopilot 2026-01-02 at 03.04.05.jpg");
+    }
+
+    #[test]
+    fn style_is_validated_field_by_field() {
+        let core = core();
+        assert_eq!(core.setting::<Value>("capture.style").unwrap()["text_size"], 20);
+        for bad in [json!({ "corner_radius": 99 }), json!({ "text_size": 2 }), json!({ "bold": "yes" }),
+                    json!({ "font": "a\nb" }), json!({ "sparkle": true }), json!([1, 2])] {
+            assert!(core.call("settings.set", json!({ "key": "capture.style", "value": bad })).is_err(), "{bad}");
+        }
+        let custom = json!({ "corner_radius": 12, "filled": true, "font": "Georgia", "text_size": 32, "bold": true,
+                             "italic": true, "underline": true, "strikethrough": false });
+        core.call("settings.set", json!({ "key": "capture.style", "value": custom.clone() })).unwrap();
+        assert_eq!(core.setting::<Value>("capture.style").unwrap(), custom);
     }
 
     #[test]

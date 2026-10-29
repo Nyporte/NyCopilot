@@ -100,10 +100,14 @@ dragging it to the edge of the screen.
 - **Select** by dragging, or hover a window, menu, or the Dock and click to take it exactly. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
-- **Inspect** with the magnifier: a pixel grid, the position in pixels, and the color under the
-  pointer. **C** copies that color as `#RRGGBB`.
-- **Annotate** with rectangle, ellipse, arrow, line, pen, highlighter, mosaic, and text (keys 1–8),
-  in any of eight colors and three widths; ⌘Z and ⇧⌘Z undo and redo.
+- **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size
+  of the selection while you drag, and the color in HEX and RGB. **C** copies the color without ending
+  the capture; **Shift** switches between `#RRGGBB` and `r, g, b`.
+- **Annotate** with rectangle, ellipse, arrow, line, pen, highlighter, mosaic, and text (keys 1–8).
+  Each tool shows its own options under the toolbar: eight colors, line width (1–24), corner radius
+  for rectangles, outline or filled for rectangles and ellipses, and font, size, **bold**, *italic*,
+  underline, and strikethrough for text. Text: **Return** places it, **Shift+Return** adds a line,
+  **Esc** discards. Options are remembered; ⌘Z and ⇧⌘Z undo and redo.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 

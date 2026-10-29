@@ -7,19 +7,18 @@ final class CaptureSession {
     /// The chosen action with the rendered image and the selection in global top-left coordinates.
     var onFinish: ((CaptureAction, NSImage, CGRect, NSScreen) -> Void)?
     var onCancel: (() -> Void)?
-    var onColorCopied: ((String) -> Void)?
 
     private var windows: [CaptureWindow] = []
     private var views: [CaptureView] = []
 
-    init(frozen: [FrozenScreen], recent: [CGRect], palette: [NSColor], color: NSColor, stroke: CGFloat,
-         onStyleChange: @escaping (NSColor, CGFloat) -> Void) {
+    init(frozen: [FrozenScreen], recent: [CGRect], palette: [NSColor], color: NSColor, stroke: CGFloat, style: CaptureStyle,
+         onStyleChange: @escaping (NSColor, CGFloat, CaptureStyle) -> Void) {
         for screen in frozen {
             let origin = Self.globalOrigin(of: screen.screen)
             let local = recent.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
                 .filter { CGRect(origin: .zero, size: screen.screen.frame.size).contains($0) }
             let view = CaptureView(frozen: screen, recent: local, palette: palette, color: color, stroke: stroke,
-                                   onStyleChange: onStyleChange)
+                                   style: style, onStyleChange: onStyleChange)
             let window = CaptureWindow(screen: screen.screen)
             let container = NSView(frame: CGRect(origin: .zero, size: screen.screen.frame.size))
             // The frozen pixels sit in a layer of their own; the capture view only draws what changes.
@@ -39,10 +38,6 @@ final class CaptureSession {
             view.onCancel = { [weak self] in
                 self?.close()
                 self?.onCancel?()
-            }
-            view.onColorCopied = { [weak self] hex in
-                self?.close()
-                self?.onColorCopied?(hex)
             }
             view.onSelectionStarted = { [weak self, weak view] in
                 for other in self?.views ?? [] where other !== view { other.isPassive = true }

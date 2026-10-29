@@ -12,7 +12,7 @@ final class PinWindow: NSPanel {
 
     /// Shows the accent border. Pins never activate NyCopilot, so macOS doesn't tell them when a
     /// click lands in another app; the board clears this instead.
-    var isFocused = false { didSet { if isFocused != oldValue { pinView.needsDisplay = true } } }
+    var isFocused = false { didSet { if isFocused != oldValue { pinView.showsFocus = isFocused } } }
 
     let original: NSImage
     private let pinView: PinView
@@ -44,35 +44,48 @@ final class PinWindow: NSPanel {
         isFocused = false
     }
 
-    /// The image as currently shown: rotated and flipped.
+    /// The pixels as currently shown — rotated and flipped — rendered once per change. Zooming only
+    /// resizes the layer that shows them, so the GPU scales the bitmap and nothing is redrawn.
+    private var rendered: CGImage?
+
+    private var pointSize: NSSize {
+        quarterTurns % 2 == 1 ? NSSize(width: original.size.height, height: original.size.width) : original.size
+    }
+
+    /// The image as currently shown, for copying and saving.
     var displayedImage: NSImage {
-        let turned = quarterTurns % 2 == 1
-        let size = turned ? NSSize(width: original.size.height, height: original.size.width) : original.size
-        return NSImage(size: size, flipped: false) { [self] rect in
-            guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            context.translateBy(x: rect.midX, y: rect.midY)
-            context.rotate(by: -CGFloat(quarterTurns) * .pi / 2)
-            context.scaleBy(x: flippedHorizontally ? -1 : 1, y: flippedVertically ? -1 : 1)
-            original.draw(in: CGRect(x: -original.size.width / 2, y: -original.size.height / 2,
-                                     width: original.size.width, height: original.size.height))
-            return true
-        }
+        rendered.map { NSImage(cgImage: $0, size: pointSize) } ?? original
     }
 
     private func redraw() {
-        pinView.image = displayedImage
-        pinView.needsDisplay = true
+        guard let source = original.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let turned = quarterTurns % 2 == 1
+        let width = turned ? source.height : source.width, height = turned ? source.width : source.height
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        context.interpolationQuality = .high
+        context.translateBy(x: CGFloat(width) / 2, y: CGFloat(height) / 2)
+        context.rotate(by: -CGFloat(quarterTurns) * .pi / 2)
+        context.scaleBy(x: flippedHorizontally ? -1 : 1, y: flippedVertically ? -1 : 1)
+        context.draw(source, in: CGRect(x: -CGFloat(source.width) / 2, y: -CGFloat(source.height) / 2,
+                                        width: CGFloat(source.width), height: CGFloat(source.height)))
+        rendered = context.makeImage()
+        pinView.show(rendered)
     }
 
     /// Scale around a fixed point on screen (the pointer), within 10–800%.
     func setZoom(_ value: CGFloat, around anchor: NSPoint? = nil) {
         let clamped = min(max(value, 0.1), 8)
-        let turned = quarterTurns % 2 == 1
-        let base = turned ? NSSize(width: original.size.height, height: original.size.width) : original.size
+        let base = pointSize
         let size = NSSize(width: max(base.width * clamped, 16), height: max(base.height * clamped, 16))
         let pivot = anchor ?? NSPoint(x: frame.midX, y: frame.midY)
         let fx = (pivot.x - frame.minX) / frame.width, fy = (pivot.y - frame.minY) / frame.height
-        setFrame(NSRect(x: pivot.x - fx * size.width, y: pivot.y - fy * size.height, width: size.width, height: size.height), display: true)
+        // No implicit layer animation and no synchronous redraw: the layer simply rescales.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        setFrame(NSRect(x: pivot.x - fx * size.width, y: pivot.y - fy * size.height, width: size.width, height: size.height), display: false)
+        CATransaction.commit()
         zoom = clamped
         pinView.flash("\(Int(round(clamped * 100)))%")
     }
@@ -161,17 +174,33 @@ final class PinWindow: NSPanel {
     @objc private func closeAllFromMenu() { onCloseAll?() }
 }
 
-/// Draws the pin and turns gestures into pin actions.
+/// Shows the pin and turns gestures into pin actions. The pixels live in a layer that the GPU scales,
+/// so zooming never redraws them.
 private final class PinView: NSView {
     weak var pin: PinWindow?
-    var image: NSImage?
+    private let imageLayer = CALayer()
     private let badge = Design.label("", size: 12, weight: .semibold, color: .white)
     private var hideBadge: DispatchWorkItem?
+
+    var showsFocus = false {
+        didSet {
+            layer?.borderWidth = showsFocus ? 1 : 0
+            layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.7).cgColor
+        }
+    }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         autoresizingMask = [.width, .height]
         wantsLayer = true
+        layerContentsRedrawPolicy = .never
+        imageLayer.frame = bounds
+        imageLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        imageLayer.contentsGravity = .resize
+        imageLayer.minificationFilter = .trilinear
+        imageLayer.magnificationFilter = .linear
+        imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        layer?.addSublayer(imageLayer)
         badge.wantsLayer = true
         badge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
         badge.layer?.cornerRadius = 5
@@ -186,12 +215,9 @@ private final class PinView: NSView {
 
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
 
-    override func draw(_ dirtyRect: NSRect) {
-        image?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
-                    hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)])
-        guard pin?.isFocused == true else { return }
-        NSColor.controlAccentColor.withAlphaComponent(0.7).setStroke()
-        NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)).stroke()
+    func show(_ image: CGImage?) {
+        imageLayer.contentsScale = window?.backingScaleFactor ?? 2
+        imageLayer.contents = image
     }
 
     /// A short-lived label for zoom, opacity, and copy feedback.

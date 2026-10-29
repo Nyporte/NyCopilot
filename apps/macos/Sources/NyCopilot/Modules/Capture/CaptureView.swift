@@ -7,13 +7,11 @@ enum CaptureAction { case copy, save, quickSave, pin }
 /// window under the pointer, lets you drag or adjust a selection, shows a magnifier, and draws
 /// annotations. Coordinates are points with a top-left origin (the view is flipped).
 @MainActor
-final class CaptureView: NSView, NSTextFieldDelegate {
+final class CaptureView: NSView, NSTextViewDelegate {
     var onFinish: ((CaptureAction) -> Void)?
     var onCancel: (() -> Void)?
     /// Another display's view took the selection; this one just stays dimmed.
     var onSelectionStarted: (() -> Void)?
-    /// C over a pixel copies its color as #RRGGBB.
-    var onColorCopied: ((String) -> Void)?
 
     let frozen: FrozenScreen
     private(set) var selection: CGRect?
@@ -23,43 +21,66 @@ final class CaptureView: NSView, NSTextFieldDelegate {
     private var pointer: CGPoint?
     private var drag: Drag = .none
     private var current: Annotation?
-    private var textField: NSTextField?
+    private var textEditor: TextAnnotationEditor?
     private var recentIndex = -1
+    /// Which format C copies; Shift switches between HEX and RGB.
+    private var copiesHex = true
+    /// "Copied …" shown briefly in the magnifier after C.
+    private var copiedFlash: String?
+    private var clearFlash: DispatchWorkItem?
+    private var shiftWasDown = false
     private let recent: [CGRect]
     private lazy var pixelated = CaptureRenderer.pixelate(frozen.image, blockSize: 12 * frozen.scale)
     private let toolbar: CaptureToolbar
     var isPassive = false { didSet { hoverWindow = nil; needsDisplay = true } }
 
-    var tool: AnnotationTool? { didSet { toolbar.selectedTool = tool; window?.invalidateCursorRects(for: self) } }
-    var color: NSColor { didSet { toolbar.selectedColor = color } }
+    var tool: AnnotationTool? {
+        didSet {
+            if tool != .text, textEditor != nil { commitText() }
+            toolbar.selectedTool = tool
+            // Each tool has its own options row, so the bar changes size.
+            if !toolbar.isHidden { placeToolbar() }
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+    var color: NSColor { didSet { toolbar.selectedColor = color; textEditor?.apply(style, color: color) } }
     var stroke: CGFloat { didSet { toolbar.selectedStroke = stroke } }
+    var style: CaptureStyle { didSet { toolbar.style = style; textEditor?.apply(style, color: color); needsDisplay = true } }
+    private let onStyleChange: (NSColor, CGFloat, CaptureStyle) -> Void
 
     private enum Drag {
         case none, creating(CGPoint), moving(CGPoint, CGRect), resizing(Handle, CGRect), drawing
     }
     private enum Handle: CaseIterable { case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left }
 
-    init(frozen: FrozenScreen, recent: [CGRect], palette: [NSColor], color: NSColor, stroke: CGFloat,
-         onStyleChange: @escaping (NSColor, CGFloat) -> Void) {
+    init(frozen: FrozenScreen, recent: [CGRect], palette: [NSColor], color: NSColor, stroke: CGFloat, style: CaptureStyle,
+         onStyleChange: @escaping (NSColor, CGFloat, CaptureStyle) -> Void) {
         self.frozen = frozen
         self.recent = recent
         self.color = color
         self.stroke = stroke
+        self.style = style
+        self.onStyleChange = onStyleChange
         toolbar = CaptureToolbar(palette: palette)
         super.init(frame: CGRect(origin: .zero, size: frozen.screen.frame.size))
         toolbar.isHidden = true
         toolbar.selectedColor = color
         toolbar.selectedStroke = stroke
+        toolbar.style = style
         toolbar.onTool = { [weak self] tool in self?.tool = self?.tool == tool ? nil : tool }
         toolbar.onColor = { [weak self] color in
-            guard let self else { return }
-            self.color = color
-            onStyleChange(color, stroke)
+            self?.color = color
+            self?.styleChanged()
         }
         toolbar.onStroke = { [weak self] stroke in
-            guard let self else { return }
-            self.stroke = stroke
-            onStyleChange(color, stroke)
+            self?.stroke = stroke
+            self?.styleChanged()
+        }
+        toolbar.onStyle = { [weak self] style in
+            self?.style = style
+            self?.styleChanged()
+            // Keep typing after picking a font or size.
+            if let editor = self?.textEditor { self?.window?.makeFirstResponder(editor) }
         }
         toolbar.onUndo = { [weak self] in self?.undo() }
         toolbar.onRedo = { [weak self] in self?.redo() }
@@ -69,6 +90,8 @@ final class CaptureView: NSView, NSTextFieldDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(frozen:…)") }
+
+    private func styleChanged() { onStyleChange(color, stroke, style) }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -93,6 +116,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
             NSGraphicsContext.restoreGraphicsState()
             drawFrame(selection, handles: tool == nil)
             drawSizeLabel(for: selection)
+            if let textEditor { drawEditorFrame(textEditor.frame) }
         } else if let hoverWindow, !isPassive {
             drawFrame(hoverWindow, handles: false)
         }
@@ -100,7 +124,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
     }
 
     private var showsMagnifier: Bool {
-        guard !isPassive, textField == nil else { return false }
+        guard !isPassive, textEditor == nil else { return false }
         switch drag {
         case .creating, .resizing: return true
         case .none: return selection == nil
@@ -137,49 +161,84 @@ final class CaptureView: NSView, NSTextFieldDelegate {
         text.draw(at: CGPoint(x: plate.minX + 6, y: plate.minY + 3), withAttributes: attributes)
     }
 
-    /// A pixel-exact zoom of the area under the pointer, its position, and its color.
+    /// A pixel-exact zoom of the area under the pointer with a pixel grid, then the pointer's position,
+    /// the selection size while dragging, the color in HEX and RGB (the format C copies is
+    /// highlighted), and the keys that act on it.
     private func drawMagnifier(at point: CGPoint) {
-        let zoom: CGFloat = 8, span: CGFloat = 15
+        let zoom: CGFloat = 8, span: CGFloat = 17
         let box = CGSize(width: span * zoom, height: span * zoom)
+        let panelHeight: CGFloat = isSizing ? 98 : 82
         var origin = CGPoint(x: point.x + 20, y: point.y + 20)
         if origin.x + box.width > bounds.maxX - 8 { origin.x = point.x - 20 - box.width }
-        if origin.y + box.height + 44 > bounds.maxY - 8 { origin.y = point.y - 20 - box.height - 44 }
+        if origin.y + box.height + panelHeight + 4 > bounds.maxY - 8 { origin.y = point.y - 20 - box.height - panelHeight - 4 }
         let frame = CGRect(origin: origin, size: box)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let scale = frozen.scale
-        let source = CGRect(x: (point.x - span / 2) * scale, y: (point.y - span / 2) * scale, width: span * scale, height: span * scale)
+        // Whole pixels around the pointer, so every cell in the grid is exactly one screen pixel.
+        let center = CGPoint(x: floor(point.x * scale), y: floor(point.y * scale))
+        let half = floor(span / 2)
+        let source = CGRect(x: center.x - half, y: center.y - half, width: span, height: span)
         context.saveGState()
         NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8).addClip()
         NSColor.black.setFill()
         frame.fill()
-        if let crop = frozen.image.cropping(to: source.integral) {
+        if let crop = frozen.image.cropping(to: source) {
             context.interpolationQuality = .none
             context.translateBy(x: frame.minX, y: frame.maxY)
             context.scaleBy(x: 1, y: -1)
             context.draw(crop, in: CGRect(origin: .zero, size: box))
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: -frame.minX, y: -frame.maxY)
+        }
+        NSColor.white.withAlphaComponent(0.08).setFill()
+        for index in 1..<Int(span) {
+            let offset = CGFloat(index) * zoom
+            CGRect(x: frame.minX + offset, y: frame.minY, width: 0.5, height: frame.height).fill(using: .sourceOver)
+            CGRect(x: frame.minX, y: frame.minY + offset, width: frame.width, height: 0.5).fill(using: .sourceOver)
         }
         context.restoreGState()
-        // Crosshair over the center pixel.
-        NSColor.controlAccentColor.withAlphaComponent(0.8).setFill()
-        CGRect(x: frame.midX - zoom / 2, y: frame.minY, width: zoom, height: frame.height).fill(using: .sourceOver)
-        CGRect(x: frame.minX, y: frame.midY - zoom / 2, width: frame.width, height: zoom).fill(using: .sourceOver)
+        // The pixel the pointer is on, outlined.
+        let cell = CGRect(x: frame.minX + half * zoom, y: frame.minY + half * zoom, width: zoom, height: zoom)
+        NSColor.white.setStroke()
+        NSBezierPath(rect: cell.insetBy(dx: -0.5, dy: -0.5)).stroke()
         NSColor.white.withAlphaComponent(0.9).setStroke()
         let ring = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
         ring.lineWidth = 2
         ring.stroke()
 
-        let hex = colorHex(at: point) ?? "—"
-        let info = "\(Int(point.x * scale)), \(Int(point.y * scale))   \(hex)\nC copies the color" as NSString
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
-                                                          .foregroundColor: NSColor.white]
-        let plate = CGRect(x: frame.minX, y: frame.maxY + 4, width: frame.width, height: 38)
-        NSColor.black.withAlphaComponent(0.72).setFill()
-        NSBezierPath(roundedRect: plate, xRadius: 6, yRadius: 6).fill()
+        let plate = CGRect(x: frame.minX, y: frame.maxY + 4, width: frame.width, height: panelHeight)
+        NSColor.black.withAlphaComponent(0.78).setFill()
+        NSBezierPath(roundedRect: plate, xRadius: 7, yRadius: 7).fill()
+        let mono = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        let bold = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        let dim = NSColor.white.withAlphaComponent(0.55)
+        var y = plate.minY + 6
+        func line(_ text: String, font: NSFont = mono, color: NSColor = .white, indent: CGFloat = 0) {
+            (text as NSString).draw(at: CGPoint(x: plate.minX + 9 + indent, y: y), withAttributes: [.font: font, .foregroundColor: color])
+            y += 15
+        }
+        line("X \(Int(center.x))   Y \(Int(center.y))")
+        if isSizing, let selection { line("\(Int((selection.width * scale).rounded())) × \(Int((selection.height * scale).rounded())) px") }
         if let swatch = color(at: point) {
             swatch.setFill()
-            NSBezierPath(roundedRect: CGRect(x: plate.minX + 8, y: plate.minY + 7, width: 10, height: 10), xRadius: 2, yRadius: 2).fill()
+            NSBezierPath(roundedRect: CGRect(x: plate.minX + 9, y: y + 2, width: 11, height: 11), xRadius: 2, yRadius: 2).fill()
+            line(swatch.hexString, font: copiesHex ? bold : mono, color: copiesHex ? .white : dim, indent: 17)
+            line(Self.rgb(swatch), font: copiesHex ? mono : bold, color: copiesHex ? dim : .white, indent: 17)
         }
-        info.draw(in: plate.insetBy(dx: 8, dy: 4).offsetBy(dx: 16, dy: 0), withAttributes: attributes)
+        line(copiedFlash ?? "C copy  ·  ⇧ switch format", font: .systemFont(ofSize: 10.5, weight: copiedFlash == nil ? .regular : .semibold),
+             color: copiedFlash == nil ? dim : .systemGreen)
+    }
+
+    /// Dragging out or resizing a selection: the magnifier also shows its size.
+    private var isSizing: Bool {
+        switch drag {
+        case .creating, .resizing: return true
+        default: return false
+        }
+    }
+
+    private static func rgb(_ color: NSColor) -> String {
+        "RGB \(Int(round(color.redComponent * 255))), \(Int(round(color.greenComponent * 255))), \(Int(round(color.blueComponent * 255)))"
     }
 
     // MARK: Pixels
@@ -193,12 +252,6 @@ final class CaptureView: NSView, NSTextFieldDelegate {
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         return NSColor(srgbRed: CGFloat(bytes[0]) / 255, green: CGFloat(bytes[1]) / 255, blue: CGFloat(bytes[2]) / 255, alpha: 1)
-    }
-
-    private func colorHex(at point: CGPoint) -> String? {
-        guard let color = color(at: point) else { return nil }
-        return String(format: "#%02X%02X%02X", Int(round(color.redComponent * 255)), Int(round(color.greenComponent * 255)),
-                      Int(round(color.blueComponent * 255)))
     }
 
     // MARK: Mouse
@@ -225,7 +278,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if textField != nil { commitText() }
+        if textEditor != nil { commitText(); if tool == .text { return } }
         if isPassive { return }
         if event.clickCount == 2, let selection, selection.contains(point), tool == nil {
             finish(.copy)
@@ -238,7 +291,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
         }
         if let tool, selection.contains(point) {
             if tool == .text { beginText(at: point); return }
-            current = Annotation(tool: tool, points: [point], color: color, width: stroke)
+            current = Annotation(tool: tool, points: [point], color: color, width: stroke, style: style)
             drag = .drawing
         } else if tool == nil, let handle = handle(at: point, in: selection) {
             drag = .resizing(handle, selection)
@@ -309,7 +362,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if textField != nil { cancelText() }
+        if textEditor != nil { cancelText() }
         else if tool != nil { tool = nil }
         else if selection != nil, annotations.isEmpty { clearSelection() }
         else { onCancel?() }
@@ -397,43 +450,66 @@ final class CaptureView: NSView, NSTextFieldDelegate {
 
     // MARK: Text
 
+    /// A borderless, growing text view styled like the finished annotation, so what you type is
+    /// exactly what gets drawn. Return commits, Shift+Return adds a line, Esc discards.
     private func beginText(at point: CGPoint) {
-        let font = NSFont.systemFont(ofSize: 12 + stroke * 2, weight: .medium)
-        let field = NSTextField(frame: CGRect(x: point.x, y: point.y, width: 240, height: font.pointSize + 8))
-        field.font = font
-        field.textColor = color
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.placeholderString = "Text"
-        field.delegate = self
-        field.cell?.isScrollable = true
-        addSubview(field)
-        window?.makeFirstResponder(field)
-        textField = field
-    }
-
-    func controlTextDidEndEditing(_ obj: Notification) { commitText() }
-
-    private func commitText() {
-        guard let field = textField else { return }
-        textField = nil
-        let text = field.stringValue
-        field.removeFromSuperview()
-        window?.makeFirstResponder(self)
-        guard !text.isEmpty else { return }
-        annotations.append(Annotation(tool: .text, points: [field.frame.origin], color: field.textColor ?? color,
-                                      width: stroke, text: text, font: field.font ?? .systemFont(ofSize: 18)))
-        redoStack.removeAll()
-        toolbar.canUndo = true
-        toolbar.canRedo = false
+        let editor = TextAnnotationEditor(origin: point)
+        editor.delegate = self
+        editor.apply(style, color: color)
+        addSubview(editor)
+        window?.makeFirstResponder(editor)
+        textEditor = editor
         needsDisplay = true
     }
 
-    private func cancelText() {
-        textField?.removeFromSuperview()
-        textField = nil
+    func textDidChange(_ notification: Notification) {
+        textEditor?.fitToText()
+        needsDisplay = true
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        switch selector {
+        case #selector(insertNewline(_:)) where !(NSApp.currentEvent?.modifierFlags.contains(.shift) ?? false):
+            commitText()
+            return true
+        case #selector(insertNewline(_:)):
+            textView.insertNewlineIgnoringFieldEditor(nil)
+            return true
+        case #selector(cancelOperation(_:)):
+            cancelText()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func drawEditorFrame(_ frame: CGRect) {
+        let box = NSBezierPath(rect: frame.insetBy(dx: -4, dy: -3))
+        box.lineWidth = 1
+        box.setLineDash([4, 3], count: 2, phase: 0)
+        NSColor.white.withAlphaComponent(0.8).setStroke()
+        box.stroke()
+    }
+
+    private func commitText() {
+        guard let editor = textEditor else { return }
+        textEditor = nil
+        let text = editor.string
+        editor.removeFromSuperview()
         window?.makeFirstResponder(self)
+        needsDisplay = true
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        annotations.append(Annotation(tool: .text, points: [editor.frame.origin], color: color, width: stroke, style: style, text: text))
+        redoStack.removeAll()
+        toolbar.canUndo = true
+        toolbar.canRedo = false
+    }
+
+    private func cancelText() {
+        textEditor?.removeFromSuperview()
+        textEditor = nil
+        window?.makeFirstResponder(self)
+        needsDisplay = true
     }
 
     // MARK: Editing
@@ -455,7 +531,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
     }
 
     private func finish(_ action: CaptureAction) {
-        if textField != nil { commitText() }
+        if textEditor != nil { commitText() }
         guard selection != nil else { return }
         onFinish?(action)
     }
@@ -493,7 +569,7 @@ final class CaptureView: NSView, NSTextFieldDelegate {
                 }
             } else if flags.isEmpty {
                 switch key {
-                case "c" where selection == nil: copyColor()
+                case "c" where showsMagnifier: copyColor()
                 case ",": stepRecent(by: 1)
                 case ".": stepRecent(by: -1)
                 case "1", "2", "3", "4", "5", "6", "7", "8":
@@ -561,11 +637,31 @@ final class CaptureView: NSView, NSTextFieldDelegate {
         needsDisplay = true
     }
 
+    /// C copies the color under the pointer in the highlighted format; capture carries on.
     private func copyColor() {
-        guard let pointer, let hex = colorHex(at: pointer) else { return }
+        guard let pointer, let swatch = color(at: pointer) else { return }
+        let value = copiesHex ? swatch.hexString : Self.rgb(swatch).replacingOccurrences(of: "RGB ", with: "")
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(hex, forType: .string)
-        onColorCopied?(hex)
+        NSPasteboard.general.setString(value, forType: .string)
+        copiedFlash = "Copied \(value)"
+        clearFlash?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.copiedFlash = nil
+            self?.needsDisplay = true
+        }
+        clearFlash = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+        needsDisplay = true
+    }
+
+    /// Pressing Shift (on its own) switches the color format C copies.
+    override func flagsChanged(with event: NSEvent) {
+        let shiftDown = event.modifierFlags.contains(.shift)
+        if shiftDown, !shiftWasDown, showsMagnifier {
+            copiesHex.toggle()
+            needsDisplay = true
+        }
+        shiftWasDown = shiftDown
     }
 }
 
@@ -594,5 +690,56 @@ extension CGRect {
 
     init(corners a: CGPoint, _ b: CGPoint) {
         self.init(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
+    }
+}
+
+/// The live text box of the text tool. No padding or insets, so its origin is where the committed
+/// annotation draws its first line.
+@MainActor
+final class TextAnnotationEditor: NSTextView {
+    init(origin: CGPoint) {
+        let storage = NSTextStorage()
+        let layout = NSLayoutManager()
+        storage.addLayoutManager(layout)
+        let container = NSTextContainer(size: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        container.widthTracksTextView = false
+        layout.addTextContainer(container)
+        super.init(frame: CGRect(origin: origin, size: CGSize(width: 2, height: 20)), textContainer: container)
+        textContainerInset = .zero
+        drawsBackground = false
+        isRichText = false
+        allowsUndo = true
+        isHorizontallyResizable = true
+        isVerticallyResizable = true
+        isAutomaticQuoteSubstitutionEnabled = false
+        isAutomaticDashSubstitutionEnabled = false
+        isAutomaticSpellingCorrectionEnabled = false
+        focusRingType = .none
+    }
+
+    override init(frame: NSRect, textContainer: NSTextContainer?) { super.init(frame: frame, textContainer: textContainer) }
+    required init?(coder: NSCoder) { fatalError("Use init(origin:)") }
+
+    /// Restyles everything typed so far and what comes next.
+    func apply(_ style: CaptureStyle, color: NSColor) {
+        let attributes = style.textAttributes(color: color)
+        typingAttributes = attributes
+        insertionPointColor = color
+        if let storage = textStorage, storage.length > 0 {
+            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+        }
+        fitToText()
+    }
+
+    /// Grows with the text; never narrower than the caret, never shorter than one line.
+    func fitToText() {
+        guard let layout = layoutManager, let container = textContainer else { return }
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container)
+        let font = typingAttributes[.font] as? NSFont ?? .systemFont(ofSize: 20)
+        let lineHeight = layout.defaultLineHeight(for: font)
+        setFrameSize(CGSize(width: ceil(max(used.width, 1)) + 2, height: ceil(max(used.height, lineHeight))))
+        superview?.needsDisplay = true
     }
 }

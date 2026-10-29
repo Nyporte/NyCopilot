@@ -35,14 +35,70 @@ enum AnnotationTool: CaseIterable {
     var isFreehand: Bool { self == .pen || self == .marker || self == .mosaic }
 }
 
+/// Shape and text options that persist between captures, mirroring the core's `capture.style`.
+struct CaptureStyle: Codable, Equatable {
+    var cornerRadius: CGFloat = 0
+    var filled = false
+    /// A font family name; empty means the system font.
+    var font = ""
+    var textSize: CGFloat = 20
+    var bold = false
+    var italic = false
+    var underline = false
+    var strikethrough = false
+
+    enum CodingKeys: String, CodingKey {
+        case cornerRadius = "corner_radius", filled, font, textSize = "text_size", bold, italic, underline, strikethrough
+    }
+
+    init() {}
+
+    /// Missing keys keep their defaults, so older stored styles still load.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let base = CaptureStyle()
+        cornerRadius = try c.decodeIfPresent(CGFloat.self, forKey: .cornerRadius) ?? base.cornerRadius
+        filled = try c.decodeIfPresent(Bool.self, forKey: .filled) ?? base.filled
+        font = try c.decodeIfPresent(String.self, forKey: .font) ?? base.font
+        textSize = try c.decodeIfPresent(CGFloat.self, forKey: .textSize) ?? base.textSize
+        bold = try c.decodeIfPresent(Bool.self, forKey: .bold) ?? base.bold
+        italic = try c.decodeIfPresent(Bool.self, forKey: .italic) ?? base.italic
+        underline = try c.decodeIfPresent(Bool.self, forKey: .underline) ?? base.underline
+        strikethrough = try c.decodeIfPresent(Bool.self, forKey: .strikethrough) ?? base.strikethrough
+    }
+
+    var json: [String: Any] {
+        ["corner_radius": Double(cornerRadius), "filled": filled, "font": font, "text_size": Double(textSize),
+         "bold": bold, "italic": italic, "underline": underline, "strikethrough": strikethrough]
+    }
+
+    /// The chosen family with bold and italic applied where the family has them.
+    var resolvedFont: NSFont {
+        let manager = NSFontManager.shared
+        var traits: NSFontTraitMask = []
+        if bold { traits.insert(.boldFontMask) }
+        if italic { traits.insert(.italicFontMask) }
+        let base = font.isEmpty ? NSFont.systemFont(ofSize: textSize, weight: bold ? .bold : .medium)
+            : manager.font(withFamily: font, traits: traits, weight: bold ? 9 : 5, size: textSize) ?? .systemFont(ofSize: textSize)
+        return italic ? manager.convert(base, toHaveTrait: .italicFontMask) : base
+    }
+
+    func textAttributes(color: NSColor) -> [NSAttributedString.Key: Any] {
+        var attributes: [NSAttributedString.Key: Any] = [.font: resolvedFont, .foregroundColor: color]
+        if underline { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
+        if strikethrough { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+        return attributes
+    }
+}
+
 /// One mark on a capture, in the capture view's coordinates (points, top-left origin).
 struct Annotation {
     var tool: AnnotationTool
     var points: [CGPoint]
     var color: NSColor
     var width: CGFloat
+    var style = CaptureStyle()
     var text = ""
-    var font = NSFont.systemFont(ofSize: 18, weight: .medium)
 
     /// The rectangle spanned by the first and last point, for shape tools.
     var box: CGRect {
@@ -56,14 +112,15 @@ struct Annotation {
         color.setFill()
         switch tool {
         case .rectangle:
-            let path = NSBezierPath(rect: box)
+            let radius = min(style.cornerRadius, box.width / 2, box.height / 2)
+            let path = NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
             path.lineWidth = width
             path.lineJoinStyle = .round
-            path.stroke()
+            style.filled ? path.fill() : path.stroke()
         case .ellipse:
             let path = NSBezierPath(ovalIn: box)
             path.lineWidth = width
-            path.stroke()
+            style.filled ? path.fill() : path.stroke()
         case .line, .arrow:
             guard let start = points.first, let end = points.last else { return }
             let path = NSBezierPath()
@@ -90,7 +147,7 @@ struct Annotation {
             context.restoreGState()
         case .text:
             guard let origin = points.first, !text.isEmpty else { return }
-            (text as NSString).draw(at: origin, withAttributes: [.font: font, .foregroundColor: color])
+            NSAttributedString(string: text, attributes: style.textAttributes(color: color)).draw(at: origin)
         }
     }
 

@@ -1,38 +1,41 @@
 import AppKit
 
 /// The bar under a selection: drawing tools, undo and redo, then save, pin, cancel, and copy. While a
-/// tool is active, a second row offers colors and line widths.
+/// tool is active, a second row holds that tool's options: colors, line width, corner radius and fill
+/// for shapes, and font, size, and emphasis for text.
 @MainActor
 final class CaptureToolbar: NSView {
     var onTool: ((AnnotationTool) -> Void)?
     var onColor: ((NSColor) -> Void)?
     var onStroke: ((CGFloat) -> Void)?
+    var onStyle: ((CaptureStyle) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onAction: ((CaptureAction) -> Void)?
     var onCancel: (() -> Void)?
 
-    var selectedTool: AnnotationTool? { didSet { refresh() } }
-    var selectedColor: NSColor = .systemRed { didSet { refresh() } }
-    var selectedStroke: CGFloat = 3 { didSet { refresh() } }
+    var selectedTool: AnnotationTool? { didSet { if selectedTool != oldValue { rebuildOptions() }; refreshTools() } }
+    var selectedColor: NSColor = .systemRed { didSet { refreshSwatches() } }
+    var selectedStroke: CGFloat = 3
+    var style = CaptureStyle()
     var canUndo = false { didSet { undoButton.isEnabled = canUndo } }
     var canRedo = false { didSet { redoButton.isEnabled = canRedo } }
 
-    static let strokes: [CGFloat] = [2, 4, 8]
     private var toolButtons: [AnnotationTool: NSButton] = [:]
     private var swatches: [(NSColor, Swatch)] = []
-    private var strokeButtons: [(CGFloat, NSButton)] = []
     private let undoButton: NSButton
     private let redoButton: NSButton
-    private let options: NSStackView
+    private let options = Design.hstack([], spacing: 8)
     private let palette: [NSColor]
+    private static let textSizes: [CGFloat] = [12, 14, 16, 20, 24, 32, 40, 48, 64, 96]
 
     init(palette: [NSColor]) {
         self.palette = palette
         undoButton = Self.icon("arrow.uturn.backward", "Undo (⌘Z)")
         redoButton = Self.icon("arrow.uturn.forward", "Redo (⇧⌘Z)")
-        options = Design.hstack([], spacing: 6)
         super.init(frame: .zero)
+        // Always dark, like the overlay it sits on, so sliders and menus read well.
+        appearance = NSAppearance(named: .darkAqua)
 
         let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 10)
         material.translatesAutoresizingMaskIntoConstraints = false
@@ -67,23 +70,6 @@ final class CaptureToolbar: NSView {
         copy.target = self
         copy.action = #selector(copy(_:))
         let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), save, pin, cancel, copy], spacing: 2)
-
-        for color in palette {
-            let swatch = Swatch(color: color)
-            swatch.onPick = { [weak self] in self?.onColor?(color) }
-            swatches.append((color, swatch))
-            options.addArrangedSubview(swatch)
-        }
-        options.addArrangedSubview(Self.divider())
-        for width in Self.strokes {
-            let button = NSButton(image: Self.dot(width), target: self, action: #selector(pickStroke(_:)))
-            button.isBordered = false
-            button.toolTip = "Line width"
-            button.tag = Int(width)
-            button.widthAnchor.constraint(equalToConstant: 24).isActive = true
-            strokeButtons.append((width, button))
-            options.addArrangedSubview(button)
-        }
         options.isHidden = true
 
         let column = Design.vstack([mainRow, options], spacing: 6, alignment: .leading)
@@ -97,35 +83,176 @@ final class CaptureToolbar: NSView {
             column.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 6),
             column.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -6),
             column.topAnchor.constraint(equalTo: material.topAnchor, constant: 5),
-            column.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -5)
+            column.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -6)
         ])
-        refresh()
+        refreshTools()
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(palette:)") }
 
     override var isFlipped: Bool { true }
 
-    private func refresh() {
+    // MARK: Options row
+
+    /// Each tool shows only what applies to it.
+    private func rebuildOptions() {
+        options.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        swatches.removeAll()
+        guard let tool = selectedTool else { options.isHidden = true; return }
+        options.isHidden = false
+        if tool != .mosaic {
+            for color in palette {
+                let swatch = Swatch(color: color)
+                swatch.onPick = { [weak self] in self?.onColor?(color) }
+                swatches.append((color, swatch))
+                options.addArrangedSubview(swatch)
+            }
+            refreshSwatches()
+        }
+        switch tool {
+        case .text:
+            options.addArrangedSubview(Self.divider())
+            options.addArrangedSubview(fontMenu())
+            options.addArrangedSubview(sizeMenu())
+            options.addArrangedSubview(emphasis())
+        default:
+            if tool != .mosaic { options.addArrangedSubview(Self.divider()) }
+            options.addArrangedSubview(slider(symbol: tool == .mosaic ? "circle.dotted" : "lineweight", tip: tool == .mosaic ? "Brush size" : "Line width",
+                                              value: Double(selectedStroke), range: 1...24, action: #selector(strokeChanged(_:))))
+            if tool == .rectangle {
+                options.addArrangedSubview(slider(symbol: "square.dashed", tip: "Corner radius", value: Double(style.cornerRadius),
+                                                  range: 0...40, action: #selector(radiusChanged(_:))))
+            }
+            if tool == .rectangle || tool == .ellipse { options.addArrangedSubview(fillControl(for: tool)) }
+        }
+    }
+
+    /// A small slider with an icon and its live value, e.g. "⧉ ——●—— 4".
+    private func slider(symbol: String, tip: String, value: Double, range: ClosedRange<Double>, action: Selector) -> NSView {
+        let slider = NSSlider(value: value, minValue: range.lowerBound, maxValue: range.upperBound, target: self, action: action)
+        slider.controlSize = .small
+        slider.isContinuous = true
+        slider.toolTip = tip
+        slider.widthAnchor.constraint(equalToConstant: 84).isActive = true
+        let label = Design.label("\(Int(value))", size: 11, weight: .medium, color: .white)
+        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        label.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        slider.identifier = NSUserInterfaceItemIdentifier(tip)
+        valueLabels[tip] = label
+        return Design.hstack([Design.symbol(symbol, size: 11, color: .white.withAlphaComponent(0.7)), slider, label], spacing: 4)
+    }
+    private var valueLabels: [String: NSTextField] = [:]
+
+    private func fillControl(for tool: AnnotationTool) -> NSSegmentedControl {
+        let outline = NSImage(systemSymbolName: tool == .ellipse ? "circle" : "square", accessibilityDescription: "Outline")!
+        let filled = NSImage(systemSymbolName: tool == .ellipse ? "circle.fill" : "square.fill", accessibilityDescription: "Filled")!
+        let control = NSSegmentedControl(images: [outline, filled], trackingMode: .selectOne, target: self, action: #selector(fillChanged(_:)))
+        control.controlSize = .small
+        control.selectedSegment = style.filled ? 1 : 0
+        control.setToolTip("Outline", forSegment: 0)
+        control.setToolTip("Filled", forSegment: 1)
+        return control
+    }
+
+    /// Starts with just the current font; every family, each shown in its own face, is added when
+    /// the menu first opens, since loading them all takes a noticeable moment.
+    private func fontMenu() -> NSPopUpButton {
+        let button = NSPopUpButton()
+        button.controlSize = .small
+        button.addItem(withTitle: style.font.isEmpty ? Self.systemFontTitle : style.font)
+        button.menu?.delegate = self
+        button.target = self
+        button.action = #selector(fontChanged(_:))
+        button.toolTip = "Font"
+        button.widthAnchor.constraint(equalToConstant: 128).isActive = true
+        fontButton = button
+        return button
+    }
+    private weak var fontButton: NSPopUpButton?
+    private static let systemFontTitle = "System Font"
+
+    private func sizeMenu() -> NSPopUpButton {
+        let menu = NSPopUpButton()
+        menu.controlSize = .small
+        let sizes = Self.textSizes.contains(style.textSize) ? Self.textSizes : (Self.textSizes + [style.textSize]).sorted()
+        menu.addItems(withTitles: sizes.map { "\(Int($0)) pt" })
+        menu.selectItem(withTitle: "\(Int(style.textSize)) pt")
+        menu.target = self
+        menu.action = #selector(sizeChanged(_:))
+        menu.toolTip = "Text size"
+        return menu
+    }
+
+    /// Bold, italic, underline, strikethrough — any combination.
+    private func emphasis() -> NSSegmentedControl {
+        let control = NSSegmentedControl(labels: ["B", "I", "U", "S"], trackingMode: .selectAny, target: self, action: #selector(emphasisChanged(_:)))
+        control.controlSize = .small
+        for (index, symbol) in ["bold", "italic", "underline", "strikethrough"].enumerated() {
+            control.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: symbol.capitalized), forSegment: index)
+            control.setLabel("", forSegment: index)
+            control.setWidth(24, forSegment: index)
+            control.setToolTip(symbol.capitalized, forSegment: index)
+        }
+        for (index, on) in [style.bold, style.italic, style.underline, style.strikethrough].enumerated() { control.setSelected(on, forSegment: index) }
+        return control
+    }
+
+    // MARK: Option actions
+
+    @objc private func strokeChanged(_ sender: NSSlider) {
+        let width = CGFloat(sender.integerValue)
+        selectedStroke = width
+        valueLabels[sender.identifier?.rawValue ?? ""]?.stringValue = "\(Int(width))"
+        onStroke?(width)
+    }
+
+    @objc private func radiusChanged(_ sender: NSSlider) {
+        style.cornerRadius = CGFloat(sender.integerValue)
+        valueLabels["Corner radius"]?.stringValue = "\(sender.integerValue)"
+        onStyle?(style)
+    }
+
+    @objc private func fillChanged(_ sender: NSSegmentedControl) {
+        style.filled = sender.selectedSegment == 1
+        onStyle?(style)
+    }
+
+    @objc private func fontChanged(_ sender: NSPopUpButton) {
+        let title = sender.titleOfSelectedItem ?? Self.systemFontTitle
+        style.font = title == Self.systemFontTitle ? "" : title
+        onStyle?(style)
+    }
+
+    @objc private func sizeChanged(_ sender: NSPopUpButton) {
+        if let title = sender.titleOfSelectedItem, let size = Double(title.replacingOccurrences(of: " pt", with: "")) {
+            style.textSize = CGFloat(size)
+            onStyle?(style)
+        }
+    }
+
+    @objc private func emphasisChanged(_ sender: NSSegmentedControl) {
+        style.bold = sender.isSelected(forSegment: 0)
+        style.italic = sender.isSelected(forSegment: 1)
+        style.underline = sender.isSelected(forSegment: 2)
+        style.strikethrough = sender.isSelected(forSegment: 3)
+        onStyle?(style)
+    }
+
+    // MARK: Main row
+
+    private func refreshTools() {
         for (tool, button) in toolButtons {
             let active = tool == selectedTool
             button.contentTintColor = active ? .controlAccentColor : .white
             button.state = active ? .on : .off
         }
+    }
+
+    private func refreshSwatches() {
         for (color, swatch) in swatches { swatch.isSelected = color.isClose(to: selectedColor) }
-        for (width, button) in strokeButtons { button.contentTintColor = width == selectedStroke ? .controlAccentColor : .white }
-        let showOptions = selectedTool != nil && selectedTool != .mosaic
-        if options.isHidden == showOptions {
-            options.isHidden = !showOptions
-            // Grow or shrink downward from the same top-right corner.
-            let old = frame
-            let size = fittingSize
-            frame = CGRect(x: old.maxX - size.width, y: old.minY, width: size.width, height: size.height)
-        }
     }
 
     @objc private func pickTool(_ sender: NSButton) { onTool?(AnnotationTool.allCases[sender.tag]) }
-    @objc private func pickStroke(_ sender: NSButton) { onStroke?(CGFloat(sender.tag)) }
     @objc private func undo() { onUndo?() }
     @objc private func redo() { onRedo?() }
     @objc private func pin(_ sender: Any?) { onAction?(.pin) }
@@ -155,17 +282,20 @@ final class CaptureToolbar: NSView {
         line.heightAnchor.constraint(equalToConstant: 16).isActive = true
         return line
     }
+}
 
-    /// A filled circle whose size shows the line width.
-    private static func dot(_ width: CGFloat) -> NSImage {
-        let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
-            NSColor.black.setFill()
-            let size = min(4 + width * 1.2, 14)
-            NSBezierPath(ovalIn: CGRect(x: rect.midX - size / 2, y: rect.midY - size / 2, width: size, height: size)).fill()
-            return true
+extension CaptureToolbar: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        guard menu.items.count <= 1 else { return }
+        let current = menu.items.first?.title ?? Self.systemFontTitle
+        menu.removeAllItems()
+        menu.addItem(withTitle: Self.systemFontTitle, action: nil, keyEquivalent: "")
+        menu.addItem(.separator())
+        for family in NSFontManager.shared.availableFontFamilies where !family.hasPrefix(".") {
+            let item = menu.addItem(withTitle: family, action: nil, keyEquivalent: "")
+            item.attributedTitle = NSAttributedString(string: family, attributes: [.font: NSFont(name: family, size: 13) ?? NSFont.systemFont(ofSize: 13)])
         }
-        image.isTemplate = true
-        return image
+        if let button = fontButton, let item = menu.items.first(where: { $0.title == current }) { button.select(item) }
     }
 }
 
@@ -182,7 +312,7 @@ private final class Swatch: NSView {
         widthAnchor.constraint(equalToConstant: 20).isActive = true
         heightAnchor.constraint(equalToConstant: 20).isActive = true
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Color")
+        setAccessibilityLabel("Color \(color.hexString)")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(color:)") }
