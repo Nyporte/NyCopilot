@@ -150,9 +150,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         let anchor = axFrame.map { NSRect(x: $0.minX, y: desktopTop - $0.maxY, width: $0.width, height: $0.height) }
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
-            // Two fifths of the screen wide, starting where the cursor is so typed text lines up with it.
+            // A quarter of the screen wide (at least 300 pt), starting where the cursor is so typed text lines up with it.
             let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-            let width = min(max(visible.width * 2 / 5, 360), visible.width)
+            let width = min(max(visible.width / 4, 300), visible.width)
             cardWidth.constant = width
             errorLabel.preferredMaxLayoutWidth = width - Self.horizontalPadding * 2 - 120
             let x = max(visible.minX, min((anchor?.minX ?? point.x) - Self.horizontalPadding, visible.maxX - width))
