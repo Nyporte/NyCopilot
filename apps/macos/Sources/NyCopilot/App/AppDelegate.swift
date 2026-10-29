@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Every module this build ships, in menu order. Add new module shells here.
     private func makeModules() -> [ModuleShell] {
-        [TranslateShell(services: services), WindowsShell(services: services)]
+        [TranslateShell(services: services), WindowsShell(services: services), CaptureShell(services: services)]
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

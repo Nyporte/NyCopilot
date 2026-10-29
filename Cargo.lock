@@ -399,7 +399,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "ny-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "rusqlite",
  "serde",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "ny-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ny-core",
  "ny-llm",
@@ -420,7 +420,7 @@ dependencies = [
 
 [[package]]
 name = "ny-llm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ny-core",
  "serde",
@@ -431,7 +431,7 @@ dependencies = [
 
 [[package]]
 name = "ny-modules"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ny-core",
  "ny-llm",

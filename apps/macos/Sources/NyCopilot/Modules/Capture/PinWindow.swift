@@ -1,0 +1,273 @@
+import AppKit
+
+/// An image floating above every window. Drag to move, scroll to zoom, ⌥-scroll to fade, 1–4 to rotate
+/// and flip, ⌘C to copy, ⌘S to save, Esc or a double-click to close. Right-click for everything else.
+@MainActor
+final class PinWindow: NSPanel {
+    var onSave: ((NSImage) -> Void)?
+    var onClose: ((PinWindow) -> Void)?
+    var onCloseAll: (() -> Void)?
+
+    let original: NSImage
+    private let pinView: PinView
+    private(set) var zoom: CGFloat = 1
+    private var quarterTurns = 0
+    private var flippedHorizontally = false
+    private var flippedVertically = false
+    private(set) var isClickThrough = false
+
+    init(image: NSImage, frame: NSRect, shadow: Bool) {
+        original = image
+        pinView = PinView(frame: CGRect(origin: .zero, size: frame.size))
+        super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        level = .floating
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = shadow
+        isReleasedWhenClosed = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        pinView.pin = self
+        contentView = pinView
+        redraw()
+    }
+
+    override var canBecomeKey: Bool { true }
+
+    /// The image as currently shown: rotated and flipped.
+    var displayedImage: NSImage {
+        let turned = quarterTurns % 2 == 1
+        let size = turned ? NSSize(width: original.size.height, height: original.size.width) : original.size
+        return NSImage(size: size, flipped: false) { [self] rect in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.translateBy(x: rect.midX, y: rect.midY)
+            context.rotate(by: -CGFloat(quarterTurns) * .pi / 2)
+            context.scaleBy(x: flippedHorizontally ? -1 : 1, y: flippedVertically ? -1 : 1)
+            original.draw(in: CGRect(x: -original.size.width / 2, y: -original.size.height / 2,
+                                     width: original.size.width, height: original.size.height))
+            return true
+        }
+    }
+
+    private func redraw() {
+        pinView.image = displayedImage
+        pinView.needsDisplay = true
+    }
+
+    /// Scale around a fixed point on screen (the pointer), within 10–800%.
+    func setZoom(_ value: CGFloat, around anchor: NSPoint? = nil) {
+        let clamped = min(max(value, 0.1), 8)
+        let turned = quarterTurns % 2 == 1
+        let base = turned ? NSSize(width: original.size.height, height: original.size.width) : original.size
+        let size = NSSize(width: max(base.width * clamped, 16), height: max(base.height * clamped, 16))
+        let pivot = anchor ?? NSPoint(x: frame.midX, y: frame.midY)
+        let fx = (pivot.x - frame.minX) / frame.width, fy = (pivot.y - frame.minY) / frame.height
+        setFrame(NSRect(x: pivot.x - fx * size.width, y: pivot.y - fy * size.height, width: size.width, height: size.height), display: true)
+        zoom = clamped
+        pinView.flash("\(Int(round(clamped * 100)))%")
+    }
+
+    func setOpacity(_ value: CGFloat) {
+        alphaValue = min(max(value, 0.1), 1)
+        pinView.flash("Opacity \(Int(round(alphaValue * 100)))%")
+    }
+
+    func rotate(clockwise: Bool) {
+        quarterTurns = (quarterTurns + (clockwise ? 1 : 3)) % 4
+        redraw()
+        setZoom(zoom)
+    }
+
+    func flip(horizontally: Bool) {
+        if horizontally { flippedHorizontally.toggle() } else { flippedVertically.toggle() }
+        redraw()
+    }
+
+    func copyImage() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([displayedImage])
+        pinView.flash("Copied")
+    }
+
+    func setClickThrough(_ on: Bool) {
+        isClickThrough = on
+        ignoresMouseEvents = on
+    }
+
+    override func close() {
+        super.close()
+        onClose?(self)
+    }
+
+    // MARK: Menu
+
+    func menu() -> NSMenu {
+        let menu = NSMenu()
+        func add(_ title: String, _ action: Selector, key: String = "", state: Bool = false) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.target = self
+            item.state = state ? .on : .off
+            menu.addItem(item)
+        }
+        add("Copy", #selector(copyFromMenu), key: "c")
+        add("Save…", #selector(saveFromMenu), key: "s")
+        menu.addItem(.separator())
+        add("Actual Size", #selector(actualSize), key: "0")
+        let opacity = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
+        let levels = NSMenu()
+        for level in [100, 80, 60, 40, 20] {
+            let item = NSMenuItem(title: "\(level)%", action: #selector(pickOpacity(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = level
+            item.state = Int(round(alphaValue * 100)) == level ? .on : .off
+            levels.addItem(item)
+        }
+        opacity.submenu = levels
+        menu.addItem(opacity)
+        add("Rotate Left", #selector(rotateLeft), key: "1")
+        add("Rotate Right", #selector(rotateRight), key: "2")
+        add("Flip Horizontal", #selector(flipH), key: "3")
+        add("Flip Vertical", #selector(flipV), key: "4")
+        add("Shadow", #selector(toggleShadow), state: hasShadow)
+        add("Click Through", #selector(toggleClickThrough))
+        menu.addItem(.separator())
+        add("Close", #selector(closeFromMenu))
+        add("Close All Pins", #selector(closeAllFromMenu))
+        for item in menu.items where !item.keyEquivalent.isEmpty { item.keyEquivalentModifierMask = item.keyEquivalent.first!.isNumber ? [] : [.command] }
+        return menu
+    }
+
+    @objc private func copyFromMenu() { copyImage() }
+    @objc private func saveFromMenu() { onSave?(displayedImage) }
+    @objc private func actualSize() { setZoom(1) }
+    @objc private func pickOpacity(_ sender: NSMenuItem) { setOpacity(CGFloat(sender.tag) / 100) }
+    @objc private func rotateLeft() { rotate(clockwise: false) }
+    @objc private func rotateRight() { rotate(clockwise: true) }
+    @objc private func flipH() { flip(horizontally: true) }
+    @objc private func flipV() { flip(horizontally: false) }
+    @objc private func toggleShadow() { hasShadow.toggle(); invalidateShadow() }
+    @objc private func toggleClickThrough() { setClickThrough(true) }
+    @objc private func closeFromMenu() { close() }
+    @objc private func closeAllFromMenu() { onCloseAll?() }
+}
+
+/// Draws the pin and turns gestures into pin actions.
+private final class PinView: NSView {
+    weak var pin: PinWindow?
+    var image: NSImage?
+    private let badge = Design.label("", size: 12, weight: .semibold, color: .white)
+    private var hideBadge: DispatchWorkItem?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        autoresizingMask = [.width, .height]
+        wantsLayer = true
+        badge.wantsLayer = true
+        badge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
+        badge.layer?.cornerRadius = 5
+        badge.alphaValue = 0
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(badge)
+        NSLayoutConstraint.activate([
+            badge.centerXAnchor.constraint(equalTo: centerXAnchor),
+            badge.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+
+    override func draw(_ dirtyRect: NSRect) {
+        image?.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+                    hints: [.interpolation: NSNumber(value: NSImageInterpolation.high.rawValue)])
+        NSColor.controlAccentColor.withAlphaComponent(window?.isKeyWindow == true ? 0.7 : 0).setStroke()
+        NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)).stroke()
+    }
+
+    /// A short-lived label for zoom, opacity, and copy feedback.
+    func flash(_ text: String) {
+        badge.stringValue = "  \(text)  "
+        hideBadge?.cancel()
+        badge.alphaValue = 1
+        let work = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.3; self?.badge.animator().alphaValue = 0 }
+        }
+        hideBadge = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 { pin?.close(); return }
+        window?.makeKey()
+        window?.performDrag(with: event)
+        needsDisplay = true
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let pin else { return }
+        NSMenu.popUpContextMenu(pin.menu(), with: event, for: self)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard let pin else { return }
+        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 120 : event.scrollingDeltaY / 12
+        if event.modifierFlags.contains(.option) { pin.setOpacity(pin.alphaValue + delta) }
+        else { pin.setZoom(pin.zoom * (1 + delta), around: NSEvent.mouseLocation) }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let pin else { return }
+        let command = event.modifierFlags.contains(.command)
+        switch (event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
+        case ("c", true): pin.copyImage()
+        case ("s", true): pin.onSave?(pin.displayedImage)
+        case ("w", true): pin.close()
+        case ("0", _): pin.setZoom(1)
+        case ("1", false): pin.rotate(clockwise: false)
+        case ("2", false): pin.rotate(clockwise: true)
+        case ("3", false): pin.flip(horizontally: true)
+        case ("4", false): pin.flip(horizontally: false)
+        case ("=", _), ("+", _): pin.setZoom(pin.zoom * 1.1)
+        case ("-", _): pin.setZoom(pin.zoom / 1.1)
+        default:
+            if event.keyCode == 53 { pin.close() } else { super.keyDown(with: event) }
+        }
+    }
+}
+
+/// Every open pin: create, hide and show together, close together, restore clicks.
+@MainActor
+final class PinBoard {
+    var onSave: ((NSImage) -> Void)?
+    private(set) var pins: [PinWindow] = []
+    private(set) var areHidden = false
+
+    func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) {
+        let pin = PinWindow(image: image, frame: frame, shadow: shadow)
+        pin.onSave = { [weak self] image in self?.onSave?(image) }
+        pin.onClose = { [weak self] closed in self?.pins.removeAll { $0 === closed } }
+        pin.onCloseAll = { [weak self] in self?.closeAll() }
+        pins.append(pin)
+        if areHidden { showAll() }
+        pin.orderFrontRegardless()
+    }
+
+    func toggleVisibility() { areHidden ? showAll() : hideAll() }
+
+    private func hideAll() {
+        pins.forEach { $0.orderOut(nil) }
+        areHidden = true
+    }
+
+    private func showAll() {
+        pins.forEach { $0.orderFrontRegardless() }
+        areHidden = false
+    }
+
+    func closeAll() { pins.forEach { $0.close() } }
+
+    var hasClickThrough: Bool { pins.contains { $0.isClickThrough } }
+
+    func makeAllClickable() { pins.forEach { $0.setClickThrough(false) } }
+}

@@ -74,7 +74,12 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `windows.move_to_screen` | `{window, from, to}` | `{frame}` keeping relative position and size |
 | `windows.snap_area` | `{point: {x, y}, screen}` | `{action, frame}` or nulls when the pointer isn't at an edge |
 
-Window rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
+| `capture.palette` | — | `["#RRGGBB"]` annotation colors |
+| `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system |
+| `capture.record` | `{region, display?, width, height, path?}` | `{record}` in `capture.history` |
+| `capture.recent_regions` | `{limit?=20}` | distinct `[{x, y, w, h}]`, newest first |
+
+Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
 `translate.target_language` (synced, `"English"`), `translate.favorite_languages` (synced, 1–8
@@ -83,7 +88,10 @@ distinct names, default English, Simplified Chinese, Japanese), `translate.trim_
 system message for translations, at most 8,000 characters, where `{language}` is replaced with the
 target language; `settings.reset` restores the built-in text), `windows.gap` (synced, `0`, 0–60
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and
-`windows.drag_snap` (synced, `true`).
+`windows.drag_snap` (synced, `true`), `capture.save_folder` (device, `""` = Pictures/NyCopilot),
+`capture.format` (synced, `"png"` or `"jpg"`), `capture.file_name` (synced, pattern with `{date}`,
+`{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), and
+`capture.pin_shadow` (synced, `true`).
 
 ## Events
 

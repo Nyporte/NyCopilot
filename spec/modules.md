@@ -15,6 +15,7 @@ can't provide them doesn't load the module.
 | `screen.capture` | Capture a region or window as an image. |
 | `window.overlay` | Always-on-top panels (pinned images, quick chat). |
 | `window.control` | Move and resize other apps' windows. |
+| `clipboard.read` | Read images, text, and colors from the clipboard. |
 | `pointer.watch` | Observe global mouse drags (drag snapping). |
 | `network` | Outbound HTTP (every platform, including the server). |
 
@@ -25,18 +26,19 @@ can't provide them doesn't load the module.
 | `llm` — Model | Provider settings, Chat Completions client, connection test | Model pane in Settings, Keychain | Shipped |
 | `translate` — Translate | Editable instructions, favorite languages and Tab cycling, badge codes and native names, whitespace trimming, history collection, legacy import | Composer at the text cursor, capture and paste, History window, Translate pane (language list, instructions, shortcuts) | Shipped |
 | `windows` — Window Layouts | Layout geometry (halves, corners, thirds, maximize, center, resize), gaps, size cycling, display moves, drag snap areas | Shortcuts, Accessibility window moves, restore memory, drag monitor and preview, Windows pane | Shipped |
+| `capture` — Screenshot & Pin | Output settings (folder, format, file name pattern), annotation style, pin shadow, capture history and recent regions, safe file names | Screen freeze per display, window detection, selection and magnifier, eight annotation tools, copy/save/pin, pins (zoom, opacity, rotate, flip, click-through), pin clipboard, Screenshot pane | Shipped |
 
 ## Planned
 
 | Module | Core owns | Client owns | Capabilities |
 | --- | --- | --- | --- |
 | `clipboard` — Clipboard history | `clipboard.items` collection, dedup, search, pins, retention policy, sensitive-content rules | Watching the pasteboard, picker panel, paste-back | `clipboard.watch`, `text.insert`, `hotkey` |
-| `capture` — Screenshot & pin | `capture.shots` metadata, annotations as data, OCR/translate via `llm` | Region selection, capture, pinned floating images, annotation canvas | `screen.capture`, `window.overlay`, `hotkey` |
 | `chat` — Quick chat & agent | Conversations collection, agent loop, tool registry, streaming | Chat panel, rendering, tool permissions UI | `window.overlay`, `hotkey`, `network` |
 | `kanban` — Boards | Boards, columns, and cards as records; ordering; sync-friendly edits | Board UI | — (runs anywhere, including the server) |
 
 Translate will also grow "translate selection" and "translate screenshot" commands that reuse
-`text.capture` and the `capture` module rather than adding new platform code.
+`text.capture` and the `capture` module rather than adding new platform code. Screenshot & Pin can
+later add OCR through `llm` and keep pinned images as records so they survive restarts and sync.
 
 ## Adding a module
 
