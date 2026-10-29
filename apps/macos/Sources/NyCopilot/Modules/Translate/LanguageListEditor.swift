@@ -141,6 +141,32 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
         return item
     }
 
+    /// Plain row views give the table no drag image, so it invents one pinned by its corner to the
+    /// pointer — the row appears to jump. Instead, drag a snapshot of the row placed exactly where the
+    /// row is, so the spot you pressed stays under the pointer.
+    func tableView(_ tableView: NSTableView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint,
+                   forRowIndexes rowIndexes: IndexSet) {
+        guard let row = rowIndexes.first, let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false) else { return }
+        let frame = tableView.rect(ofRow: row)
+        let image = Self.liftedSnapshot(of: view, size: frame.size)
+        session.enumerateDraggingItems(options: [], for: tableView, classes: [NSPasteboardItem.self], searchOptions: [:]) { item, _, _ in
+            item.setDraggingFrame(frame, contents: image)
+        }
+        session.animatesToStartingPositionsOnCancelOrFail = true
+    }
+
+    /// The row drawn on a rounded, slightly translucent card so it reads as picked up.
+    private static func liftedSnapshot(of view: NSView, size: NSSize) -> NSImage {
+        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        if let rep { view.cacheDisplay(in: view.bounds, to: rep) }
+        return NSImage(size: size, flipped: false) { rect in
+            NSColor.controlBackgroundColor.withAlphaComponent(0.92).setFill()
+            NSBezierPath(roundedRect: rect.insetBy(dx: 4, dy: 1), xRadius: 6, yRadius: 6).fill()
+            rep?.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            return true
+        }
+    }
+
     func tableView(_ tableView: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
         guard info.draggingSource as? NSTableView === table else { return [] }
