@@ -25,9 +25,14 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private var editorHeight: NSLayoutConstraint!
     private var cardWidth: NSLayoutConstraint!
     private var mode: Mode = .paste
+    /// Fixed once the composer appears: its top-left corner, and how far down it may grow.
+    private var origin = NSPoint.zero
+    private var floor: CGFloat = 0
+    private var wasOverflowing = false
     private static let (horizontalPadding, verticalPadding, lineHeight): (CGFloat, CGFloat, CGFloat) = (16, 12, 24)
-    /// Space between the card and the chip; the chip centres on the card's first line.
-    private static let (chipGap, chipTop): (CGFloat, CGFloat) = (8, 9)
+    /// Constant space between the card's right edge and the chip's left edge, open or closed.
+    private static let chipGap: CGFloat = 8
+    private static let maximumTextHeight: CGFloat = 200
 
     init() {
         let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 478, height: 48),
@@ -129,9 +134,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
             scroll.widthAnchor.constraint(equalTo: root.widthAnchor),
             errorRow.widthAnchor.constraint(equalTo: root.widthAnchor),
             editorHeight,
-            // The chip keeps its right edge and top fixed, so it opens down and to the left.
-            chip.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            chip.topAnchor.constraint(equalTo: container.topAnchor, constant: Self.chipTop)
+            // The chip's top-left is pinned beside the card's top-right, so it only opens right and down.
+            chip.leadingAnchor.constraint(equalTo: card.trailingAnchor, constant: Self.chipGap),
+            chip.topAnchor.constraint(equalTo: card.topAnchor)
         ])
     }
 
@@ -156,16 +161,22 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         let anchor = axFrame.map { NSRect(x: $0.minX, y: desktopTop - $0.maxY, width: $0.width, height: $0.height) }
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
+            // Place it once with room for the open language list to its right and below, so nothing
+            // ever has to move afterwards: the top-left stays put and the composer only grows down.
             let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-            let side = Self.chipGap + LanguageChip.collapsedSize
+            let side = Self.chipGap + LanguageChip.expandedWidth
             let width = min(max(anchor?.width ?? 440, 360), min(500, visible.width - side))
             cardWidth.constant = width
             errorLabel.preferredMaxLayoutWidth = width - Self.horizontalPadding * 2 - 120
-            let x = max(visible.minX, min(anchor?.minX ?? point.x - width / 2, visible.maxX - width - side))
-            let top = anchor.map { $0.maxY + 6 } ?? point.y + 12
-            let y = max(visible.minY, min(top - 48, visible.maxY - 48))
-            window.setFrame(NSRect(x: x, y: y, width: width + side, height: 48), display: false)
+            let needed = max(Self.verticalPadding * 2 + Self.lineHeight, chip.expandedHeight)
+            let preferredTop = anchor.map { $0.maxY + 6 } ?? point.y + 12
+            origin = NSPoint(x: max(visible.minX, min(anchor?.minX ?? point.x - width / 2, visible.maxX - width - side)),
+                             y: min(visible.maxY, max(preferredTop, visible.minY + needed)))
+            floor = visible.minY
+            window.setFrame(NSRect(x: origin.x, y: origin.y - 48, width: width + Self.chipGap + LanguageChip.collapsedSize,
+                                   height: 48), display: false)
         }
+        wasOverflowing = false
         resizeToContent()
         NSApp.activate(ignoringOtherApps: true)
         window.alphaValue = 0
@@ -224,7 +235,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         resizeToContent()
     }
 
-    /// Grow the card with wrapped text, up to a scrolling limit, keeping its top edge fixed.
+    /// Grow the card downward with wrapped text; past the room left on screen (or 200 points), scroll.
     private func resizeToContent() {
         guard let container = editor.textContainer, let layout = editor.layoutManager else { return }
         let width = cardWidth.constant - Self.horizontalPadding * 2
@@ -234,25 +245,30 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         // Include the empty line after a trailing newline so the caret remains visible immediately.
         let textHeight = ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentUsedRect.maxY))
             + editor.textContainerInset.height * 2
-        let visibleTextHeight = min(max(textHeight, Self.lineHeight), 200)
+        let errorHeight = errorRow.isHidden ? 0 : errorRow.fittingSize.height + 8
+        let room = origin.y - floor - Self.verticalPadding * 2 - errorHeight
+        let limit = max(Self.lineHeight, min(Self.maximumTextHeight, room))
+        let visibleTextHeight = min(max(textHeight, Self.lineHeight), limit)
         editorHeight.constant = visibleTextHeight
         editor.setFrameSize(NSSize(width: width, height: max(textHeight, visibleTextHeight)))
+        let overflowing = textHeight > visibleTextHeight
         fitWindow()
+        if overflowing {
+            editor.scrollRangeToVisible(editor.selectedRange())
+            // Show the scroller the moment text starts to scroll, not only while the wheel moves.
+            if !wasOverflowing { scroll.flashScrollers() }
+        }
+        wasOverflowing = overflowing
     }
 
-    /// The window wraps the card and the chip (which may be open); its top edge never moves.
+    /// The window wraps the card and the chip (open or closed) and hangs from the locked top-left.
     private func fitWindow() {
         guard let window else { return }
         window.contentView?.layoutSubtreeIfNeeded()
-        let height = max(card.fittingSize.height, Self.chipTop + chip.currentSize.height)
-        var frame = window.frame
-        frame.origin.y = frame.maxY - height
-        frame.size.height = height
-        frame.size.width = cardWidth.constant + Self.chipGap + LanguageChip.collapsedSize
-        if let screen = window.screen {
-            frame.origin.y = max(screen.visibleFrame.minY + 10, min(frame.minY, screen.visibleFrame.maxY - height - 10))
-        }
-        window.setFrame(frame, display: true)
+        let size = chip.currentSize
+        let height = max(card.fittingSize.height, size.height)
+        let width = cardWidth.constant + Self.chipGap + size.width
+        window.setFrame(NSRect(x: origin.x, y: origin.y - height, width: width, height: height), display: true)
         // The shadow follows the masks' shapes only once it is recomputed for the new size.
         window.invalidateShadow()
     }
@@ -273,6 +289,12 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     }
 
     func windowDidResignKey(_ notification: Notification) { chip.collapse() }
+
+    /// Dragging the composer by its background picks a new locked top-left.
+    func windowDidMove(_ notification: Notification) {
+        guard let frame = window?.frame else { return }
+        origin = NSPoint(x: frame.minX, y: frame.maxY)
+    }
 
     func windowWillClose(_ notification: Notification) {
         chip.isBusy = false

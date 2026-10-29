@@ -1,11 +1,13 @@
 import AppKit
 
 /// A tiny rounded square showing the target language as a short code (EN, 简, 日…). Clicking it opens
-/// it into a short list, anchored at its top-right corner; choosing a language closes it again.
+/// it into a short list, anchored at its top-left corner so it only grows right and down; choosing a
+/// language closes it again.
 @MainActor
 final class LanguageChip: NSView {
     static let collapsedSize: CGFloat = 30
-    private static let (expandedWidth, rowHeight, listInset): (CGFloat, CGFloat, CGFloat) = (176, 26, 5)
+    static let expandedWidth: CGFloat = 176
+    private static let (rowHeight, listInset, dividerHeight): (CGFloat, CGFloat, CGFloat) = (26, 5, 9)
 
     var onChoose: ((String) -> Void)?
     var onOther: (() -> Void)?
@@ -80,8 +82,8 @@ final class LanguageChip: NSView {
         height = heightAnchor.constraint(equalToConstant: Self.collapsedSize)
         NSLayoutConstraint.activate([
             width, height,
-            // The code sits in the top-right square, where the chip lives when it is closed.
-            code.centerXAnchor.constraint(equalTo: trailingAnchor, constant: -Self.collapsedSize / 2),
+            // The code sits in the top-left square, where the chip lives when it is closed.
+            code.centerXAnchor.constraint(equalTo: leadingAnchor, constant: Self.collapsedSize / 2),
             code.centerYAnchor.constraint(equalTo: topAnchor, constant: Self.collapsedSize / 2),
             spinner.centerXAnchor.constraint(equalTo: code.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: code.centerYAnchor),
@@ -119,9 +121,14 @@ final class LanguageChip: NSView {
         highlight.isHidden = true
         code.isHidden = true
         list.isHidden = false
+        resize(to: NSSize(width: Self.expandedWidth, height: expandedHeight), list: 1)
+    }
+
+    /// Height of the open list, so the composer can reserve room for it when it is placed.
+    var expandedHeight: CGFloat {
         let rows = CGFloat(list.arrangedSubviews.filter { $0 is ChipRow }.count)
         let dividers = CGFloat(list.arrangedSubviews.count) - rows
-        resize(to: NSSize(width: Self.expandedWidth, height: rows * Self.rowHeight + dividers * 9 + Self.listInset * 2), list: 1)
+        return rows * Self.rowHeight + dividers * Self.dividerHeight + Self.listInset * 2
     }
 
     func collapse(animated: Bool = true) {
