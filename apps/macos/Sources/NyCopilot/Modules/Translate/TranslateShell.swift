@@ -25,11 +25,7 @@ final class TranslateShell: ModuleShell {
         composer.onSubmit = { [weak self] text in self?.translate(text) }
         composer.onCancel = { [weak self] in self?.returnToSource() }
         composer.onClose = { [weak self] in self?.cancelOperation() }
-        composer.onChooseLanguage = { [weak self] language in self?.setLanguage(language) }
-        composer.onOtherLanguage = { [weak self] in
-            self?.composer.cancel()
-            self?.services.openSettings("translate")
-        }
+        composer.onCycleLanguage = { [weak self] step in self?.cycleLanguage(step) }
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
@@ -54,12 +50,19 @@ final class TranslateShell: ModuleShell {
 
     private var language: String { services.core.setting("translate.target_language", default: "English") }
 
-    private var languages: [String] {
-        (try? services.core.call("translate.languages") as? [String]) ?? ["English"]
+    private struct Cycled: Decodable { let targetLanguage: String; let native: String }
+    private struct Native: Decodable { let native: String }
+
+    private func nativeName(_ language: String) -> String {
+        (try? services.core.call("translate.native_name", ["language": language], as: Native.self).native) ?? language
     }
 
-    private func setLanguage(_ language: String) {
-        do { try services.core.setSetting("translate.target_language", language) } catch {
+    /// Tab in the composer: the core picks the next favorite and remembers it as the target.
+    private func cycleLanguage(_ step: Int) {
+        do {
+            let next = try services.core.call("translate.cycle", ["step": step], as: Cycled.self)
+            composer.setLanguage(next.native)
+        } catch {
             composer.showError(error.localizedDescription)
         }
     }
@@ -92,7 +95,7 @@ final class TranslateShell: ModuleShell {
             guard !Task.isCancelled, operationID == id,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
             target = captured
-            composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste, language: language, languages: languages)
+            composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste, language: nativeName(language))
         }
     }
 

@@ -51,13 +51,13 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
 
 ## Using Translate
 
-- **⌥⌘T** opens the composer: a bare input line over the focused field, with a tiny square beside
-  it showing the target language (EN, 简, 日…). Click the square to pick another language; it opens
-  into a short list and closes again once you choose. **Return** translates and replaces your
-  selection, **Shift+Return** adds a line, **Esc** cancels and returns you to your app. Return
-  confirms an input-method candidate first, and nothing is ever submitted in the target app.
-- **Other…** in that list, or **Settings → Translate**, accepts any language name, such as
-  "formal Japanese".
+- **⌥⌘T** opens the composer: one input line at your text cursor, with the target language shown
+  faintly at its right edge (English, 简体中文, 日本語…). **Tab** steps to the next of your favorite
+  languages and **Shift+Tab** goes back; the choice is remembered. **Return** translates and
+  replaces your selection, **Shift+Return** adds a line, **Esc** cancels and returns you to your
+  app. Return confirms an input-method candidate first, and nothing is ever submitted in the target app.
+- **Settings → Translate → Favorite languages** sets which languages Tab steps through, in order.
+  Any language name works, such as "Brazilian Portuguese" or "formal Japanese".
 - **Settings → Translate → Instructions** lets you rewrite what the model is told, for example to
   keep a casual tone, preserve product names, or always use British spelling. `{language}` is
   replaced with the target language. Your text is always sent separately as the user message.

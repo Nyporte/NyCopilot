@@ -65,7 +65,9 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `llm.complete` | `{system, user, api_key?}` | `{text}` |
 | `llm.test` | `{endpoint, model, api_key?}` | `{elapsed_ms}` |
 | `translate.run` | `{text, target_language?, api_key?, request_id?}` | `{text, target_language, record}` — saved to `translate.history` before returning |
-| `translate.languages` | — | `[String]` |
+| `translate.languages` | — | `[{name, native}]` — suggested languages with their own names |
+| `translate.cycle` | `{step: 1 or -1}` | `{target_language, native}` — steps through the favorites and saves the result as the target |
+| `translate.native_name` | `{language}` | `{native}` (the name as given when unknown) |
 | `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
 | `windows.actions` | — | `[{id, title, group}]` in menu order |
 | `windows.compute` | `{action, window, screen, repeat?}` | `{frame}` — `screen` is the usable area; `repeat` counts consecutive presses. With `windows.repeat = move_across_displays`, a repeated side layout returns `{frame: null, move: {direction, action}}`: apply `action` on the nearest display in `direction` |
@@ -75,7 +77,8 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 Window rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
-`translate.target_language` (synced, `"English"`), and `translate.instructions` (synced; the
+`translate.target_language` (synced, `"English"`), `translate.favorite_languages` (synced, 1–8
+distinct names, default English, Simplified Chinese, Japanese), and `translate.instructions` (synced; the
 system message for translations, at most 8,000 characters, where `{language}` is replaced with the
 target language; `settings.reset` restores the built-in text), `windows.gap` (synced, `0`, 0–60
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and

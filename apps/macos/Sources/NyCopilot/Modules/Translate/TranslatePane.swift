@@ -1,11 +1,14 @@
 import AppKit
 
-/// Translate's Settings tab: target language, model instructions, and history.
+/// Translate's Settings tab: favorite languages, model instructions, shortcuts, and history.
 @MainActor
-final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate {
+final class TranslatePane: SettingsPane, NSTokenFieldDelegate, NSTextViewDelegate {
     private let services: CopilotServices
     private let openHistory: () -> Void
-    private let language = NSComboBox()
+    /// Tokens hold language names (English); they display in each language's own script.
+    private let favorites = NSTokenField()
+    private var suggestions: [(name: String, native: String)] = []
+    private var savedFavorites: [String] = []
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private let instructions = NSTextView()
     private let instructionsStatus = Design.label("", size: 11.5, color: .secondaryLabelColor)
@@ -24,13 +27,14 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
     required init?(coder: NSCoder) { fatalError("Use init(services:openHistory:)") }
 
     override func makeSections() -> [NSView] {
-        language.addItems(withObjectValues: (try? services.core.call("translate.languages") as? [String]) ?? [])
-        language.completes = true
-        language.numberOfVisibleItems = 12
-        language.delegate = self
-        language.target = self
-        language.action = #selector(commitLanguage)
-        language.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        struct Suggestion: Decodable { let name: String; let native: String }
+        suggestions = ((try? services.core.call("translate.languages", as: [Suggestion].self)) ?? []).map { ($0.name, $0.native) }
+        favorites.delegate = self
+        favorites.tokenStyle = .rounded
+        favorites.completionDelay = 0
+        favorites.placeholderString = "English, Japanese…"
+        favorites.cell?.wraps = true
+        favorites.widthAnchor.constraint(equalToConstant: 300).isActive = true
         message.isHidden = true
 
         let open = Design.button("Open History", target: self, action: #selector(showHistory))
@@ -41,8 +45,9 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
         saveButton.action = #selector(saveInstructions)
         let instructionsBar = Design.hstack([instructionsStatus, Design.spacer(), restoreButton, saveButton])
         return [
-            FormSection("Translation", footer: "Pick a language or type any other, such as “Brazilian Portuguese” or “formal Japanese”.",
-                        rows: [FormRow("Translate into", accessory: language)]),
+            FormSection("Languages",
+                        footer: "In the translate box, Tab steps through these in order and Shift+Tab goes back. Type any language, such as “Brazilian Portuguese” or “formal Japanese”.",
+                        rows: [FormRow("Favorite languages", accessory: favorites)]),
             message,
             FormSection("Instructions",
                         footer: "Sent to the model with every translation. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
@@ -58,7 +63,8 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
     }
 
     override func paneWillAppear() {
-        language.stringValue = services.core.setting("translate.target_language", default: "English")
+        savedFavorites = (try? services.core.call("settings.get", ["key": "translate.favorite_languages"]) as? [String]) ?? []
+        favorites.objectValue = savedFavorites
         message.isHidden = true
         loadInstructions()
         shortcuts.refresh()
@@ -152,20 +158,35 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
         return spec["default"] as? String ?? ""
     }
 
-    func comboBoxSelectionDidChange(_ notification: Notification) {
-        DispatchQueue.main.async { [weak self] in self?.commitLanguage() }
+    func tokenField(_ tokenField: NSTokenField, completionsForSubstring substring: String,
+                    indexOfToken tokenIndex: Int, indexOfSelectedItem selectedIndex: UnsafeMutablePointer<Int>?) -> [Any]? {
+        let query = substring.lowercased()
+        return suggestions.filter { $0.name.lowercased().hasPrefix(query) || $0.native.lowercased().hasPrefix(query) }.map(\.name)
     }
 
-    func controlTextDidEndEditing(_ obj: Notification) { commitLanguage() }
+    func tokenField(_ tokenField: NSTokenField, displayStringForRepresentedObject representedObject: Any) -> String? {
+        guard let name = representedObject as? String else { return nil }
+        return suggestions.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.native ?? name
+    }
 
-    @objc private func commitLanguage() {
-        let value = language.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    func tokenField(_ tokenField: NSTokenField, representedObjectForEditing editingString: String) -> Any? {
+        let trimmed = editingString.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Typing a language's own name (日本語) stores its English name, like picking a suggestion.
+        return suggestions.first { $0.native == trimmed || $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }?.name ?? trimmed
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard (obj.object as? NSTokenField) === favorites else { return }
+        let names = (favorites.objectValue as? [Any] ?? []).compactMap { $0 as? String }.filter { !$0.isEmpty }
+        guard names != savedFavorites else { return }
         do {
-            try services.core.setSetting("translate.target_language", value)
+            try services.core.setSetting("translate.favorite_languages", names)
+            savedFavorites = names
             message.isHidden = true
         } catch {
             message.stringValue = error.localizedDescription
             message.isHidden = false
+            favorites.objectValue = savedFavorites
         }
     }
 
