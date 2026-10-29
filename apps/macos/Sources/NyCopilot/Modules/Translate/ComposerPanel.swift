@@ -31,6 +31,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private var wasOverflowing = false
     private static let (horizontalPadding, verticalPadding, lineHeight): (CGFloat, CGFloat, CGFloat) = (16, 12, 24)
     private static let maximumTextHeight: CGFloat = 200
+    /// Gap kept clear before the label, and the width over which text fades out ahead of it.
+    private static let (labelClearance, fadeWidth): (CGFloat, CGFloat) = (6, 28)
+    private let fadeMask = CALayer()
 
     init() {
         let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 48),
@@ -89,6 +92,8 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         scroll.borderType = .noBorder
 
         languageLabel.onClick = { [weak self] in self?.cycle(1) }
+        // A new name has a new width: re-fit the text and the fade once it appears.
+        languageLabel.onChange = { [weak self] in self?.resizeToContent() }
 
         errorLabel.font = .systemFont(ofSize: 12)
         errorLabel.textColor = .secondaryLabelColor
@@ -103,11 +108,15 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         errorRow.alignment = .firstBaseline
         errorRow.isHidden = true
 
-        let row = Design.hstack([scroll, languageLabel], spacing: 12)
-        row.alignment = .top
-        let root = Design.vstack([row, errorRow], spacing: 8)
+        // The text spans the whole card; the label floats over the first line's right end, and the
+        // text there fades out beneath it instead of stopping at a hard edge.
+        let root = Design.vstack([scroll, errorRow], spacing: 8)
         root.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(root)
+        scroll.wantsLayer = true
+        scroll.layer?.mask = fadeMask
+        languageLabel.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(languageLabel)
 
         editorHeight = scroll.heightAnchor.constraint(equalToConstant: Self.lineHeight)
         cardWidth = card.widthAnchor.constraint(equalToConstant: 440)
@@ -123,7 +132,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
             root.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -Self.horizontalPadding + 4),
             root.topAnchor.constraint(equalTo: card.topAnchor, constant: Self.verticalPadding),
             root.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -Self.verticalPadding),
-            row.widthAnchor.constraint(equalTo: root.widthAnchor),
+            scroll.widthAnchor.constraint(equalTo: root.widthAnchor),
+            languageLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            languageLabel.topAnchor.constraint(equalTo: root.topAnchor),
             errorRow.widthAnchor.constraint(equalTo: root.widthAnchor),
             languageLabel.heightAnchor.constraint(equalToConstant: Self.lineHeight),
             editorHeight
@@ -181,7 +192,6 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
 
     func setLanguage(_ language: String, animated: Bool = true) {
         languageLabel.set(language, animated: animated && isVisible)
-        resizeToContent()
     }
 
     private func cycle(_ step: Int) {
@@ -234,7 +244,11 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     /// Grow the card downward with wrapped text; past the room left on screen (or 200 points), scroll.
     private func resizeToContent() {
         guard let container = editor.textContainer, let layout = editor.layoutManager else { return }
-        let width = cardWidth.constant - Self.horizontalPadding * 2 + 4 - languageLabel.fittingSize.width - 12
+        let width = cardWidth.constant - Self.horizontalPadding * 2 + 4
+        // Only the first line makes room for the label; the lines below use the full width.
+        let reserved = languageLabel.fittingSize.width + Self.labelClearance
+        container.exclusionPaths = [NSBezierPath(rect: NSRect(x: width - reserved, y: 0, width: reserved,
+                                                              height: Self.lineHeight - editor.textContainerInset.height * 2))]
         container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         editor.setFrameSize(NSSize(width: width, height: editor.frame.height))
         layout.ensureLayout(for: container)
@@ -249,12 +263,39 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         editor.setFrameSize(NSSize(width: width, height: max(textHeight, visibleTextHeight)))
         let overflowing = textHeight > visibleTextHeight
         fitWindow()
+        updateFade(labelWidth: languageLabel.fittingSize.width)
         if overflowing {
             editor.scrollRangeToVisible(editor.selectedRange())
             // Show the scroller the moment text starts to scroll, not only while the wheel moves.
             if !wasOverflowing { scroll.flashScrollers() }
         }
         wasOverflowing = overflowing
+    }
+
+    /// The text view is masked opaque everywhere except a band beside the label: there it fades from
+    /// opaque to clear over `fadeWidth`, and stays clear under the label. The band is fixed to the
+    /// view, so text scrolling past the label melts away too.
+    private func updateFade(labelWidth: CGFloat) {
+        let size = scroll.bounds.size
+        guard size.width > 0, size.height > 0 else { return }
+        let clearFrom = size.width - labelWidth - Self.labelClearance
+        let image = NSImage(size: size, flipped: true) { rect in
+            NSColor.black.setFill()
+            rect.fill()
+            let band = NSRect(x: clearFrom - Self.fadeWidth, y: 0, width: size.width - clearFrom + Self.fadeWidth, height: Self.lineHeight)
+            NSGraphicsContext.current?.compositingOperation = .copy
+            NSColor.clear.setFill()
+            band.fill()
+            NSGradient(starting: .black, ending: NSColor.black.withAlphaComponent(0))?
+                .draw(in: NSRect(x: band.minX, y: 0, width: Self.fadeWidth, height: Self.lineHeight), angle: 0)
+            return true
+        }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        fadeMask.frame = CGRect(origin: .zero, size: size)
+        fadeMask.contentsScale = window?.backingScaleFactor ?? 2
+        fadeMask.contents = image.layerContents(forContentsScale: fadeMask.contentsScale)
+        CATransaction.commit()
     }
 
     /// The window wraps the card and hangs from the locked top-left.
@@ -304,6 +345,7 @@ private final class TopAnchoredView: NSView {
 /// While translating, a small spinner takes the key cap's place.
 private final class TargetLanguageLabel: NSStackView {
     var onClick: (() -> Void)?
+    var onChange: (() -> Void)?
     var isBusy = false {
         didSet {
             key.isHidden = isBusy
@@ -338,11 +380,16 @@ private final class TargetLanguageLabel: NSStackView {
 
     func set(_ language: String, animated: Bool) {
         setAccessibilityLabel("Target language: \(language). Press Tab to change.")
-        guard animated, name.stringValue != language else { name.stringValue = language; return }
+        guard animated, name.stringValue != language else {
+            name.stringValue = language
+            onChange?()
+            return
+        }
         // A quick crossfade makes each Tab press visible without moving anything.
         NSAnimationContext.runAnimationGroup({ $0.duration = 0.08; name.animator().alphaValue = 0 }, completionHandler: { [weak self] in
             guard let self else { return }
             name.stringValue = language
+            onChange?()
             NSAnimationContext.runAnimationGroup { $0.duration = 0.12; self.name.animator().alphaValue = 1 }
         })
     }
