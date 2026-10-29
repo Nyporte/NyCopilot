@@ -24,7 +24,14 @@ enum RectangleImport {
         var shortcuts: [String: HotKeyCombination?] = [:]
         /// Rectangle actions with no Window Layouts equivalent, such as Todo mode.
         var skipped: [String] = []
+        /// What repeating a shortcut does, as a `windows.repeat` value.
+        var repeatMode: String?
     }
+
+    /// Rectangle's `subsequentExecutionMode`: 0 resize, 1 across displays, 2 none,
+    /// 3 across displays and resize, 4 cycle displays. The display modes all map to travelling.
+    private static let repeatModes = [0: "cycle_sizes", 1: "move_across_displays", 2: "nothing",
+                                      3: "move_across_displays", 4: "move_across_displays"]
 
     /// Only Rectangle's own settings, never the global domain a suite lookup would merge in.
     private static var domain: [String: Any]? { UserDefaults.standard.persistentDomain(forName: suite) }
@@ -33,6 +40,7 @@ enum RectangleImport {
 
     static func read() -> Result {
         var result = Result()
+        result.repeatMode = (domain?["subsequentExecutionMode"] as? NSNumber).flatMap { repeatModes[$0.intValue] }
         for (key, value) in domain ?? [:] {
             guard let entry = value as? [String: Any], entry.isEmpty || entry["keyCode"] != nil else { continue }
             guard let action = actions[key] else { result.skipped.append(key); continue }
@@ -49,13 +57,17 @@ enum RectangleImport {
         return result
     }
 
-    /// Apply to the hot key center; returns a one-line summary for the UI.
+    /// Apply shortcuts (and the repeat behaviour, if found); returns a one-line summary for the UI.
     @MainActor
-    static func apply(_ result: Result, to hotKeys: HotKeyCenter) -> (summary: String, failed: Int) {
-        let failures = hotKeys.set(Dictionary(uniqueKeysWithValues: result.shortcuts.map { ("windows.\($0.key)", $0.value) }))
+    static func apply(_ result: Result, to services: CopilotServices) -> (summary: String, failed: Int) {
+        let failures = services.hotKeys.set(Dictionary(uniqueKeysWithValues: result.shortcuts.map { ("windows.\($0.key)", $0.value) }))
         var summary = result.shortcuts.isEmpty
             ? "Rectangle uses its default shortcuts, which NyCopilot already matches."
             : "Imported \(result.shortcuts.count) shortcut\(result.shortcuts.count == 1 ? "" : "s") from Rectangle."
+        if let mode = result.repeatMode, (try? services.core.setSetting("windows.repeat", mode)) != nil {
+            summary += mode == "move_across_displays" ? " Repeating a shortcut now moves the window to the next display."
+                : mode == "nothing" ? " Repeating a shortcut now does nothing." : ""
+        }
         if !result.skipped.isEmpty {
             summary += " Skipped \(result.skipped.count) Rectangle-only action\(result.skipped.count == 1 ? "" : "s") (\(result.skipped.joined(separator: ", ")))."
         }

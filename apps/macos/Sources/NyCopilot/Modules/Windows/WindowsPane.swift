@@ -6,7 +6,10 @@ final class WindowsPane: SettingsPane {
     private let services: CopilotServices
     private let actions: [WindowsShell.ActionInfo]
     private let dragSwitch = NSSwitch()
-    private let cycleSwitch = NSSwitch()
+    private let repeatMode = NSPopUpButton()
+    private static let repeatModes = [("cycle_sizes", "Cycle sizes (½ → ⅔ → ⅓)"),
+                                      ("move_across_displays", "Move to the next display"),
+                                      ("nothing", "Do nothing")]
     private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 40, target: nil, action: nil)
     private let gapValue = Design.label("", size: 12, color: .secondaryLabelColor)
     private lazy var shortcuts = ShortcutEditor(services: services)
@@ -23,8 +26,9 @@ final class WindowsPane: SettingsPane {
     override func makeSections() -> [NSView] {
         dragSwitch.target = self
         dragSwitch.action = #selector(toggleDrag)
-        cycleSwitch.target = self
-        cycleSwitch.action = #selector(toggleCycle)
+        repeatMode.addItems(withTitles: Self.repeatModes.map(\.1))
+        repeatMode.target = self
+        repeatMode.action = #selector(changeRepeat)
         gapSlider.numberOfTickMarks = 11
         gapSlider.allowsTickMarkValuesOnly = true
         gapSlider.target = self
@@ -36,7 +40,7 @@ final class WindowsPane: SettingsPane {
         var sections: [NSView] = [
             FormSection("Arranging", footer: "Window Layouts moves the frontmost app’s focused window. It needs Accessibility, like Translate.", rows: [
                 FormRow("Snap by dragging to edges", subtitle: "Drag a window to a side, corner, or the top of the screen.", accessory: dragSwitch),
-                FormRow("Repeat to cycle sizes", subtitle: "Pressing a half shortcut again goes ½ → ⅔ → ⅓.", accessory: cycleSwitch),
+                FormRow("When a shortcut is repeated", subtitle: "Pressing the same layout again on the same window.", accessory: repeatMode),
                 FormRow("Gap between windows", accessory: Design.hstack([gapSlider, gapValue]))
             ])
         ]
@@ -53,7 +57,7 @@ final class WindowsPane: SettingsPane {
         if RectangleImport.isAvailable {
             importNote.isHidden = true
             sections.append(FormSection("Switching from Rectangle", rows: [
-                FormRow("Rectangle shortcuts", subtitle: "Replace these shortcuts with the ones you set in Rectangle.",
+                FormRow("Rectangle settings", subtitle: "Use your Rectangle shortcuts and repeat behavior here.",
                         accessory: Design.button("Import", target: self, action: #selector(importFromRectangle)))
             ]))
             sections.append(importNote)
@@ -63,7 +67,8 @@ final class WindowsPane: SettingsPane {
 
     override func paneWillAppear() {
         dragSwitch.state = services.core.setting("windows.drag_snap", default: true) ? .on : .off
-        cycleSwitch.state = services.core.setting("windows.cycle", default: true) ? .on : .off
+        let mode: String = services.core.setting("windows.repeat", default: "cycle_sizes")
+        repeatMode.selectItem(at: Self.repeatModes.firstIndex { $0.0 == mode } ?? 0)
         let gap: Double = services.core.setting("windows.gap", default: 0)
         gapSlider.doubleValue = gap
         gapValue.stringValue = "\(Int(gap)) pt"
@@ -71,15 +76,17 @@ final class WindowsPane: SettingsPane {
     }
 
     @objc private func importFromRectangle() {
-        let outcome = RectangleImport.apply(RectangleImport.read(), to: services.hotKeys)
+        let outcome = RectangleImport.apply(RectangleImport.read(), to: services)
         importNote.stringValue = outcome.summary
         importNote.textColor = outcome.failed == 0 ? .secondaryLabelColor : .systemOrange
         importNote.isHidden = false
-        shortcuts.refresh()
+        paneWillAppear()
     }
 
     @objc private func toggleDrag() { try? services.core.setSetting("windows.drag_snap", dragSwitch.state == .on) }
-    @objc private func toggleCycle() { try? services.core.setSetting("windows.cycle", cycleSwitch.state == .on) }
+    @objc private func changeRepeat() {
+        try? services.core.setSetting("windows.repeat", Self.repeatModes[max(repeatMode.indexOfSelectedItem, 0)].0)
+    }
 
     @objc private func changeGap() {
         let gap = gapSlider.doubleValue.rounded()

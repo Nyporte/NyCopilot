@@ -59,6 +59,28 @@ pub const ACTIONS: &[(&str, &str, &str)] = &[
 
 /// Halves cycle through these widths when their shortcut is repeated.
 const CYCLE: [f64; 3] = [1.0 / 2.0, 2.0 / 3.0, 1.0 / 3.0];
+
+/// What pressing the same layout shortcut again does.
+pub const REPEAT_MODES: &[&str] = &["cycle_sizes", "move_across_displays", "nothing"];
+
+/// With `move_across_displays`, repeating a side layout carries the window to the neighbouring
+/// display in that direction, landing on the mirrored layout so it keeps travelling the same way:
+/// a second Left Half puts it in the right half of the display to the left.
+pub fn travel(action: &str) -> Option<(&'static str, &'static str)> {
+    Some(match action {
+        "left_half" => ("left", "right_half"),
+        "right_half" => ("right", "left_half"),
+        "top_left" => ("left", "top_right"),
+        "bottom_left" => ("left", "bottom_right"),
+        "top_right" => ("right", "top_left"),
+        "bottom_right" => ("right", "bottom_left"),
+        "first_third" => ("left", "last_third"),
+        "last_third" => ("right", "first_third"),
+        "first_two_thirds" => ("left", "last_two_thirds"),
+        "last_two_thirds" => ("right", "first_two_thirds"),
+        _ => return None,
+    })
+}
 const RESIZE_STEP: f64 = 30.0;
 
 /// A tile spanning fractions `[x0, x1] × [y0, y1]` of `screen`, with `gap` around and between tiles.
@@ -169,12 +191,13 @@ impl Module for WindowsModule {
             collections: vec![],
             settings: vec![
                 SettingSpec::new("windows.gap", json!(0), Scope::Synced, "Space in points around and between snapped windows."),
-                SettingSpec::new("windows.cycle", json!(true), Scope::Synced, "Repeating a half shortcut cycles ½ → ⅔ → ⅓."),
+                SettingSpec::new("windows.repeat", json!("cycle_sizes"), Scope::Synced,
+                                 "Repeating a layout shortcut: cycle_sizes (½ → ⅔ → ⅓), move_across_displays, or nothing."),
                 SettingSpec::new("windows.drag_snap", json!(true), Scope::Synced, "Snap windows dragged to screen edges and corners."),
             ],
             commands: vec![
                 CommandSpec::new("actions", "Every action: [{id, title, group}]."),
-                CommandSpec::new("compute", "{action, window, screen, repeat?} → {frame}."),
+                CommandSpec::new("compute", "{action, window, screen, repeat?} → {frame}, or {move: {direction, action}} to continue on a neighbouring display."),
                 CommandSpec::new("move_to_screen", "{window, from, to} → {frame}."),
                 CommandSpec::new("snap_area", "{point: {x, y}, screen} → {action?, frame?} for drag snapping."),
             ],
@@ -195,7 +218,13 @@ impl Module for WindowsModule {
                 .collect::<Vec<_>>())),
             "compute" => {
                 let p: Compute = parse(params)?;
-                let frame = compute(&p.action, p.window, p.screen, Self::gap(core)?, p.repeat, core.setting("windows.cycle")?)?;
+                let mode = core.setting::<String>("windows.repeat")?;
+                if p.repeat > 0 && mode == "move_across_displays" {
+                    if let Some((direction, action)) = travel(&p.action) {
+                        return Ok(json!({ "frame": null, "move": { "direction": direction, "action": action } }));
+                    }
+                }
+                let frame = compute(&p.action, p.window, p.screen, Self::gap(core)?, p.repeat, mode == "cycle_sizes")?;
                 Ok(json!({ "frame": frame }))
             }
             "move_to_screen" => {
@@ -220,6 +249,8 @@ impl Module for WindowsModule {
         match key {
             "windows.gap" if !value.as_f64().is_some_and(|gap| (0.0..=60.0).contains(&gap)) =>
                 Err(NyError::invalid_setting("The gap must be between 0 and 60 points.")),
+            "windows.repeat" if !REPEAT_MODES.contains(&value.as_str().unwrap_or_default()) =>
+                Err(NyError::invalid_setting("Choose cycle_sizes, move_across_displays, or nothing.")),
             _ => Ok(()),
         }
     }
@@ -306,5 +337,24 @@ mod tests {
         let snap = core.call("windows.snap_area", json!({ "point": { "x": 1, "y": 500 }, "screen": SCREEN })).unwrap();
         assert_eq!(snap["action"], "left_half");
         assert_eq!(core.call("windows.actions", Value::Null).unwrap().as_array().unwrap().len(), ACTIONS.len());
+    }
+
+    #[test]
+    fn repeat_mode_decides_what_a_second_press_does() {
+        let core = Core::new(Store::open_in_memory().unwrap(), crate::all(), "test", Box::new(|_| {})).unwrap();
+        let press = |action: &str, repeat: u32| core.call("windows.compute",
+            json!({ "action": action, "window": WINDOW, "screen": SCREEN, "repeat": repeat })).unwrap();
+        assert_eq!(press("left_half", 1)["frame"]["w"], json!(960.0));
+        assert!(core.call("settings.set", json!({ "key": "windows.repeat", "value": "sideways" })).is_err());
+
+        core.call("settings.set", json!({ "key": "windows.repeat", "value": "move_across_displays" })).unwrap();
+        assert_eq!(press("left_half", 1)["move"], json!({ "direction": "left", "action": "right_half" }));
+        assert_eq!(press("bottom_right", 2)["move"], json!({ "direction": "right", "action": "bottom_left" }));
+        // The first press, and layouts with no direction, still just arrange the window.
+        assert_eq!(press("left_half", 0)["frame"]["w"], json!(720.0));
+        assert_eq!(press("maximize", 1)["frame"]["w"], json!(1440.0));
+
+        core.call("settings.set", json!({ "key": "windows.repeat", "value": "nothing" })).unwrap();
+        assert_eq!(press("left_half", 1)["frame"]["w"], json!(720.0));
     }
 }

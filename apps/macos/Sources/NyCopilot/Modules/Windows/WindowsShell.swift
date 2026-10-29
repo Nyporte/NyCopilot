@@ -11,13 +11,19 @@ final class WindowsShell: ModuleShell {
 
     struct ActionInfo: Decodable { let id: String; let title: String; let group: String }
     private struct FrameResult: Decodable { let frame: WindowRect }
+    /// `compute` either returns a frame or asks to continue on the neighbouring display.
+    private struct ComputeResult: Decodable {
+        struct Move: Decodable { let direction: String; let action: String }
+        let frame: WindowRect?
+        let move: Move?
+    }
 
     private let services: CopilotServices
     let actions: [ActionInfo]
     private let snapper: SnapController
     /// Frames from before NyCopilot first moved each window, for Restore. Newest last, bounded.
     private var originals: [(window: AXUIElement, frame: WindowRect)] = []
-    /// The last action applied, so repeating a shortcut on an untouched window cycles its size.
+    /// The last action applied, so repeating a shortcut on an untouched window counts as a repeat.
     private var last: (window: AXUIElement, action: String, frame: WindowRect, repeat: UInt32)?
     private var observer: NSObjectProtocol?
 
@@ -53,13 +59,20 @@ final class WindowsShell: ModuleShell {
     /// Called once all shortcuts are registered: someone switching from Rectangle gets their
     /// shortcuts carried over automatically, once, unless they already customized NyCopilot's.
     func importRectangleOnce() {
+        // The repeat behaviour arrived after the shortcut import, so it has its own one-time check.
+        if !services.core.setting("client.windows.rectangle_repeat_checked", default: false) {
+            try? services.core.setSetting("client.windows.rectangle_repeat_checked", true)
+            if RectangleImport.isAvailable, let mode = RectangleImport.read().repeatMode {
+                try? services.core.setSetting("windows.repeat", mode)
+            }
+        }
         guard !services.core.setting("client.windows.rectangle_import_checked", default: false) else { return }
         try? services.core.setSetting("client.windows.rectangle_import_checked", true)
         guard RectangleImport.isAvailable,
               !services.hotKeys.isCustomized(actions.map { "windows.\($0.id)" }) else { return }
         let result = RectangleImport.read()
         guard !result.shortcuts.isEmpty else { return }
-        let outcome = RectangleImport.apply(result, to: services.hotKeys)
+        let outcome = RectangleImport.apply(result, to: services)
         services.toast.show("Window shortcuts imported from Rectangle", detail: outcome.summary,
                             style: outcome.failed == 0 ? .success : .warning)
     }
@@ -130,8 +143,17 @@ final class WindowsShell: ModuleShell {
                 let repeated = last.map { CFEqual($0.window, window) && $0.action == action && $0.frame.isClose(to: current) } ?? false
                 let count: UInt32 = repeated ? (last?.repeat ?? 0) + 1 : 0
                 let result = try services.core.call("windows.compute",
-                    ["action": action, "window": current.json, "screen": display.visible.json, "repeat": count], as: FrameResult.self)
-                apply(result.frame, to: window, on: display, action: action, repeat: count)
+                    ["action": action, "window": current.json, "screen": display.visible.json, "repeat": count], as: ComputeResult.self)
+                if let frame = result.frame {
+                    apply(frame, to: window, on: display, action: action, repeat: count)
+                } else if let move = result.move {
+                    // No display that way: leave the window where it is.
+                    guard let neighbour = Self.neighbour(of: index, toward: move.direction, in: displays) else { NSSound.beep(); return }
+                    let landing = try services.core.call("windows.compute",
+                        ["action": move.action, "window": current.json, "screen": neighbour.visible.json], as: ComputeResult.self)
+                    // Record the landing layout, so pressing the same key again keeps the window travelling.
+                    if let frame = landing.frame { apply(frame, to: window, on: neighbour, action: move.action) }
+                }
             }
         } catch {
             services.toast.show("Couldn’t arrange the window", detail: error.localizedDescription, style: .warning)
@@ -147,6 +169,16 @@ final class WindowsShell: ModuleShell {
         }
         let applied = WindowControl.setFrame(frame, of: window, within: display.visible) ?? frame
         last = action.map { (window, $0, applied, count) }
+    }
+
+    /// The nearest display whose centre lies in `direction` from the current one.
+    private static func neighbour(of index: Int, toward direction: String, in displays: [Display]) -> Display? {
+        func center(_ rect: WindowRect) -> (Double, Double) { (rect.x + rect.w / 2, rect.y + rect.h / 2) }
+        let (cx, cy) = center(displays[index].frame)
+        return displays.enumerated()
+            .filter { $0.offset != index && (direction == "left" ? center($0.element.frame).0 < cx : center($0.element.frame).0 > cx) }
+            .min { hypot(center($0.element.frame).0 - cx, center($0.element.frame).1 - cy)
+                 < hypot(center($1.element.frame).0 - cx, center($1.element.frame).1 - cy) }?.element
     }
 
     static func symbol(for action: String) -> String {

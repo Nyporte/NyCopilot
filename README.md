@@ -84,15 +84,19 @@ dragging it to the edge of the screen:
 | Restore the size it had before NyCopilot moved it | ⌃⌥⌫ |
 | Next or previous display | ⌃⌥⌘ → ← |
 
-- Pressing a half shortcut again cycles its width: ½ → ⅔ → ⅓.
+- Pressing the same layout again does what you choose in **Settings → Windows**: cycle a half's
+  width (½ → ⅔ → ⅓, the default), move the window to the next display, or nothing. Moving keeps it
+  travelling the way you pressed: a second Left Half lands in the right half of the display to the
+  left. Corners and thirds travel the same way.
 - Drag a window to the left or right edge for a half, to a corner for a quarter, to the top for
   maximize, or along the bottom for a third. A translucent preview shows where it will land.
 - On a portrait display, thirds stack vertically.
-- **Settings → Windows** turns drag snapping and size cycling on or off, sets a gap between
+- **Settings → Windows** turns drag snapping on or off, chooses the repeat behavior, sets a gap between
   windows, and lets you change any shortcut. Other window managers that use the same shortcuts
   (Rectangle, Magnet, Spectacle) should be quit first.
 - **Switching from Rectangle:** the first time NyCopilot runs with Window Layouts, it imports the
-  shortcuts you customized in Rectangle (unless you've already changed NyCopilot's). Rectangle-only
+  shortcuts you customized in Rectangle (unless you've already changed NyCopilot's) and its repeat
+  behavior. Rectangle-only
   actions, such as Todo mode, are skipped. **Settings → Windows → Import** runs it again any time.
 
 Every module's shortcuts can be changed or turned off in its own Settings tab. **Settings → General**
