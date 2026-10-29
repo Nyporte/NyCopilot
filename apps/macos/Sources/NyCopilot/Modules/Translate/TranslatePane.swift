@@ -13,6 +13,7 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
     private let saveButton = Design.button("Save Instructions", target: nil, action: nil)
     private var savedInstructions = ""
     private lazy var defaultInstructions = Self.defaultInstructions(services.core)
+    private lazy var shortcuts = ShortcutEditor(services: services)
 
     init(services: CopilotServices, openHistory: @escaping () -> Void) {
         self.services = services
@@ -47,6 +48,9 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
                         footer: "Sent to the model with every translation. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
                         rows: [makeEditor()]),
             instructionsBar,
+            shortcuts.section("Shortcuts", footer: "Click a shortcut and press a new combination. Press Delete to turn it off.",
+                              actions: ["translate.compose", "translate.history"]),
+            shortcuts.errorLabel,
             FormSection("History",
                         footer: "Every translation is saved on this Mac so you can copy it again. Your original text is never stored.",
                         rows: [FormRow("Saved translations", accessory: Design.hstack([clear, open]))])
@@ -57,6 +61,7 @@ final class TranslatePane: SettingsPane, NSComboBoxDelegate, NSTextViewDelegate 
         language.stringValue = services.core.setting("translate.target_language", default: "English")
         message.isHidden = true
         loadInstructions()
+        shortcuts.refresh()
     }
 
     /// A plain-text editor sized for a short prompt; longer prompts scroll.

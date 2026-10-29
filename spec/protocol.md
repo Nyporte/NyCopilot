@@ -67,11 +67,18 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `translate.run` | `{text, target_language?, api_key?, request_id?}` | `{text, target_language, record}` — saved to `translate.history` before returning |
 | `translate.languages` | — | `[String]` |
 | `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
+| `windows.actions` | — | `[{id, title, group}]` in menu order |
+| `windows.compute` | `{action, window, screen, repeat?}` | `{frame}` — `screen` is the usable area; `repeat` counts consecutive presses for size cycling |
+| `windows.move_to_screen` | `{window, from, to}` | `{frame}` keeping relative position and size |
+| `windows.snap_area` | `{point: {x, y}, screen}` | `{action, frame}` or nulls when the pointer isn't at an edge |
+
+Window rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
 `translate.target_language` (synced, `"English"`), and `translate.instructions` (synced; the
 system message for translations, at most 8,000 characters, where `{language}` is replaced with the
-target language; `settings.reset` restores the built-in text).
+target language; `settings.reset` restores the built-in text), `windows.gap` (synced, `0`, 0–60
+points), `windows.cycle` and `windows.drag_snap` (synced, `true`).
 
 ## Events
 

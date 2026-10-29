@@ -1,0 +1,72 @@
+import AppKit
+
+/// Window Layouts settings: drag snapping, gaps, size cycling, and every layout shortcut.
+@MainActor
+final class WindowsPane: SettingsPane {
+    private let services: CopilotServices
+    private let actions: [WindowsShell.ActionInfo]
+    private let dragSwitch = NSSwitch()
+    private let cycleSwitch = NSSwitch()
+    private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 40, target: nil, action: nil)
+    private let gapValue = Design.label("", size: 12, color: .secondaryLabelColor)
+    private lazy var shortcuts = ShortcutEditor(services: services)
+
+    init(services: CopilotServices, actions: [WindowsShell.ActionInfo]) {
+        self.services = services
+        self.actions = actions
+        super.init(id: "windows", title: "Windows", symbol: "rectangle.split.2x1")
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(services:actions:)") }
+
+    override func makeSections() -> [NSView] {
+        dragSwitch.target = self
+        dragSwitch.action = #selector(toggleDrag)
+        cycleSwitch.target = self
+        cycleSwitch.action = #selector(toggleCycle)
+        gapSlider.numberOfTickMarks = 11
+        gapSlider.allowsTickMarkValuesOnly = true
+        gapSlider.target = self
+        gapSlider.action = #selector(changeGap)
+        gapSlider.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        gapValue.alignment = .right
+        gapValue.widthAnchor.constraint(equalToConstant: 36).isActive = true
+
+        var sections: [NSView] = [
+            FormSection("Arranging", footer: "Window Layouts moves the frontmost app’s focused window. It needs Accessibility, like Translate.", rows: [
+                FormRow("Snap by dragging to edges", subtitle: "Drag a window to a side, corner, or the top of the screen.", accessory: dragSwitch),
+                FormRow("Repeat to cycle sizes", subtitle: "Pressing a half shortcut again goes ½ → ⅔ → ⅓.", accessory: cycleSwitch),
+                FormRow("Gap between windows", accessory: Design.hstack([gapSlider, gapValue]))
+            ])
+        ]
+        var groups: [(String, [String])] = []
+        for action in actions {
+            if groups.last?.0 == action.group { groups[groups.count - 1].1.append("windows.\(action.id)") }
+            else { groups.append((action.group, ["windows.\(action.id)"])) }
+        }
+        for (index, group) in groups.enumerated() {
+            sections.append(shortcuts.section(group.0, footer: index == 0 ? "Click a shortcut and press a new combination. Press Delete to turn it off." : nil,
+                                              actions: group.1))
+        }
+        sections.append(shortcuts.errorLabel)
+        return sections
+    }
+
+    override func paneWillAppear() {
+        dragSwitch.state = services.core.setting("windows.drag_snap", default: true) ? .on : .off
+        cycleSwitch.state = services.core.setting("windows.cycle", default: true) ? .on : .off
+        let gap: Double = services.core.setting("windows.gap", default: 0)
+        gapSlider.doubleValue = gap
+        gapValue.stringValue = "\(Int(gap)) pt"
+        shortcuts.refresh()
+    }
+
+    @objc private func toggleDrag() { try? services.core.setSetting("windows.drag_snap", dragSwitch.state == .on) }
+    @objc private func toggleCycle() { try? services.core.setSetting("windows.cycle", cycleSwitch.state == .on) }
+
+    @objc private func changeGap() {
+        let gap = gapSlider.doubleValue.rounded()
+        gapValue.stringValue = "\(Int(gap)) pt"
+        try? services.core.setSetting("windows.gap", gap)
+    }
+}

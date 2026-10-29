@@ -72,6 +72,8 @@ class AppearanceView: NSView {
     /// Continuous (squircle) corners suit most views; outlines that trace a `roundedMaterial`
     /// mask use circular corners so the two shapes line up exactly.
     var continuousCorners = true { didSet { needsDisplay = true } }
+    /// Zero draws a hairline.
+    var borderWidth: CGFloat = 0 { didSet { needsDisplay = true } }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -88,7 +90,7 @@ class AppearanceView: NSView {
             layer.backgroundColor = fill?.cgColor
             layer.borderColor = border?.cgColor
         }
-        layer.borderWidth = border == nil ? 0 : 1 / (window?.backingScaleFactor ?? 2)
+        layer.borderWidth = border == nil ? 0 : (borderWidth > 0 ? borderWidth : 1 / (window?.backingScaleFactor ?? 2))
         layer.cornerRadius = radius
         layer.cornerCurve = continuousCorners ? .continuous : .circular
     }

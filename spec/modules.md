@@ -15,6 +15,7 @@ can't provide them doesn't load the module.
 | `screen.capture` | Capture a region or window as an image. |
 | `window.overlay` | Always-on-top panels (pinned images, quick chat). |
 | `window.control` | Move and resize other apps' windows. |
+| `pointer.watch` | Observe global mouse drags (drag snapping). |
 | `network` | Outbound HTTP (every platform, including the server). |
 
 ## Current
@@ -23,6 +24,7 @@ can't provide them doesn't load the module.
 | --- | --- | --- | --- |
 | `llm` — Model | Provider settings, Chat Completions client, connection test | Model pane in Settings, Keychain | Shipped |
 | `translate` — Translate | Prompt, language validation, history collection, legacy import | Composer overlay, capture & paste, History window, Translate pane | Shipped |
+| `windows` — Window Layouts | Layout geometry (halves, corners, thirds, maximize, center, resize), gaps, size cycling, display moves, drag snap areas | Shortcuts, Accessibility window moves, restore memory, drag monitor and preview, Windows pane | Shipped |
 
 ## Planned
 
@@ -30,7 +32,6 @@ can't provide them doesn't load the module.
 | --- | --- | --- | --- |
 | `clipboard` — Clipboard history | `clipboard.items` collection, dedup, search, pins, retention policy, sensitive-content rules | Watching the pasteboard, picker panel, paste-back | `clipboard.watch`, `text.insert`, `hotkey` |
 | `capture` — Screenshot & pin | `capture.shots` metadata, annotations as data, OCR/translate via `llm` | Region selection, capture, pinned floating images, annotation canvas | `screen.capture`, `window.overlay`, `hotkey` |
-| `windows` — Window layouts | Named layouts and snap rules as settings | Moving/resizing windows, shortcut handling | `window.control`, `hotkey` |
 | `chat` — Quick chat & agent | Conversations collection, agent loop, tool registry, streaming | Chat panel, rendering, tool permissions UI | `window.overlay`, `hotkey`, `network` |
 | `kanban` — Boards | Boards, columns, and cards as records; ordering; sync-friendly edits | Board UI | — (runs anywhere, including the server) |
 

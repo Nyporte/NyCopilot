@@ -1,6 +1,6 @@
 import AppKit
 
-/// Permissions, startup, and every module's keyboard shortcuts.
+/// Permissions and startup. Each module lists its own shortcuts in its own tab.
 @MainActor
 final class GeneralPane: SettingsPane {
     private let services: CopilotServices
@@ -8,8 +8,6 @@ final class GeneralPane: SettingsPane {
     private let accessButton = Design.button("Open System Settings…", target: nil, action: nil)
     private let loginSwitch = NSSwitch()
     private let loginNote = Design.wrapping("", size: 11.5)
-    private let shortcutError = Design.wrapping("", size: 11.5, color: .systemRed)
-    private var recorders: [String: ShortcutRecorder] = [:]
     private var poll: Timer?
 
     init(services: CopilotServices) {
@@ -22,7 +20,7 @@ final class GeneralPane: SettingsPane {
     override func makeSections() -> [NSView] {
         accessButton.target = self
         accessButton.action = #selector(requestAccess)
-        let access = FormRow("Accessibility", subtitle: "Lets NyCopilot find the field you’re typing in and paste results into it.",
+        let access = FormRow("Accessibility", subtitle: "Lets NyCopilot read and paste into text fields, and move other apps’ windows.",
                              accessory: Design.hstack([accessBadge, accessButton], spacing: 12))
 
         loginSwitch.target = self
@@ -30,36 +28,10 @@ final class GeneralPane: SettingsPane {
         loginNote.isHidden = true
         let login = FormRow("Open at login", subtitle: nil, accessory: loginSwitch)
 
-        var shortcutRows: [NSView] = []
-        for action in services.hotKeys.actions {
-            let recorder = ShortcutRecorder()
-            recorder.onChange = { [weak self] value in
-                guard let self else { return nil }
-                do { try services.hotKeys.set(value, for: action.id); return nil }
-                catch { return error.localizedDescription }
-            }
-            recorder.onRecordingChange = { [weak self] recording in
-                if recording { self?.services.hotKeys.suspendAll() } else { self?.services.hotKeys.resumeAll() }
-            }
-            recorder.onError = { [weak self] message in
-                self?.shortcutError.stringValue = message ?? ""
-                self?.shortcutError.isHidden = message == nil
-            }
-            recorders[action.id] = recorder
-            shortcutRows.append(FormRow(action.title, accessory: recorder))
-        }
-        shortcutError.isHidden = true
-
         var sections: [NSView] = [
             FormSection("Permissions", rows: [access]),
             FormSection("Startup", rows: [login]),
         ]
-        if !shortcutRows.isEmpty {
-            sections.append(FormSection("Keyboard Shortcuts",
-                                        footer: "Click a shortcut and press a new combination. Press Delete to turn it off.",
-                                        rows: shortcutRows))
-            sections.append(shortcutError)
-        }
         let guide = Design.button("Show Setup Guide…", target: self, action: #selector(showGuide))
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
         sections.append(Design.hstack([Design.label("NyCopilot \(version)", size: 12, color: .tertiaryLabelColor),
@@ -72,12 +44,6 @@ final class GeneralPane: SettingsPane {
         refreshAccess()
         loginSwitch.state = LaunchAtLogin.isEnabled || LaunchAtLogin.needsApproval ? .on : .off
         showLoginNote()
-        for (id, recorder) in recorders {
-            recorder.combination = services.hotKeys.combination(for: id)
-        }
-        let problems = services.hotKeys.problems.values
-        shortcutError.stringValue = problems.first ?? ""
-        shortcutError.isHidden = problems.isEmpty
         // Permission is granted in another app; re-check while this pane is on screen.
         poll?.invalidate()
         poll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in

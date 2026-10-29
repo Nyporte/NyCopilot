@@ -68,8 +68,32 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, or double-click), and delete (⌫). Settings →
   Translate can clear all of it. Only translations are stored, never your source text.
 
-All shortcuts can be changed or turned off in **Settings → General**, which also shows the
-Accessibility status and an **Open at login** switch.
+## Using Window Layouts
+
+Arrange the frontmost window with a shortcut, from **Window Layout** in the menu bar menu, or by
+dragging it to the edge of the screen:
+
+| Layout | Default shortcut |
+| --- | --- |
+| Left, right, top, or bottom half | ⌃⌥ ← → ↑ ↓ |
+| Corners: top left, top right, bottom left, bottom right | ⌃⌥ U, I, J, K |
+| First, center, or last third | ⌃⌥ D, F, G |
+| First or last two thirds | ⌃⌥ E, T |
+| Maximize, maximize height | ⌃⌥↩, ⌃⌥⇧↑ |
+| Center, make larger, make smaller | ⌃⌥ C, =, − |
+| Restore the size it had before NyCopilot moved it | ⌃⌥⌫ |
+| Next or previous display | ⌃⌥⌘ → ← |
+
+- Pressing a half shortcut again cycles its width: ½ → ⅔ → ⅓.
+- Drag a window to the left or right edge for a half, to a corner for a quarter, to the top for
+  maximize, or along the bottom for a third. A translucent preview shows where it will land.
+- On a portrait display, thirds stack vertically.
+- **Settings → Windows** turns drag snapping and size cycling on or off, sets a gap between
+  windows, and lets you change any shortcut. Other window managers that use the same shortcuts
+  (Rectangle, Magnet, Spectacle) should be quit first.
+
+Every module's shortcuts can be changed or turned off in its own Settings tab. **Settings → General**
+shows the Accessibility status and an **Open at login** switch.
 
 ## Privacy and data
 

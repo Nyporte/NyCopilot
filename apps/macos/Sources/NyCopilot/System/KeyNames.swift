@@ -21,10 +21,23 @@ enum KeyNames {
         return character(keyCode)?.uppercased() ?? "#\(keyCode)"
     }
 
-    /// Menus render shortcuts natively when the key maps to a single typed character.
+    /// Keys menus can draw natively even though they don't type a character.
+    private static let menuSpecial: [UInt32: Int] = [
+        123: NSLeftArrowFunctionKey, 124: NSRightArrowFunctionKey, 125: NSDownArrowFunctionKey,
+        126: NSUpArrowFunctionKey, 36: 0x0D, 51: 0x08, 117: NSDeleteFunctionKey, 49: 0x20
+    ]
+
+    /// Menus render shortcuts natively when the key maps to a single character or a known special key.
     static func menuEquivalent(_ combination: HotKeyCombination?) -> (String, NSEvent.ModifierFlags) {
-        guard let combination, special[combination.keyCode] == nil,
-              let character = character(combination.keyCode)?.lowercased(), character.count == 1 else { return ("", []) }
+        guard let combination else { return ("", []) }
+        let character: String
+        if let special = menuSpecial[combination.keyCode], let scalar = UnicodeScalar(special) {
+            character = String(Character(scalar))
+        } else if special[combination.keyCode] == nil, let typed = self.character(combination.keyCode)?.lowercased(), typed.count == 1 {
+            character = typed
+        } else {
+            return ("", [])
+        }
         var flags: NSEvent.ModifierFlags = []
         if combination.modifiers & HotKeyCombination.command != 0 { flags.insert(.command) }
         if combination.modifiers & HotKeyCombination.option != 0 { flags.insert(.option) }

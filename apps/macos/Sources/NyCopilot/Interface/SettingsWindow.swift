@@ -21,23 +21,44 @@ class SettingsPane: NSViewController {
     /// Refresh live state (permissions, saved keys) each time the pane is shown.
     func paneWillAppear() {}
 
+    /// Panes taller than this scroll, so the window always fits on a laptop screen.
+    static let maximumHeight: CGFloat = 640
+
     override func loadView() {
         let stack = Design.vstack(makeSections(), spacing: Design.sectionSpacing)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        let container = NSView()
-        container.addSubview(stack)
+        let content = FlippedView()
+        content.addSubview(stack)
         NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: Design.paneWidth),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Design.panePadding),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Design.panePadding),
-            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 20),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -Design.panePadding)
+            content.widthAnchor.constraint(equalToConstant: Design.paneWidth),
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: Design.panePadding),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -Design.panePadding),
+            stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 20),
+            stack.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -Design.panePadding)
         ])
         for section in stack.arrangedSubviews {
             section.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
-        view = container
+        guard content.fittingSize.height > Self.maximumHeight else { view = content; return }
+        let scroll = NSScrollView()
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.documentView = content
+        content.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            content.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            scroll.widthAnchor.constraint(equalToConstant: Design.paneWidth),
+            scroll.heightAnchor.constraint(equalToConstant: Self.maximumHeight)
+        ])
+        view = scroll
     }
+}
+
+/// Lays out from the top, so scrolled panes start at their first section.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
 }
 
 /// A macOS-style preferences window: icon tabs in the toolbar, one pane at a time, sized to fit.
