@@ -91,6 +91,9 @@ dragging it to the edge of the screen:
 - **Settings → Windows** turns drag snapping and size cycling on or off, sets a gap between
   windows, and lets you change any shortcut. Other window managers that use the same shortcuts
   (Rectangle, Magnet, Spectacle) should be quit first.
+- **Switching from Rectangle:** the first time NyCopilot runs with Window Layouts, it imports the
+  shortcuts you customized in Rectangle (unless you've already changed NyCopilot's). Rectangle-only
+  actions, such as Todo mode, are skipped. **Settings → Windows → Import** runs it again any time.
 
 Every module's shortcuts can be changed or turned off in its own Settings tab. **Settings → General**
 shows the Accessibility status and an **Open at login** switch.

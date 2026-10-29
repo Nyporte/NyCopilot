@@ -43,6 +43,10 @@ final class Preferences {
         return HotKeyCombination(storageValue: stored)
     }
 
+    func hasStoredHotKey(for action: String) -> Bool {
+        core.setting("client.hotkey.\(action)", default: Optional<String>.none) != nil
+    }
+
     func setHotKey(_ combination: HotKeyCombination?, for action: String) {
         try? core.setSetting("client.hotkey.\(action)", combination?.storageValue ?? "")
     }

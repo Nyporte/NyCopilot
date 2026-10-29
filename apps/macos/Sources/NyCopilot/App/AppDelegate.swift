@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let available = Set((try? core.call("core.info") as? [String: Any])?["modules"] as? [String] ?? [])
         modules = makeModules().filter { available.contains($0.id) }
         for module in modules { module.hotKeyActions.forEach(services.hotKeys.add) }
+        modules.compactMap { $0 as? WindowsShell }.first?.importRectangleOnce()
 
         installMenus()
         if !preferences.hasCompletedWelcome { showWelcome() }

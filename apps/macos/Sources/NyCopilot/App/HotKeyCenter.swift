@@ -44,6 +44,30 @@ final class HotKeyCenter {
         preferences.setHotKey(combination, for: id)
     }
 
+    /// Apply many shortcuts at once. Every changing action is released first, so actions can swap
+    /// keys without colliding with each other. Returns failures (for example, a key another app owns).
+    @discardableResult
+    func set(_ changes: [String: HotKeyCombination?]) -> [String: String] {
+        let ids = changes.keys.filter { keys[$0] != nil }.sorted()
+        for id in ids { try? keys[id]?.register(nil) }
+        var failures: [String: String] = [:]
+        for id in ids {
+            let combination = changes[id] ?? nil
+            preferences.setHotKey(combination, for: id)
+            do {
+                try keys[id]?.register(combination)
+                problems[id] = nil
+            } catch {
+                failures[id] = error.localizedDescription
+                problems[id] = error.localizedDescription
+            }
+        }
+        return failures
+    }
+
+    /// Whether the user has changed any of these actions from their defaults.
+    func isCustomized(_ ids: [String]) -> Bool { ids.contains { preferences.hasStoredHotKey(for: $0) } }
+
     /// While a recorder listens, our own shortcuts must not fire or swallow the keystroke.
     func suspendAll() { keys.values.forEach { $0.suspend() } }
 

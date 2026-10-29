@@ -50,6 +50,20 @@ final class WindowsShell: ModuleShell {
         }
     }
 
+    /// Called once all shortcuts are registered: someone switching from Rectangle gets their
+    /// shortcuts carried over automatically, once, unless they already customized NyCopilot's.
+    func importRectangleOnce() {
+        guard !services.core.setting("client.windows.rectangle_import_checked", default: false) else { return }
+        try? services.core.setSetting("client.windows.rectangle_import_checked", true)
+        guard RectangleImport.isAvailable,
+              !services.hotKeys.isCustomized(actions.map { "windows.\($0.id)" }) else { return }
+        let result = RectangleImport.read()
+        guard !result.shortcuts.isEmpty else { return }
+        let outcome = RectangleImport.apply(result, to: services.hotKeys)
+        services.toast.show("Window shortcuts imported from Rectangle", detail: outcome.summary,
+                            style: outcome.failed == 0 ? .success : .warning)
+    }
+
     var hotKeyActions: [HotKeyCenter.Action] {
         actions.map { action in
             let combination = Self.defaults[action.id].map { HotKeyCombination(keyCode: $0.key, modifiers: $0.modifiers) }

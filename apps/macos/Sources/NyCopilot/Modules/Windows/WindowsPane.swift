@@ -10,6 +10,7 @@ final class WindowsPane: SettingsPane {
     private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 40, target: nil, action: nil)
     private let gapValue = Design.label("", size: 12, color: .secondaryLabelColor)
     private lazy var shortcuts = ShortcutEditor(services: services)
+    private let importNote = Design.wrapping("", size: 11.5)
 
     init(services: CopilotServices, actions: [WindowsShell.ActionInfo]) {
         self.services = services
@@ -49,6 +50,14 @@ final class WindowsPane: SettingsPane {
                                               actions: group.1))
         }
         sections.append(shortcuts.errorLabel)
+        if RectangleImport.isAvailable {
+            importNote.isHidden = true
+            sections.append(FormSection("Switching from Rectangle", rows: [
+                FormRow("Rectangle shortcuts", subtitle: "Replace these shortcuts with the ones you set in Rectangle.",
+                        accessory: Design.button("Import", target: self, action: #selector(importFromRectangle)))
+            ]))
+            sections.append(importNote)
+        }
         return sections
     }
 
@@ -58,6 +67,14 @@ final class WindowsPane: SettingsPane {
         let gap: Double = services.core.setting("windows.gap", default: 0)
         gapSlider.doubleValue = gap
         gapValue.stringValue = "\(Int(gap)) pt"
+        shortcuts.refresh()
+    }
+
+    @objc private func importFromRectangle() {
+        let outcome = RectangleImport.apply(RectangleImport.read(), to: services.hotKeys)
+        importNote.stringValue = outcome.summary
+        importNote.textColor = outcome.failed == 0 ? .secondaryLabelColor : .systemOrange
+        importNote.isHidden = false
         shortcuts.refresh()
     }
 
