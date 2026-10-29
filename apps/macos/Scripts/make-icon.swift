@@ -16,22 +16,30 @@ enum Mark {
     static let stroke = 15.0
     static let dotRadius = 7.5
     /// The loop: stem x, leg x, arch centre y, bottom y, and the radius of its lower corners.
-    static let (left, right, archY, bottom, corner) = (50.0, 110.0, 67.0, 123.0, 24.0)
+    static let (left, right, archY, bottom, corner) = (54.0, 106.0, 63.0, 123.0, 22.0)
     /// Centre-to-centre distance from the spark to each open end.
     static let reach = 24.0
+    /// How far along the missing corner's radius the spark sits (1 = on the stroke's path);
+    /// a little less draws it in toward the centre of the loop.
+    static let dotPull = 0.75
 
     static func point(_ x: Double, _ y: Double) -> NSPoint { NSPoint(x: 100 + x * unit, y: 924 - y * unit) }
 
-    /// Midpoint of the missing bottom-left corner.
+    /// On the diagonal of the missing bottom-left corner.
     static var dot: (x: Double, y: Double) {
-        (left + corner - corner * 0.7071, bottom - corner + corner * 0.7071)
+        let offset = corner * dotPull * 0.7071
+        return (left + corner - offset, bottom - corner + offset)
     }
 
-    /// Where the stem stops above the spark, and the angle (degrees below horizontal) where the tail stops.
+    /// Where the stem stops above the spark.
     static var stemEnd: Double { dot.y - (reach * reach - pow(dot.x - left, 2)).squareRoot() }
+
+    /// Angle (degrees, clockwise from the right) where the tail's arc comes within `reach` of the spark.
     static var tailAngle: Double {
-        let tailX = dot.x + (reach * reach - pow(bottom - dot.y, 2)).squareRoot()
-        return acos((tailX - (right - corner)) / corner) * 180 / .pi
+        let (vx, vy) = (dot.x - (right - corner), dot.y - (bottom - corner))
+        let distance = (vx * vx + vy * vy).squareRoot()
+        let spread = acos((corner * corner + distance * distance - reach * reach) / (2 * corner * distance))
+        return (atan2(vy, vx) - spread) * 180 / .pi
     }
 
     static func glyph() -> NSBezierPath {

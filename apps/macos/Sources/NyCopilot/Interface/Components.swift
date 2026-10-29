@@ -263,11 +263,17 @@ final class KeyCap: AppearanceView {
 enum BrandGlyph {
     private static let stroke: CGFloat = 15
     private static let dotRadius: CGFloat = 7.5
-    private static let (left, right, archY, bottom, corner): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) = (50, 110, 67, 123, 24)
+    private static let (left, right, archY, bottom, corner): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) = (54, 106, 63, 123, 22)
     private static let reach: CGFloat = 24
-    private static let dot = NSPoint(x: left + corner - corner * 0.7071, y: bottom - corner + corner * 0.7071)
+    private static let dotPull: CGFloat = 0.75
+    private static let dot = NSPoint(x: left + corner - corner * dotPull * 0.7071, y: bottom - corner + corner * dotPull * 0.7071)
     private static let stemEnd = dot.y - (reach * reach - pow(dot.x - left, 2)).squareRoot()
-    private static let tailAngle = acos((dot.x + (reach * reach - pow(bottom - dot.y, 2)).squareRoot() - (right - corner)) / corner) * 180 / .pi
+    private static let tailAngle: CGFloat = {
+        let (vx, vy) = (dot.x - (right - corner), dot.y - (bottom - corner))
+        let distance = (vx * vx + vy * vy).squareRoot()
+        let spread = acos((corner * corner + distance * distance - reach * reach) / (2 * corner * distance))
+        return (atan2(vy, vx) - spread) * 180 / .pi
+    }()
     /// The mark's extent in tile units, including stroke width.
     private static let bounds = NSRect(x: left - stroke / 2, y: archY - (right - left) / 2 - stroke / 2,
                                        width: right - left + stroke, height: bottom - archY + (right - left) / 2 + stroke)
