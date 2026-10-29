@@ -1,0 +1,304 @@
+import AppKit
+
+/// Permissions, startup, and every module's keyboard shortcuts.
+@MainActor
+final class GeneralPane: SettingsPane {
+    private let services: CopilotServices
+    private let accessBadge = StatusBadge()
+    private let accessButton = Design.button("Open System Settings…", target: nil, action: nil)
+    private let loginSwitch = NSSwitch()
+    private let loginNote = Design.wrapping("", size: 11.5)
+    private let shortcutError = Design.wrapping("", size: 11.5, color: .systemRed)
+    private var recorders: [String: ShortcutRecorder] = [:]
+    private var poll: Timer?
+
+    init(services: CopilotServices) {
+        self.services = services
+        super.init(id: "general", title: "General", symbol: "gearshape")
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(services:)") }
+
+    override func makeSections() -> [NSView] {
+        accessButton.target = self
+        accessButton.action = #selector(requestAccess)
+        let access = FormRow("Accessibility", subtitle: "Lets NyCopilot find the field you’re typing in and paste results into it.",
+                             accessory: Design.hstack([accessBadge, accessButton], spacing: 12))
+
+        loginSwitch.target = self
+        loginSwitch.action = #selector(toggleLogin)
+        loginNote.isHidden = true
+        let login = FormRow("Open at login", subtitle: nil, accessory: loginSwitch)
+
+        var shortcutRows: [NSView] = []
+        for action in services.hotKeys.actions {
+            let recorder = ShortcutRecorder()
+            recorder.onChange = { [weak self] value in
+                guard let self else { return nil }
+                do { try services.hotKeys.set(value, for: action.id); return nil }
+                catch { return error.localizedDescription }
+            }
+            recorder.onRecordingChange = { [weak self] recording in
+                if recording { self?.services.hotKeys.suspendAll() } else { self?.services.hotKeys.resumeAll() }
+            }
+            recorder.onError = { [weak self] message in
+                self?.shortcutError.stringValue = message ?? ""
+                self?.shortcutError.isHidden = message == nil
+            }
+            recorders[action.id] = recorder
+            shortcutRows.append(FormRow(action.title, accessory: recorder))
+        }
+        shortcutError.isHidden = true
+
+        var sections: [NSView] = [
+            FormSection("Permissions", rows: [access]),
+            FormSection("Startup", rows: [login]),
+        ]
+        if !shortcutRows.isEmpty {
+            sections.append(FormSection("Keyboard Shortcuts",
+                                        footer: "Click a shortcut and press a new combination. Press Delete to turn it off.",
+                                        rows: shortcutRows))
+            sections.append(shortcutError)
+        }
+        let guide = Design.button("Show Setup Guide…", target: self, action: #selector(showGuide))
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
+        sections.append(Design.hstack([Design.label("NyCopilot \(version)", size: 12, color: .tertiaryLabelColor),
+                                       Design.spacer(), guide]))
+        sections.insert(loginNote, at: 2)
+        return sections
+    }
+
+    override func paneWillAppear() {
+        refreshAccess()
+        loginSwitch.state = LaunchAtLogin.isEnabled || LaunchAtLogin.needsApproval ? .on : .off
+        showLoginNote()
+        for (id, recorder) in recorders {
+            recorder.combination = services.hotKeys.combination(for: id)
+        }
+        let problems = services.hotKeys.problems.values
+        shortcutError.stringValue = problems.first ?? ""
+        shortcutError.isHidden = problems.isEmpty
+        // Permission is granted in another app; re-check while this pane is on screen.
+        poll?.invalidate()
+        poll = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.view.window?.isVisible == true else { self?.poll?.invalidate(); return }
+                self.refreshAccess()
+            }
+        }
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        poll?.invalidate()
+    }
+
+    private func refreshAccess() {
+        let trusted = Accessibility.isTrusted
+        accessBadge.set(trusted ? "Allowed" : "Not allowed", color: trusted ? .systemGreen : .systemOrange)
+        accessButton.isHidden = trusted
+    }
+
+    private func showLoginNote() {
+        loginNote.isHidden = !LaunchAtLogin.needsApproval
+        loginNote.stringValue = "Approve NyCopilot in System Settings → General → Login Items to finish."
+    }
+
+    @objc private func requestAccess() { Accessibility.requestAccess() }
+    @objc private func showGuide() { services.showWelcome() }
+
+    @objc private func toggleLogin() {
+        do { try LaunchAtLogin.set(loginSwitch.state == .on) } catch {
+            loginSwitch.state = LaunchAtLogin.isEnabled ? .on : .off
+            loginNote.stringValue = "Couldn’t change the login item: \(error.localizedDescription)"
+            loginNote.isHidden = false
+            return
+        }
+        showLoginNote()
+    }
+}
+
+/// The shared model provider: endpoint, model, key, and a one-click connection test.
+@MainActor
+final class ProviderPane: SettingsPane, NSTextFieldDelegate {
+    private let services: CopilotServices
+    private let endpoint = NSTextField()
+    private let model = NSTextField()
+    private let key = NSSecureTextField()
+    private let removeKey = NSButton()
+    private let status = NSTextField(wrappingLabelWithString: "")
+    private let statusIcon = Design.symbol("circle", size: 13)
+    private let progress = NSProgressIndicator()
+    private let testButton = Design.button("Test Connection", target: nil, action: nil)
+    private let saveButton = Design.button("Save", target: nil, action: nil, primary: true)
+    private var hasSavedKey = false
+    private var removingKey = false
+    private var test: Task<Void, Never>?
+
+    init(services: CopilotServices) {
+        self.services = services
+        super.init(id: "model", title: "Model", symbol: "cpu")
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(services:)") }
+
+    override func makeSections() -> [NSView] {
+        for (field, placeholder) in [(endpoint, "https://api.example.com/v1/chat/completions"),
+                                     (model, "e.g. gpt-4o-mini, claude-sonnet-4-5, llama3.1")] as [(NSTextField, String)] {
+            field.placeholderString = placeholder
+            field.delegate = self
+            field.lineBreakMode = .byTruncatingTail
+            field.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        }
+        key.delegate = self
+        key.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        removeKey.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Remove saved key")
+        removeKey.isBordered = false
+        removeKey.contentTintColor = .secondaryLabelColor
+        removeKey.toolTip = "Remove the saved API key"
+        removeKey.target = self
+        removeKey.action = #selector(removeSavedKey)
+
+        status.font = .systemFont(ofSize: 12)
+        status.textColor = .secondaryLabelColor
+        status.maximumNumberOfLines = 3
+        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        progress.style = .spinning
+        progress.controlSize = .small
+        progress.isDisplayedWhenStopped = false
+        progress.isHidden = true
+        testButton.target = self
+        testButton.action = #selector(testConnection)
+        saveButton.target = self
+        saveButton.action = #selector(save)
+
+        let connection = FormSection("Connection",
+            footer: "Works with any OpenAI-compatible Chat Completions endpoint — hosted providers or local servers such as Ollama and LM Studio. The API key is optional and stored only in your Keychain.",
+            rows: [
+                FormRow("Endpoint URL", accessory: endpoint),
+                FormRow("Model ID", accessory: model),
+                FormRow("API key", accessory: Design.hstack([removeKey, key], spacing: 6))
+            ])
+        let feedback = Design.hstack([statusIcon, progress, status], spacing: 6)
+        feedback.alignment = .firstBaseline
+        let bar = Design.hstack([feedback, Design.spacer(), testButton, saveButton], spacing: 8)
+        return [connection, bar]
+    }
+
+    override func paneWillAppear() {
+        let provider = services.preferences.provider
+        endpoint.stringValue = provider.endpoint
+        model.stringValue = provider.model
+        key.stringValue = ""
+        hasSavedKey = KeychainStore.hasKey
+        removingKey = false
+        refreshKeyField()
+        showStatus(provider.isComplete ? nil : "Add an endpoint and model to start using NyCopilot.", style: .info)
+        updateButtons()
+    }
+
+    func controlTextDidChange(_ notification: Notification) { updateButtons() }
+
+    private var draft: Preferences.Provider {
+        Preferences.Provider(endpoint: endpoint.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+                             model: model.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    private var isDirty: Bool { draft != services.preferences.provider || !key.stringValue.isEmpty || removingKey }
+
+    private func updateButtons() {
+        saveButton.isEnabled = isDirty
+        testButton.isEnabled = draft.isComplete && test == nil
+    }
+
+    private func refreshKeyField() {
+        key.placeholderString = hasSavedKey && !removingKey ? "Saved in Keychain — type to replace" : "Optional for local servers"
+        removeKey.isHidden = !hasSavedKey || removingKey
+    }
+
+    @objc private func removeSavedKey() {
+        removingKey = true
+        key.stringValue = ""
+        refreshKeyField()
+        showStatus("The saved key will be removed when you click Save.", style: .info)
+        updateButtons()
+    }
+
+    @objc private func save() {
+        do {
+            if key.stringValue.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
+                throw NyCore.Failure(code: "invalid_key", message: "The API key can’t contain line breaks or control characters.", status: nil)
+            }
+            try services.preferences.setProvider(draft)
+            if !key.stringValue.isEmpty {
+                try KeychainStore.write(key.stringValue)
+            } else if removingKey {
+                try KeychainStore.write("")
+            }
+        } catch {
+            showStatus(error.localizedDescription, style: .error)
+            return
+        }
+        hasSavedKey = KeychainStore.hasKey
+        removingKey = false
+        key.stringValue = ""
+        refreshKeyField()
+        showStatus("Saved.", style: .success)
+        updateButtons()
+    }
+
+    /// Sends one tiny request with the values on screen, so a setup can be checked before saving.
+    @objc private func testConnection() {
+        let configuration = draft
+        let typedKey = key.stringValue
+        let removing = removingKey
+        progress.isHidden = false
+        progress.startAnimation(nil)
+        statusIcon.isHidden = true
+        status.stringValue = "Connecting…"
+        status.textColor = .secondaryLabelColor
+        let core = services.core
+        struct Timing: Decodable { let elapsedMs: Int }
+        test = Task { [weak self] in
+            let outcome: Result<Timing, Error>
+            do {
+                let apiKey = typedKey.isEmpty && !removing ? try KeychainStore.read() : typedKey
+                outcome = .success(try await core.perform("llm.test", ["endpoint": configuration.endpoint, "model": configuration.model,
+                                                                       "api_key": apiKey], as: Timing.self))
+            } catch { outcome = .failure(error) }
+            guard let self else { return }
+            progress.stopAnimation(nil)
+            progress.isHidden = true
+            test = nil
+            switch outcome {
+            case .success(let timing):
+                let seconds = String(format: "%.1f", Double(timing.elapsedMs) / 1000)
+                showStatus("Connected — \(configuration.model) replied in \(seconds) s.", style: .success)
+            case .failure(let error):
+                showStatus(error.localizedDescription, style: .error)
+            }
+            updateButtons()
+        }
+        updateButtons()
+    }
+
+    private enum StatusStyle { case info, success, error }
+
+    private func showStatus(_ text: String?, style: StatusStyle) {
+        status.stringValue = text ?? ""
+        statusIcon.isHidden = text == nil
+        switch style {
+        case .info:
+            statusIcon.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
+            statusIcon.contentTintColor = .secondaryLabelColor
+            status.textColor = .secondaryLabelColor
+        case .success:
+            statusIcon.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
+            statusIcon.contentTintColor = .systemGreen
+            status.textColor = .labelColor
+        case .error:
+            statusIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
+            statusIcon.contentTintColor = .systemOrange
+            status.textColor = .labelColor
+        }
+    }
+}

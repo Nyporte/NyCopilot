@@ -1,0 +1,209 @@
+import AppKit
+import MacPlatform
+
+/// macOS half of the Translate module: capture the focused field, show the composer, ask the core
+/// to translate, then paste the result back (or copy it when the field can't take a paste).
+@MainActor
+final class TranslateShell: ModuleShell {
+    let id = "translate"
+    let title = "Translate"
+    let symbolName = "character.bubble"
+
+    private let services: CopilotServices
+    private let composer = ComposerPanel()
+    private var historyWindow: HistoryWindow?
+    private var target: InputTarget?
+    private var sourceApp: NSRunningApplication?
+    private var operation: Task<Void, Never>?
+    private var operationID = UUID()
+
+    init(services: CopilotServices) {
+        self.services = services
+        composer.onSubmit = { [weak self] text in self?.translate(text) }
+        composer.onCancel = { [weak self] in self?.returnToSource() }
+        composer.onClose = { [weak self] in self?.cancelOperation() }
+        composer.onChooseLanguage = { [weak self] language in self?.setLanguage(language) }
+        composer.onOtherLanguage = { [weak self] in
+            self?.composer.cancel()
+            self?.services.openSettings("translate")
+        }
+    }
+
+    var hotKeyActions: [HotKeyCenter.Action] {
+        [.init(id: "translate.compose", title: "Translate as you type",
+               defaultCombination: .init(keyCode: 17, modifiers: HotKeyCombination.option | HotKeyCombination.command),
+               handler: { [weak self] in self?.beginComposition() }),
+         .init(id: "translate.history", title: "Open translation history",
+               defaultCombination: .init(keyCode: 4, modifiers: HotKeyCombination.option | HotKeyCombination.command),
+               handler: { [weak self] in self?.showHistory() })]
+    }
+
+    func menuItems() -> [NSMenuItem] {
+        [services.menuItem("Translate…", symbol: "character.bubble", hotKey: "translate.compose", target: self, action: #selector(beginFromMenu)),
+         services.menuItem("Translation History", symbol: "clock.arrow.circlepath", hotKey: "translate.history", target: self, action: #selector(showHistory))]
+    }
+
+    func makeSettingsPane() -> SettingsPane? {
+        TranslatePane(services: services, openHistory: { [weak self] in self?.showHistory() })
+    }
+
+    func shutdown() { cancelOperation() }
+
+    private var language: String { services.core.setting("translate.target_language", default: "English") }
+
+    private var languages: [String] {
+        (try? services.core.call("translate.languages") as? [String]) ?? ["English"]
+    }
+
+    private func setLanguage(_ language: String) {
+        do { try services.core.setSetting("translate.target_language", language) } catch {
+            composer.showError(error.localizedDescription)
+        }
+    }
+
+    // MARK: Lifecycle
+
+    /// Opening from the menu bar happens while the source app is still frontmost, just like a shortcut.
+    @objc private func beginFromMenu() { beginComposition() }
+
+    /// Capture the focused field before NyCopilot activates. Fields that can't be read still get the
+    /// composer, in copy mode, so the shortcut always does something useful.
+    private func beginComposition() {
+        if composer.isVisible { composer.bringToFront(); return }
+        guard let foreground = NSWorkspace.shared.frontmostApplication,
+              foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        cancelOperation()
+        sourceApp = foreground
+        let id = operationID
+        operation = Task { [weak self] in
+            guard let self else { return }
+            var captured: InputTarget?
+            do {
+                captured = try await InputTarget.capture(pid: foreground.processIdentifier)
+            } catch InputTarget.Failure.secureField {
+                services.toast.show("Password fields aren’t supported", detail: "NyCopilot never reads or types into secure fields.", style: .warning)
+                return
+            } catch {
+                captured = nil
+            }
+            guard !Task.isCancelled, operationID == id,
+                  NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
+            target = captured
+            composer.present(over: captured?.frame, mode: captured == nil ? .copy : .paste, language: language, languages: languages)
+        }
+    }
+
+    private struct RunResult: Decodable { let text: String; let targetLanguage: String }
+
+    /// One request per submit. A newer submit or a cancel makes older results irrelevant, and the
+    /// core discards a cancelled result before it reaches history.
+    private func translate(_ text: String) {
+        let apiKey: String
+        do { apiKey = try services.apiKey() } catch { composer.showError(error.localizedDescription); return }
+        cancelRequest()
+        operationID = UUID()
+        let id = operationID
+        let language = language
+        composer.showLoading(language: language)
+        let core = services.core
+        operation = Task { [weak self] in
+            let result: RunResult
+            do {
+                result = try await core.perform("translate.run", ["text": text, "target_language": language, "api_key": apiKey,
+                                                                 "request_id": id.uuidString], as: RunResult.self)
+            } catch {
+                guard let self, !Task.isCancelled, operationID == id else { return }
+                showFailure(error)
+                return
+            }
+            guard let self, !Task.isCancelled, operationID == id else { return }
+            await deliver(result.text, id: id)
+        }
+    }
+
+    private func showFailure(_ error: Error) {
+        let code = (error as? NyCore.Failure)?.code
+        switch code {
+        case "provider_not_configured", "invalid_setting":
+            composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
+                self?.composer.cancel()
+                self?.services.openSettings("model")
+            }))
+        case "http_status" where (error as? NyCore.Failure)?.status.map({ [401, 403, 404].contains($0) }) == true:
+            composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
+                self?.composer.cancel()
+                self?.services.openSettings("model")
+            }))
+        default:
+            composer.showError(error.localizedDescription)
+        }
+    }
+
+    /// The result is already in history. Paste once into the verified field; anything less certain
+    /// falls back to the clipboard with a short note.
+    private func deliver(_ text: String, id: UUID) async {
+        let anchor = target?.frame.map(Self.appKitRect)
+        guard let target else {
+            composer.hideForInsertion()
+            copy(text)
+            returnToSource()
+            let hint = Accessibility.isTrusted ? "This field can’t be edited directly — press ⌘V to paste."
+                                               : "Allow Accessibility in Settings to paste automatically."
+            services.toast.show("Translation copied", detail: hint, style: .success, near: anchor)
+            composer.close()
+            return
+        }
+        do {
+            try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
+        } catch is CancellationError {
+        } catch TemporaryPasteboard.Failure.restoreFailed {
+            services.toast.show("Pasted", detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)
+        } catch {
+            copy(text)
+            services.toast.show("Couldn’t paste into the field", detail: "The translation is on your clipboard and in History.",
+                                style: .warning, near: anchor)
+        }
+        guard operationID == id else { return }
+        composer.close()
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    /// An accessory app doesn't hand focus back on its own; return it to where the user was typing.
+    private func returnToSource() {
+        guard let app = sourceApp, !app.isTerminated,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier else { return }
+        app.activate(options: [])
+    }
+
+    private func cancelRequest() {
+        services.core.cancel(requestID: operationID.uuidString)
+        operation?.cancel()
+    }
+
+    /// Invalidate callbacks before dropping the target; cancellation cannot undo an already sent paste.
+    private func cancelOperation() {
+        cancelRequest()
+        operationID = UUID()
+        operation = nil
+        target = nil
+    }
+
+    @objc private func showHistory() {
+        if historyWindow == nil { historyWindow = HistoryWindow(core: services.core) }
+        historyWindow?.present()
+    }
+
+    private static func appKitRect(_ ax: CGRect) -> NSRect {
+        let top = NSScreen.screens.first?.frame.maxY ?? 0
+        return NSRect(x: ax.minX, y: top - ax.maxY, width: ax.width, height: ax.height)
+    }
+}
+
+extension NyCore {
+    /// Fire-and-forget: tells the core to discard a request's result if it is still running.
+    func cancel(requestID: String) { _ = try? call("core.cancel", ["request_id": requestID]) }
+}

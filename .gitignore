@@ -1,0 +1,7 @@
+# Rust and Swift build products, app bundles, and local IDE state.
+/target/
+.build/
+dist/
+.swiftpm/
+.DS_Store
+*.xcuserstate

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- An accessory app: a menu bar icon and native panels, no Dock icon. -->
+<dict>
+    <key>CFBundleIdentifier</key><string>dev.nycopilot.NyCopilot</string>
+    <key>CFBundleName</key><string>NyCopilot</string>
+    <key>CFBundleDisplayName</key><string>NyCopilot</string>
+    <key>CFBundleExecutable</key><string>NyCopilot</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.2.0</string>
+    <key>CFBundleVersion</key><string>2</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array><string>en</string></array>
+    <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSHumanReadableCopyright</key><string>© 2026 NyCopilot</string>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <!-- User-configured endpoints may be local HTTP servers; the core validates URL schemes. -->
+    <key>NSAppTransportSecurity</key>
+    <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+</dict>
+</plist>

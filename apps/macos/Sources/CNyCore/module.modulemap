@@ -1,0 +1,9 @@
+// Exposes the Rust core's C ABI (crates/ny-ffi) to Swift. `make core` builds libny_ffi.a.
+module CNyCore {
+    header "../../../../crates/ny-ffi/include/ny_core.h"
+    link "ny_ffi"
+    link "iconv"
+    link framework "Security"
+    link framework "CoreFoundation"
+    export *
+}

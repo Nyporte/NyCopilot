@@ -1,0 +1,3 @@
+# The macOS client supports macOS 13; C code compiled by build scripts (SQLite, ring) must match.
+[env]
+MACOSX_DEPLOYMENT_TARGET = "13.0"

@@ -1,0 +1,90 @@
+# Core protocol
+
+Clients call the core with a method name and a JSON object of parameters. The same methods are
+available through the C ABI today and will be served over the network by `ny-server` later.
+
+## Envelope
+
+```json
+{ "ok": <result> }
+{ "error": { "code": "http_status", "message": "Access denied (HTTP 401). …", "status": 401 } }
+```
+
+`message` is safe to show to users and never contains user text, response bodies, or secrets.
+Branch on `code`, not on `message`.
+
+| Code | Meaning |
+| --- | --- |
+| `invalid_params` | Missing or malformed parameters, unknown collection. |
+| `unknown_method` | No such namespace or command. |
+| `invalid_setting` | Unknown key, wrong type, or rejected by the module's validator. |
+| `not_found` | The record no longer exists. |
+| `storage` | The database could not be read or written. |
+| `cancelled` | The request was cancelled with `core.cancel`. |
+| `provider_not_configured` | `llm.endpoint` or `llm.model` is empty. |
+| `empty_input`, `input_too_large`, `invalid_key` | Request rejected before any network access. |
+| `http_status` | Non-2xx reply; `status` holds the code. Never retried. |
+| `network` | DNS, connection, TLS, or timeout failure. |
+| `invalid_response`, `empty_response`, `response_too_large`, `truncated_response` | Unusable reply. |
+
+## C ABI
+
+```c
+NyHandle *ny_open(const char *config_json, ny_event_callback on_event, void *context, char **error_out);
+char     *ny_call(const NyHandle *handle, const char *method, const char *params_json);
+void      ny_string_free(char *text);
+void      ny_close(NyHandle *handle);
+```
+
+`config_json` is `{"data_dir": "<absolute path>", "platform": "macos"}`. Every returned string is
+freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duration of the method.
+
+## Built-in methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `core.info` | — | `{version, platform, device_id, revision, modules: [id]}` |
+| `core.modules` | — | `[Manifest]` |
+| `core.cancel` | `{request_id}` | `{cancelled: bool}` |
+| `settings.get` | `{key}` | value (stored or manifest default; `null` for unset `client.*`) |
+| `settings.set` | `{key, value}` | `{}`; type must match the default |
+| `settings.reset` | `{key}` | `{}` |
+| `settings.list` | `{prefix?}` | `{key: value}` including defaults |
+| `records.list` | `{collection, before?, limit?=100, search?}` | `{records: [Record], next?}` newest first |
+| `records.get` | `{id}` | `Record` |
+| `records.delete` | `{id}` | `{deleted: bool}` (tombstone) |
+| `records.clear` | `{collection}` | `{deleted: count}` |
+| `records.changes` | `{since?=0, limit?=100}` | `{records, revision}` including tombstones |
+
+`Record` = `{id, collection, data, created_at, updated_at, deleted, origin, rev}` (times in Unix ms).
+
+## Module methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `llm.complete` | `{system, user, api_key?}` | `{text}` |
+| `llm.test` | `{endpoint, model, api_key?}` | `{elapsed_ms}` |
+| `translate.run` | `{text, target_language?, api_key?, request_id?}` | `{text, target_language, record}` — saved to `translate.history` before returning |
+| `translate.languages` | — | `[String]` |
+| `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
+
+Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
+`translate.target_language` (synced, `"English"`).
+
+## Events
+
+Delivered through the `on_event` callback as JSON, on whichever thread made the change.
+
+```json
+{ "type": "records.changed", "collection": "translate.history", "id": "…", "change": "inserted" }
+{ "type": "records.changed", "collection": "translate.history", "change": "cleared" }
+{ "type": "settings.changed", "key": "translate.target_language" }
+```
+
+## Model requests
+
+`llm.*` and model-backed module methods send one `POST` with `Content-Type: application/json`:
+`{"model", "messages": [{"role": "system"}, {"role": "user"}], "stream": false}`. Input is limited
+to 64 KiB of UTF-8, replies to 1 MiB. Timeouts: 15 s connect, 30 s waiting for a reply, 60 s total.
+Redirects are refused, nothing is cached, and there are no retries. The reply must contain a
+non-empty `choices[0].message.content`; `finish_reason: "length"` is rejected as truncated.

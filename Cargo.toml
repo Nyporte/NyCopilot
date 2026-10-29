@@ -1,0 +1,29 @@
+# The shared NyCopilot foundation. Every client (macOS today; Windows, Linux, mobile later) and the
+# future server link these crates, so data, settings, modules, and model access behave identically.
+[workspace]
+resolver = "2"
+members = ["crates/ny-core", "crates/ny-llm", "crates/ny-modules", "crates/ny-ffi"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+ny-core = { path = "crates/ny-core" }
+ny-llm = { path = "crates/ny-llm" }
+ny-modules = { path = "crates/ny-modules" }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v7", "v4"] }
+url = "2"
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

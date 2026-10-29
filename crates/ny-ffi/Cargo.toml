@@ -1,0 +1,16 @@
+[package]
+name = "ny-ffi"
+description = "C ABI over the NyCopilot core: JSON method calls in, JSON results and events out."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+ny-core.workspace = true
+ny-llm.workspace = true
+ny-modules.workspace = true
+serde_json.workspace = true
