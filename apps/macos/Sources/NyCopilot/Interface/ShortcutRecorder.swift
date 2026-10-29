@@ -91,7 +91,7 @@ final class ShortcutRecorder: AppearanceView {
         let candidate = HotKeyCombination(keyCode: UInt32(event.keyCode), modifiers: KeyNames.carbonModifiers(flags))
         guard candidate.isValid else {
             NSSound.beep()
-            onError?("Include ⌘, ⌥, or ⌃ so the shortcut doesn’t interfere with typing.")
+            onError?("Include ⌘, ⌥, or ⌃, or use a function key, so the shortcut doesn’t interfere with typing.")
             return
         }
         finish()

@@ -16,11 +16,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private let editor = ComposerTextView()
     private let scroll = NSScrollView()
     private let languageButton = PillButton()
-    private let hint = Design.label("", size: 11.5, color: .tertiaryLabelColor)
-    private let hintKey = KeyCap("⇧↵")
     private let progress = NSProgressIndicator()
-    private let submitButton = NSButton()
-    private let errorIcon = Design.symbol("exclamationmark.triangle.fill", size: 12, color: .systemOrange)
+    private var accessory: NSStackView!
+    private let errorIcon = Design.symbol("exclamationmark.triangle.fill", size: 11, color: .systemOrange)
     private let errorLabel = NSTextField(wrappingLabelWithString: "")
     private let errorAction = NSButton()
     private var errorRow: NSStackView!
@@ -28,10 +26,12 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     private var editorHeight: NSLayoutConstraint!
     private var mode: Mode = .paste
     private var languages: [String] = []
-    private static let padding: CGFloat = 14
+    private static let (horizontalPadding, verticalPadding, lineHeight): (CGFloat, CGFloat, CGFloat) = (16, 12, 24)
 
+    /// One quiet row: what you type, and the target language at the trailing edge. Return translates,
+    /// Shift+Return adds a line, Esc cancels; errors appear underneath only when there is one.
     init() {
-        let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 96),
+        let panel = ComposerWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 48),
                                    styleMask: [.borderless], backing: .buffered, defer: false)
         panel.title = "NyCopilot"
         panel.level = .floating
@@ -71,7 +71,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = false
         editor.textContainer?.widthTracksTextView = true
-        editor.frame = NSRect(x: 0, y: 0, width: 392, height: 24)
+        editor.frame = NSRect(x: 0, y: 0, width: 340, height: Self.lineHeight)
         editor.delegate = self
         editor.setAccessibilityLabel("Text to translate")
         editor.onSubmit = { [weak self] in self?.submit() }
@@ -84,51 +84,48 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         scroll.contentView.drawsBackground = false
         scroll.borderType = .noBorder
 
+        languageButton.symbolName = ""
+        languageButton.isQuiet = true
+        languageButton.toolTip = "Target language — click to change"
+        languageButton.onPress = { [weak self] in self?.showLanguageMenu() }
+        progress.style = .spinning
+        progress.controlSize = .small
+        progress.isDisplayedWhenStopped = false
+        accessory = Design.hstack([progress, languageButton], spacing: 4)
+        accessory.setContentHuggingPriority(.required, for: .horizontal)
+        accessory.setContentCompressionResistancePriority(.required, for: .horizontal)
+
         errorLabel.font = .systemFont(ofSize: 12)
         errorLabel.textColor = .secondaryLabelColor
         errorLabel.maximumNumberOfLines = 3
         errorLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        errorAction.bezelStyle = .inline
-        errorAction.controlSize = .small
+        errorAction.isBordered = false
+        errorAction.contentTintColor = .controlAccentColor
+        errorAction.font = .systemFont(ofSize: 12, weight: .medium)
         errorAction.target = self
         errorAction.action = #selector(performErrorAction)
         errorRow = Design.hstack([errorIcon, errorLabel, errorAction], spacing: 6)
         errorRow.alignment = .firstBaseline
         errorRow.isHidden = true
 
-        languageButton.symbolName = "globe"
-        languageButton.toolTip = "Choose the target language"
-        languageButton.onPress = { [weak self] in self?.showLanguageMenu() }
-        progress.style = .spinning
-        progress.controlSize = .small
-        progress.isDisplayedWhenStopped = false
-        submitButton.image = NSImage(systemSymbolName: "arrow.up.circle.fill", accessibilityDescription: "Translate")
-        submitButton.symbolConfiguration = .init(pointSize: 22, weight: .regular)
-        submitButton.isBordered = false
-        submitButton.contentTintColor = .controlAccentColor
-        submitButton.target = self
-        submitButton.action = #selector(submit)
-        let footer = Design.hstack([languageButton, Design.spacer(), progress, hintKey, hint, submitButton], spacing: 6)
-        footer.setCustomSpacing(10, after: hint)
-
-        let root = Design.vstack([scroll, errorRow, footer], spacing: 10)
+        let row = Design.hstack([scroll, accessory], spacing: 10)
+        row.alignment = .top
+        let root = Design.vstack([row, errorRow], spacing: 8)
         root.translatesAutoresizingMaskIntoConstraints = false
         material.addSubview(root)
-        editorHeight = scroll.heightAnchor.constraint(equalToConstant: 24)
+        editorHeight = scroll.heightAnchor.constraint(equalToConstant: Self.lineHeight)
         NSLayoutConstraint.activate([
             outline.leadingAnchor.constraint(equalTo: material.leadingAnchor),
             outline.trailingAnchor.constraint(equalTo: material.trailingAnchor),
             outline.topAnchor.constraint(equalTo: material.topAnchor),
             outline.bottomAnchor.constraint(equalTo: material.bottomAnchor),
-            root.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: Self.padding),
-            root.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -Self.padding),
-            root.topAnchor.constraint(equalTo: material.topAnchor, constant: Self.padding),
-            root.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -10),
-            scroll.widthAnchor.constraint(equalTo: root.widthAnchor),
+            root.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: Self.horizontalPadding),
+            root.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -Self.horizontalPadding + 4),
+            root.topAnchor.constraint(equalTo: material.topAnchor, constant: Self.verticalPadding),
+            root.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -Self.verticalPadding),
+            row.widthAnchor.constraint(equalTo: root.widthAnchor),
             errorRow.widthAnchor.constraint(equalTo: root.widthAnchor),
-            footer.widthAnchor.constraint(equalTo: root.widthAnchor),
-            footer.heightAnchor.constraint(equalToConstant: 26),
-            submitButton.widthAnchor.constraint(equalToConstant: 26),
+            accessory.heightAnchor.constraint(equalToConstant: Self.lineHeight),
             editorHeight
         ])
     }
@@ -154,11 +151,11 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
             let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-            let width = min(max(anchor?.width ?? 420, 380), min(520, visible.width))
+            let width = min(max(anchor?.width ?? 440, 380), min(520, visible.width))
             let x = max(visible.minX, min(anchor?.minX ?? point.x - width / 2, visible.maxX - width))
             let top = anchor.map { $0.maxY + 6 } ?? point.y + 12
-            let y = max(visible.minY, min(top - 96, visible.maxY - 96))
-            window.setFrame(NSRect(x: x, y: y, width: width, height: 96), display: false)
+            let y = max(visible.minY, min(top - 48, visible.maxY - 48))
+            window.setFrame(NSRect(x: x, y: y, width: width, height: 48), display: false)
         }
         resizeToContent()
         NSApp.activate(ignoringOtherApps: true)
@@ -178,23 +175,19 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         languageButton.setAccessibilityLabel("Target language: \(language)")
     }
 
-    /// Pause editing while the model works; the card stays where the user is looking.
+    /// Pause editing while the model works; the text dims and a spinner sits beside the language.
     func showLoading(language: String) {
         editor.isEditable = false
-        submitButton.isHidden = true
+        editor.textColor = .secondaryLabelColor
         languageButton.isEnabled = false
         hideError()
-        hintKey.isHidden = true
-        hint.stringValue = "Translating into \(language)…"
         progress.startAnimation(nil)
         resizeToContent()
     }
 
-    /// Keep the source for a retry; an optional action fixes the cause (e.g. open Settings).
+    /// Keep the source for a retry (Return); an optional action fixes the cause (e.g. open Settings).
     func showError(_ message: String, action: (title: String, handler: () -> Void)? = nil) {
         setIdle()
-        hintKey.keys = "↵"
-        hint.stringValue = "Try again"
         errorLabel.stringValue = message
         errorLabel.toolTip = message
         errorAction.title = action?.title ?? ""
@@ -210,13 +203,9 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
 
     private func setIdle() {
         editor.isEditable = true
-        submitButton.isHidden = false
+        editor.textColor = .labelColor
         languageButton.isEnabled = true
         progress.stopAnimation(nil)
-        hintKey.isHidden = false
-        hintKey.keys = "⇧↵"
-        hint.stringValue = "New line"
-        submitButton.toolTip = mode == .paste ? "Translate and replace (↵)" : "Translate and copy (↵)"
     }
 
     private func hideError() {
@@ -233,18 +222,18 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     /// Keep the top edge fixed while the card grows with wrapped text, up to a scrolling limit.
     private func resizeToContent() {
         guard let window, let container = editor.textContainer, let layout = editor.layoutManager else { return }
-        let width = window.frame.width - Self.padding * 2
+        let width = window.frame.width - Self.horizontalPadding * 2 + 4 - accessory.fittingSize.width - 10
         container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
         editor.setFrameSize(NSSize(width: width, height: editor.frame.height))
         layout.ensureLayout(for: container)
         // Include the empty line after a trailing newline so the caret remains visible immediately.
         let textHeight = ceil(max(layout.usedRect(for: container).maxY, layout.extraLineFragmentUsedRect.maxY))
             + editor.textContainerInset.height * 2
-        let visibleTextHeight = min(max(textHeight, 24), 200)
+        let visibleTextHeight = min(max(textHeight, Self.lineHeight), 200)
         editorHeight.constant = visibleTextHeight
         editor.setFrameSize(NSSize(width: width, height: max(textHeight, visibleTextHeight)))
         window.contentView?.layoutSubtreeIfNeeded()
-        let height = (window.contentView?.fittingSize.height ?? 96)
+        let height = (window.contentView?.fittingSize.height ?? 48)
         var frame = window.frame
         frame.origin.y = frame.maxY - height
         frame.size.height = height
@@ -284,7 +273,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     @objc private func performErrorAction() { errorHandler?() }
 
     @objc private func submit() {
-        guard editor.isEditable, !submitButton.isHidden else { return }
+        guard editor.isEditable else { return }
         onSubmit?(editor.string)
     }
 
@@ -343,7 +332,14 @@ private final class ComposerTextView: NSTextView {
 /// A compact rounded button with an icon, a title, and a disclosure chevron.
 final class PillButton: AppearanceView {
     var onPress: (() -> Void)?
-    var symbolName = "" { didSet { icon.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) } }
+    var symbolName = "" {
+        didSet {
+            icon.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+            icon.isHidden = symbolName.isEmpty
+        }
+    }
+    /// Quiet buttons show a background only while hovered.
+    var isQuiet = false { didSet { updateFill() } }
     var title: String {
         get { label.stringValue }
         set { label.stringValue = newValue }
@@ -385,9 +381,10 @@ final class PillButton: AppearanceView {
     override func accessibilityPerformPress() -> Bool { onPress?(); return true }
 
     private func updateFill() {
-        fill = NSColor(name: nil) { [hovering] appearance in
+        fill = NSColor(name: nil) { [hovering, isQuiet] appearance in
             let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return (dark ? NSColor.white : NSColor.black).withAlphaComponent(hovering ? (dark ? 0.12 : 0.08) : (dark ? 0.07 : 0.045))
+            let resting: CGFloat = isQuiet ? 0 : (dark ? 0.07 : 0.045)
+            return (dark ? NSColor.white : NSColor.black).withAlphaComponent(hovering ? (dark ? 0.12 : 0.08) : resting)
         }
     }
 }

@@ -15,8 +15,15 @@ public struct HotKeyCombination: Equatable, Hashable, Sendable {
         self.modifiers = modifiers & (Self.command | Self.shift | Self.option | Self.control)
     }
 
-    /// Shift alone would swallow ordinary typing, so a global shortcut needs ⌘, ⌥, or ⌃.
-    public var isValid: Bool { modifiers & (Self.command | Self.option | Self.control) != 0 }
+    /// Key codes of F1–F20, which never type text and so may be used without modifiers.
+    public static let functionKeys: Set<UInt32> = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+                                                   105, 107, 113, 106, 64, 79, 80, 90]
+
+    public var isFunctionKey: Bool { Self.functionKeys.contains(keyCode) }
+
+    /// A letter or Shift+letter would swallow ordinary typing, so a global shortcut needs ⌘, ⌥, or ⌃,
+    /// unless it is a function key.
+    public var isValid: Bool { isFunctionKey || modifiers & (Self.command | Self.option | Self.control) != 0 }
 
     /// Symbols in Apple's canonical ⌃⌥⇧⌘ order, as shown in menus.
     public var modifierSymbols: String {

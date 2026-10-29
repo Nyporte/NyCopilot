@@ -51,7 +51,8 @@ Until setup is done, the menu bar menu shows **Finish Setting Up…**.
 
 ## Using Translate
 
-- **⌥⌘T** opens the composer over the focused field. **Return** translates and replaces your
+- **⌥⌘T** opens the composer: one quiet line over the focused field, with the target language at
+  its right edge. **Return** translates and replaces your
   selection, **Shift+Return** adds a line, **Esc** cancels and returns you to your app. Return
   confirms an input-method candidate first, and nothing is ever submitted in the target app.
 - The **language pill** in the composer switches the target language. **Settings → Translate**
@@ -99,7 +100,10 @@ dragging it to the edge of the screen:
   behavior. Rectangle-only
   actions, such as Todo mode, are skipped. **Settings → Windows → Import** runs it again any time.
 
-Every module's shortcuts can be changed or turned off in its own Settings tab. **Settings → General**
+Every module's shortcuts can be changed or turned off in its own Settings tab. A shortcut needs ⌘,
+⌥, or ⌃, or it can be a function key on its own, such as F2. On Apple keyboards, F-keys control
+brightness and volume unless you hold fn or turn on "Use F1, F2, etc. keys as standard function
+keys" in System Settings → Keyboard. **Settings → General**
 shows the Accessibility status and an **Open at login** switch.
 
 ## Privacy and data

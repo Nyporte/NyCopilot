@@ -31,4 +31,12 @@ final class TextAndShortcutTests: XCTestCase {
         XCTAssertEqual(HotKeyCombination.legacy("disabled", keyCode: 4), .disabled)
         XCTAssertEqual(HotKeyCombination.legacy("", keyCode: 4), .unrecognized)
     }
+
+    /// Function keys never type text, so they may stand alone; letters still need a modifier.
+    func testFunctionKeysNeedNoModifier() {
+        XCTAssertTrue(HotKeyCombination(keyCode: 120, modifiers: 0).isValid)
+        XCTAssertEqual(HotKeyCombination(storageValue: "120:0"), HotKeyCombination(keyCode: 120, modifiers: 0))
+        XCTAssertFalse(HotKeyCombination(keyCode: 17, modifiers: 0).isValid)
+        XCTAssertFalse(HotKeyCombination(keyCode: 17, modifiers: HotKeyCombination.shift).isValid)
+    }
 }

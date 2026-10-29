@@ -24,7 +24,10 @@ enum KeyNames {
     /// Keys menus can draw natively even though they don't type a character.
     private static let menuSpecial: [UInt32: Int] = [
         123: NSLeftArrowFunctionKey, 124: NSRightArrowFunctionKey, 125: NSDownArrowFunctionKey,
-        126: NSUpArrowFunctionKey, 36: 0x0D, 51: 0x08, 117: NSDeleteFunctionKey, 49: 0x20
+        126: NSUpArrowFunctionKey, 36: 0x0D, 51: 0x08, 117: NSDeleteFunctionKey, 49: 0x20,
+        122: NSF1FunctionKey, 120: NSF2FunctionKey, 99: NSF3FunctionKey, 118: NSF4FunctionKey, 96: NSF5FunctionKey,
+        97: NSF6FunctionKey, 98: NSF7FunctionKey, 100: NSF8FunctionKey, 101: NSF9FunctionKey, 109: NSF10FunctionKey,
+        103: NSF11FunctionKey, 111: NSF12FunctionKey
     ]
 
     /// Menus render shortcuts natively when the key maps to a single character or a known special key.
