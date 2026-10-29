@@ -21,7 +21,7 @@ enum Mark {
     static let reach = 24.0
     /// How far along the missing corner's radius the spark sits (1 = on the stroke's path);
     /// a little less draws it in toward the centre of the loop.
-    static let dotPull = 0.75
+    static let dotPull = 0.88
 
     static func point(_ x: Double, _ y: Double) -> NSPoint { NSPoint(x: 100 + x * unit, y: 924 - y * unit) }
 

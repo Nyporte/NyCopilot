@@ -265,7 +265,7 @@ enum BrandGlyph {
     private static let dotRadius: CGFloat = 7.5
     private static let (left, right, archY, bottom, corner): (CGFloat, CGFloat, CGFloat, CGFloat, CGFloat) = (54, 106, 63, 123, 22)
     private static let reach: CGFloat = 24
-    private static let dotPull: CGFloat = 0.75
+    private static let dotPull: CGFloat = 0.88
     private static let dot: NSPoint = {
         let offset: CGFloat = corner * dotPull * 0.7071
         return NSPoint(x: left + corner - offset, y: bottom - corner + offset)
