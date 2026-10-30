@@ -462,8 +462,9 @@ final class TranslationOverlay: NSWindow {
 
         override var isFlipped: Bool { true }
 
-        /// A translation placed: inside the original's area, at the size that fits there (down to 80%),
-        /// cut off with "…" if even that's too long — and the larger card it opens into on hover.
+        /// A translation placed: inside the original's area at the original's size — sizes that vary from
+        /// box to box would read unevenly — cut off with "…" if it's longer, and the larger card it opens
+        /// into on hover.
         private struct Laid {
             let box: Box
             let rect: CGRect
@@ -493,16 +494,12 @@ final class TranslationOverlay: NSWindow {
 
         private func layout(_ box: Box) -> Laid {
             let rect = box.rect.insetBy(dx: -3, dy: -2), room = rect.width - 6
-            let fits = { (extent: CGSize) in box.pitch == nil ? extent.width <= room : extent.height <= rect.height - 2 }
-            var size = box.fontSize, needed = extent(box, size: size, width: room)
-            while !fits(needed), size > box.fontSize * 0.8 {
-                size = max(box.fontSize * 0.8, size * 0.94)
-                needed = extent(box, size: size, width: room)
+            let size = box.fontSize, full = extent(box, size: size, width: room)
+            guard box.pitch == nil ? full.width > room : full.height > rect.height - 2 else {
+                return Laid(box: box, rect: rect, size: size, truncated: false, expanded: rect)
             }
-            guard !fits(needed) else { return Laid(box: box, rect: rect, size: size, truncated: false, expanded: rect) }
-            // In full, at the original size: a line runs on to the right, a paragraph further down,
-            // moved back onto the screen if it would leave it.
-            let full = extent(box, size: box.fontSize, width: room)
+            // In full: a line runs on to the right, a paragraph further down, moved back onto the screen
+            // if it would leave it.
             var expanded = box.pitch == nil ? CGRect(x: rect.minX, y: rect.minY, width: min(full.width + 10, bounds.width - 16), height: rect.height)
                 : CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: full.height + 8)
             expanded.origin.x = max(8, min(expanded.minX, bounds.maxX - 8 - expanded.width))
