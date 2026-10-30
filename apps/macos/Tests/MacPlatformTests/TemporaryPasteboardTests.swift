@@ -98,4 +98,22 @@ final class TemporaryPasteboardTests: XCTestCase {
         } catch { XCTAssertEqual(error as? TemporaryPasteboard.Failure, .snapshotUnavailable) }
         XCTAssertEqual(board.data(forType: type), payload)
     }
+
+    /// Reading a selection through ⌘C returns what was copied and leaves the clipboard as it was;
+    /// when nothing is copied, nothing is returned and nothing changes.
+    @MainActor func testCopyingReadsTheSelectionAndRestoresTheClipboard() async {
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setString("Original", forType: .string)
+        let copied = await TemporaryPasteboard.copying(on: board) {
+            board.clearContents()
+            board.setString("Selected words", forType: .string)
+        }
+        XCTAssertEqual(copied, "Selected words")
+        XCTAssertEqual(board.string(forType: .string), "Original")
+        let before = board.changeCount
+        let nothing = await TemporaryPasteboard.copying(on: board, timeout: 0.05) {}
+        XCTAssertNil(nothing)
+        XCTAssertEqual(board.changeCount, before)
+    }
 }

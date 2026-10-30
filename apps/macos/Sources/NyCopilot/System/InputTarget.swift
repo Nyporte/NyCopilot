@@ -75,6 +75,60 @@ final class InputTarget: @unchecked Sendable {
         }.value
     }
 
+    /// What's selected in an app, as Accessibility reports it: some text (and where it is on screen,
+    /// in AX coordinates, when the app says), nothing, or no answer at all.
+    enum Selection {
+        case text(String, bounds: CGRect?)
+        case nothing
+        case unknown
+    }
+
+    /// The selection in the app in front: in its focused element or one of that element's
+    /// containers, through plain text ranges or (in web content) text markers.
+    static func selection(pid: pid_t) async -> Selection {
+        await Task.detached(priority: .userInitiated) {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, 0.5)
+            var current = focusedElement(in: app)
+            var answered = false
+            for _ in 0..<4 {
+                guard let element = current else { break }
+                AXUIElementSetMessagingTimeout(element, 0.5)
+                if let text = attribute(element, kAXSelectedTextAttribute) as? String {
+                    answered = true
+                    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let bounds = selectedRange(element).flatMap { range -> CGRect? in
+                            var range = range
+                            return AXValueCreate(.cfRange, &range).flatMap { rect(element, kAXBoundsForRangeParameterizedAttribute, $0) }
+                        }
+                        return .text(text, bounds: bounds)
+                    }
+                }
+                if let markers = attribute(element, "AXSelectedTextMarkerRange") {
+                    answered = true
+                    var result: CFTypeRef?
+                    if AXUIElementCopyParameterizedAttributeValue(element, "AXStringForTextMarkerRange" as CFString, markers, &result) == .success,
+                       let text = result as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return .text(text, bounds: rect(element, "AXBoundsForTextMarkerRange", markers))
+                    }
+                }
+                current = elementAttribute(element, kAXParentAttribute)
+            }
+            return answered ? .nothing : .unknown
+        }.value
+    }
+
+    /// A parameterized attribute that answers with an on-screen rectangle.
+    private static func rect(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CGRect? {
+        var result: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result) == .success,
+              let result, CFGetTypeID(result) == AXValueGetTypeID() else { return nil }
+        var rect = CGRect.zero
+        guard AXValueGetValue(unsafeBitCast(result, to: AXValue.self), .cgRect, &rect),
+              rect.width > 0, rect.height > 0, rect.minX.isFinite, rect.minY.isFinite else { return nil }
+        return rect
+    }
+
     /// An enabled text field's text and selection, if the element is one.
     private static func readable(_ element: AXUIElement?) -> (value: String, range: CFRange)? {
         guard let element,
@@ -194,13 +248,7 @@ final class InputTarget: @unchecked Sendable {
     /// unverified one keeps the translation on the clipboard, in case the app ignored the paste.
     @MainActor
     private func paste(_ text: String) async throws {
-        guard let source = CGEventSource(stateID: .privateState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
-            throw Failure.pasteUnavailable
-        }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
+        guard let (down, up) = Self.commandKey(kVK_ANSI_V) else { throw Failure.pasteUnavailable }
         guard isVerified else {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
@@ -223,6 +271,28 @@ final class InputTarget: @unchecked Sendable {
                 try? await Task.sleep(nanoseconds: 500_000_000)
             }.value
         })
+    }
+
+    /// ⌘ plus `key`, down and up, from a private event source so the user's own modifiers don't mix in.
+    private static func commandKey(_ key: Int) -> (CGEvent, CGEvent)? {
+        guard let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key), keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key), keyDown: false) else { return nil }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        return (down, up)
+    }
+
+    /// The text selected in an app that doesn't describe its selection to Accessibility, read by
+    /// asking it to copy (⌘C) with the clipboard put back afterwards.
+    @MainActor
+    static func copiedSelection(pid: pid_t) async -> String? {
+        guard let (down, up) = commandKey(kVK_ANSI_C) else { return nil }
+        let text = await TemporaryPasteboard.copying {
+            down.postToPid(pid)
+            up.postToPid(pid)
+        }
+        return text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? text : nil
     }
 
     /// Bound every attribute call through the timeout already set on the AX element.

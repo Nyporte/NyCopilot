@@ -20,6 +20,7 @@ final class TranslateShell: ModuleShell {
 
     private let services: CopilotServices
     private lazy var screen = ScreenTranslator(services: services)
+    private lazy var selection = SelectionTranslator(services: services)
     private let composer = ComposerPanel()
     private var historyWindow: HistoryWindow?
     private var target: InputTarget?
@@ -59,6 +60,7 @@ final class TranslateShell: ModuleShell {
     func shutdown() {
         cancelOperation()
         screen.stop()
+        selection.dismiss()
     }
 
     private var language: String { services.core.setting(.targetLanguage, default: "English") }
@@ -87,9 +89,11 @@ final class TranslateShell: ModuleShell {
     @objc private func beginFromMenu() { beginComposition() }
     @objc private func toggleScreen() { screen.toggle() }
 
-    /// Capture the focused field before NyCopilot activates. Fields that can't be read still get the
-    /// composer, in copy mode, so the shortcut always does something useful.
+    /// Capture the focused field before NyCopilot activates. Text selected outside a text field is
+    /// translated on a card instead; otherwise the composer opens, so the shortcut always does
+    /// something useful.
     private func beginComposition() {
+        if selection.isVisible { selection.dismiss(); return }
         if composer.isVisible { composer.bringToFront(); return }
         guard let foreground = NSWorkspace.shared.frontmostApplication,
               foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
@@ -109,9 +113,25 @@ final class TranslateShell: ModuleShell {
             }
             guard !Task.isCancelled, operationID == id,
                   NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
+            // A field you can type in gets the composer, even with text selected: it replaces the selection.
+            if captured?.isVerified == false, let (text, bounds) = await Self.selectedText(in: foreground.processIdentifier) {
+                guard !Task.isCancelled, operationID == id else { return }
+                Diagnostics.note("translate", "selection in \(foreground.localizedName ?? "?"): \(bounds == nil ? "no position" : "beside it")")
+                selection.show(text, near: bounds)
+                return
+            }
             target = captured
             composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste,
                              language: display(language))
+        }
+    }
+
+    /// The selection, through Accessibility when the app describes it, or else by asking it to copy.
+    private static func selectedText(in pid: pid_t) async -> (String, CGRect?)? {
+        switch await InputTarget.selection(pid: pid) {
+        case .text(let text, let bounds): return (text, bounds)
+        case .nothing: return nil
+        case .unknown: return await InputTarget.copiedSelection(pid: pid).map { ($0, nil) }
         }
     }
 
@@ -259,4 +279,15 @@ final class TranslateShell: ModuleShell {
 extension NyCore {
     /// Fire-and-forget: tells the core to discard a request's result if it is still running.
     func cancel(requestID: String) { _ = try? call("core.cancel", ["request_id": requestID]) }
+
+    /// The language you read in: screen translation's choice, or else the Mac's own language.
+    var readingLanguage: String {
+        let chosen: String = setting(.screenLanguage, default: "")
+        return chosen.isEmpty ? ScreenText.deviceLanguage : chosen
+    }
+
+    /// A language's own name (日本語 for Japanese), or the name as given.
+    func nativeName(of language: String) -> String {
+        (try? call("translate.native_name", ["language": language]) as? [String: Any])?["native"] as? String ?? language
+    }
 }
