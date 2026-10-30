@@ -44,7 +44,8 @@ final class InputTarget: @unchecked Sendable {
             let appName = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
             var element = focusedElement(in: app)
             if readable(element) == nil, exposeWebContent(app, pid: pid) {
-                // Chromium builds the tree on request, a moment later.
+                // Chromium builds the tree on request, a moment later — only the first time it's
+                // asked; after that, a focused element that isn't a text field simply isn't one.
                 for _ in 0..<10 where readable(element) == nil {
                     try? await Task.sleep(nanoseconds: 50_000_000)
                     element = focusedElement(in: app)
@@ -97,10 +98,11 @@ final class InputTarget: @unchecked Sendable {
                 if let text = attribute(element, kAXSelectedTextAttribute) as? String {
                     answered = true
                     if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        // Web content often answers only through text markers.
                         let bounds = selectedRange(element).flatMap { range -> CGRect? in
                             var range = range
                             return AXValueCreate(.cfRange, &range).flatMap { rect(element, kAXBoundsForRangeParameterizedAttribute, $0) }
-                        }
+                        } ?? attribute(element, "AXSelectedTextMarkerRange").flatMap { rect(element, "AXBoundsForTextMarkerRange", $0) }
                         return .text(text, bounds: bounds)
                     }
                 }
@@ -144,14 +146,23 @@ final class InputTarget: @unchecked Sendable {
     }
 
     /// Electron apps (Claude, Slack, VS Code…) keep their web content out of Accessibility until a
-    /// client asks for it; true when the app takes the request.
+    /// client asks for it. True when this request is what exposed it, so it's worth waiting for;
+    /// a process asked before has had its tree all along.
     private static func exposeWebContent(_ app: AXUIElement, pid: pid_t) -> Bool {
+        exposedLock.lock()
+        let first = exposed.insert(pid).inserted
+        exposedLock.unlock()
+        guard first else { return false }
         let accepted = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success
         let electron = NSRunningApplication(processIdentifier: pid)?.bundleURL.map {
             FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
         } ?? false
         return accepted || electron
     }
+
+    /// Processes already asked to expose their web content.
+    nonisolated(unsafe) private static var exposed: Set<pid_t> = []
+    private static let exposedLock = NSLock()
 
     /// The field is still there to paste into. Its text may have changed meanwhile — apps update
     /// drafts, and the paste goes wherever the cursor is — so only its disappearance stops a paste.

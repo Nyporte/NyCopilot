@@ -101,6 +101,7 @@ final class TranslateShell: ModuleShell {
         cancelOperation()
         sourceApp = foreground
         let id = operationID
+        let started = Date()
         operation = Task { [weak self] in
             guard let self else { return }
             var captured: InputTarget?
@@ -117,7 +118,8 @@ final class TranslateShell: ModuleShell {
             // A field you can type in gets the composer, even with text selected: it replaces the selection.
             if captured?.isVerified == false, let (text, bounds) = await Self.selectedText(in: foreground.processIdentifier) {
                 guard !Task.isCancelled, operationID == id else { return }
-                Diagnostics.note("translate", "selection in \(foreground.localizedName ?? "?"): \(bounds == nil ? "no position" : "beside it")")
+                let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+                Diagnostics.note("translate", "selection in \(foreground.localizedName ?? "?"): card \(bounds == nil ? "at the pointer" : "beside it") after \(elapsed) ms")
                 selection.show(text, near: bounds)
                 return
             }
