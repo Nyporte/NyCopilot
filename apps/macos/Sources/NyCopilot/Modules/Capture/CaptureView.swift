@@ -134,7 +134,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         let dim = NSColor.black.withAlphaComponent(selection == nil ? 0.28 : 0.45)
-        let focus = selection ?? (isPassive ? nil : hoverWindow)
+        let hovering = selection == nil && !isPassive
+        // After a selection, the next outline appears in place rather than gliding from the past.
+        if !hovering { glide = nil }
+        let outlined = hovering ? glidingOutline() : nil
+        let focus = selection ?? outlined
         let shade = NSBezierPath(rect: bounds)
         if let focus { shade.append(NSBezierPath(rect: focus)) }
         shade.windingRule = .evenOdd
@@ -150,11 +154,56 @@ final class CaptureView: NSView, NSTextViewDelegate {
             drawFrame(selection, handles: tool == nil && !isReadingText)
             drawSizeLabel(for: selection)
             if let textEditor { drawEditorFrame(textEditor.frame) }
-        } else if let hoverWindow, !isPassive {
-            drawFrame(hoverWindow, handles: false)
-            drawSizeLabel(for: hoverWindow, note: hoverCandidates.count > 1 ? "scroll ↕ to resize" : nil)
+        } else if let outlined, let hoverWindow {
+            drawFrame(outlined, handles: false)
+            drawSizeLabel(for: outlined, measuring: hoverWindow, note: hoverCandidates.count > 1 ? "scroll ↕ to resize" : nil)
         }
         if showsMagnifier, let pointer { drawMagnifier(at: pointer) }
+    }
+
+    // MARK: Gliding outline
+
+    /// The hover outline as drawn: one outline that glides from element to element instead of
+    /// jumping. It appears where it belongs the first time, then eases to each new target.
+    private var glide: (from: CGRect, to: CGRect, start: CFTimeInterval)?
+    private var glideTimer: Timer?
+    private static let glideDuration: CFTimeInterval = 0.16
+
+    private func glidingOutline() -> CGRect? {
+        guard let target = hoverWindow else { glide = nil; return nil }
+        let now = CACurrentMediaTime()
+        if glide?.to != target {
+            let current = glide.map { Self.position(of: $0, at: now) } ?? target
+            glide = (current, target, now)
+            if current != target { keepGliding() }
+        }
+        return glide.map { Self.position(of: $0, at: now) }
+    }
+
+    /// Ease-out: quick to leave, gentle to arrive.
+    private static func position(of glide: (from: CGRect, to: CGRect, start: CFTimeInterval), at now: CFTimeInterval) -> CGRect {
+        let t = min(max((now - glide.start) / glideDuration, 0), 1)
+        let eased = CGFloat(1 - pow(1 - t, 3))
+        func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * eased }
+        return CGRect(x: mix(glide.from.minX, glide.to.minX), y: mix(glide.from.minY, glide.to.minY),
+                      width: mix(glide.from.width, glide.to.width), height: mix(glide.from.height, glide.to.height))
+    }
+
+    /// Redraws at display rate until the outline arrives, then stops.
+    private func keepGliding() {
+        guard glideTimer == nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
+            MainActor.assumeIsolated {
+                guard let self, let glide = self.glide else { timer.invalidate(); self?.glideTimer = nil; return }
+                self.needsDisplay = true
+                if CACurrentMediaTime() - glide.start >= Self.glideDuration {
+                    timer.invalidate()
+                    self.glideTimer = nil
+                }
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        glideTimer = timer
     }
 
     private var showsMagnifier: Bool {
@@ -182,8 +231,10 @@ final class CaptureView: NSView, NSTextViewDelegate {
         }
     }
 
-    private func drawSizeLabel(for rect: CGRect, note: String? = nil) {
-        let dimensions = "\(Int(rect.width * frozen.scale)) × \(Int(rect.height * frozen.scale))"
+    /// The pixel size of `measuring` (by default `rect` itself), next to `rect`.
+    private func drawSizeLabel(for rect: CGRect, measuring measured: CGRect? = nil, note: String? = nil) {
+        let measured = measured ?? rect
+        let dimensions = "\(Int(measured.width * frozen.scale)) × \(Int(measured.height * frozen.scale))"
         let text = (note.map { "\(dimensions)  ·  \($0)" } ?? dimensions) as NSString
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
                                                           .foregroundColor: NSColor.white]

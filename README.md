@@ -145,7 +145,7 @@ dragging it to the edge of the screen.
   through Accessibility); **scroll** up for what contains it — up to the whole window — or down for
   something smaller. The level you scroll to stays as you move: elsewhere the outline goes to a part
   at the same depth (another toolbar, another sidebar), or, where there's none, the nearest one
-  containing the pointer above it. Drag the
+  containing the pointer above it. There's one outline, and it glides from part to part. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size
