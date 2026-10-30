@@ -20,7 +20,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     private enum Row { case day(String), note(Item) }
 
     private let core: NyCore
-    private let imageFolder: URL
+    private let images: ImageFolder
     private let tabs = NSSegmentedControl(labels: ["Inbox", "Done"], trackingMode: .selectOne, target: nil, action: nil)
     private let search = NSSearchField()
     private let table = InboxTable()
@@ -55,9 +55,9 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         return formatter
     }()
 
-    init(core: NyCore, imageFolder: URL) {
+    init(core: NyCore, images: ImageFolder) {
         self.core = core
-        self.imageFolder = imageFolder
+        self.images = images
         let window = InboxWindowPanel(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
                                       styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
         window.title = "Inbox"
@@ -76,7 +76,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("Use init(core:imageFolder:)") }
+    required init?(coder: NSCoder) { fatalError("Use init(core:images:)") }
 
     func present() {
         reload()
@@ -94,7 +94,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     /// Screenshots of deleted notes go once their undo is gone.
     func forgetUndo() {
         undoStack.removeAll()
-        for name in keptImages { try? FileManager.default.removeItem(at: imageFolder.appendingPathComponent(name)) }
+        for name in keptImages { try? FileManager.default.removeItem(at: images.file(name)) }
         keptImages.removeAll()
     }
 
@@ -274,7 +274,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             editor.string = item.data.text
             editor.undoManager?.removeAllActions()
         }
-        if let name = item.data.image, let image = NSImage(contentsOf: imageFolder.appendingPathComponent(name)) {
+        if let name = item.data.image, let image = images.image(name) {
             preview.image = image
             preview.isHidden = false
         } else {
@@ -373,7 +373,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     @objc private func copySelected() {
         guard let item = selectedItem else { return }
         NSPasteboard.general.clearContents()
-        if let image = item.data.image.flatMap({ NSImage(contentsOf: imageFolder.appendingPathComponent($0)) }) {
+        if let image = item.data.image.flatMap(images.image) {
             NSPasteboard.general.writeObjects([image])
         }
         if !item.data.text.isEmpty { NSPasteboard.general.setString(item.data.text, forType: .string) }

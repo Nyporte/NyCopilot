@@ -2,14 +2,23 @@
 //!
 //! The client watches the pasteboard and never passes on what must not be kept (content marked
 //! concealed or transient by the app that copied it). This module keeps the history: one entry
-//! per distinct text, moved back to the top when it's copied again, nothing from the apps you
-//! exclude, and only as many entries, for as long, as the settings allow.
+//! per distinct text or image, moved back to the top when it's copied again, nothing from the apps
+//! you exclude, and only as many entries, for as long, as the settings allow.
+//!
+//! An image is a PNG the client keeps beside the database; an entry records only the file's name
+//! (`<uuid>.png`), its size, and a digest of its pixels so a repeat copy is recognized.
+//!
+//! Entries you pin move to `clipboard.pinned`: kept until you unpin them, never pruned, listed above
+//! the history.
 
 use ny_core::{now_millis, parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub const ITEMS: &str = "clipboard.items";
+pub const PINNED: &str = "clipboard.pinned";
+/// Pinned entries are a short list of things you reuse, not a second history.
+pub const MAX_PINNED: usize = 100;
 /// Larger copies (a whole file's text) are left out of the history.
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
 const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
@@ -29,7 +38,7 @@ impl Module for ClipboardModule {
             name: "Clipboard".into(),
             summary: "Everything you copy, searchable, ready to paste again.".into(),
             capabilities: vec!["clipboard.watch".into(), "text.insert".into(), "hotkey".into()],
-            collections: vec![ITEMS.into()],
+            collections: vec![ITEMS.into(), PINNED.into()],
             settings: vec![
                 // What you copy stays on the machine you copied it on.
                 SettingSpec::new("clipboard.enabled", json!(true), Scope::Device, "Keep a history of copied text."),
@@ -39,7 +48,9 @@ impl Module for ClipboardModule {
                                  "Bundle identifiers of apps whose copies are never kept."),
             ],
             commands: vec![
-                CommandSpec::new("add", "Record a copy: {text, app?, bundle_id?} → {record} (moved to the top if the same text is already kept), or {record: null, skipped} when it isn't kept."),
+                CommandSpec::new("add", "Record a copy: {text, app?, bundle_id?} or {image: <uuid>.png, digest, width, height, app?, bundle_id?} → {record} (moved to the top if the same text or image is already kept), or {record: null, skipped} when it isn't kept."),
+                CommandSpec::new("pin", "Keep an entry until it's unpinned: {id} → {record} in clipboard.pinned."),
+                CommandSpec::new("unpin", "Put a pinned entry back at the top of the history: {id} → {record} in clipboard.items."),
                 CommandSpec::new("prune", "Apply the retention settings now → {deleted}."),
             ],
         }
@@ -47,7 +58,17 @@ impl Module for ClipboardModule {
 
     fn call(&self, core: &Core, command: &str, params: Value) -> Result<Value> {
         #[derive(Deserialize)]
-        struct Add { text: String, #[serde(default)] app: String, #[serde(default)] bundle_id: String }
+        struct Add {
+            #[serde(default)] text: String,
+            image: Option<String>,
+            #[serde(default)] digest: String,
+            #[serde(default)] width: u32,
+            #[serde(default)] height: u32,
+            #[serde(default)] app: String,
+            #[serde(default)] bundle_id: String,
+        }
+        #[derive(Deserialize)]
+        struct Id { id: String }
         match command {
             "add" => {
                 let p: Add = parse(params)?;
@@ -56,16 +77,43 @@ impl Module for ClipboardModule {
                 if !p.bundle_id.is_empty() && core.setting::<Vec<String>>("clipboard.ignored_apps")?.contains(&p.bundle_id) {
                     return skipped("ignored_app");
                 }
-                if p.text.trim().is_empty() { return skipped("empty"); }
-                if p.text.len() > MAX_TEXT_BYTES { return skipped("too_large"); }
-                // The same text copied again moves to the top rather than appearing twice.
-                let page = core.call("records.list", json!({ "collection": ITEMS, "search": p.text, "limit": 50 }))?;
-                for record in page["records"].as_array().into_iter().flatten() {
-                    if record["data"]["text"].as_str() == Some(p.text.as_str()) {
-                        core.call("records.delete", json!({ "id": record["id"] }))?;
+                let (data, search) = match &p.image {
+                    Some(image) => {
+                        if !crate::is_image_file_name(image) { return Err(NyError::invalid_params("A clipboard image is named <uuid>.png.")); }
+                        if p.digest.is_empty() || p.digest.len() > 128 || p.width == 0 || p.height == 0 {
+                            return Err(NyError::invalid_params("A clipboard image needs its digest and size."));
+                        }
+                        (json!({ "image": image, "digest": p.digest, "width": p.width, "height": p.height, "app": p.app }), String::new())
                     }
+                    None => {
+                        if p.text.trim().is_empty() { return skipped("empty"); }
+                        if p.text.len() > MAX_TEXT_BYTES { return skipped("too_large"); }
+                        (json!({ "text": p.text, "app": p.app }), p.text.clone())
+                    }
+                };
+                // Something pinned is already at hand; the same thing copied again moves to the top
+                // rather than appearing twice.
+                if !same_as(core, PINNED, &data)?.is_empty() { return skipped("pinned"); }
+                for id in same_as(core, ITEMS, &data)? { core.call("records.delete", json!({ "id": id }))?; }
+                let record = core.insert_record(ITEMS, data, &search, None)?;
+                prune(core)?;
+                Ok(json!({ "record": record }))
+            }
+            "pin" => {
+                let p: Id = parse(params)?;
+                let data = entry(core, &p.id, ITEMS)?;
+                if core.count_records(PINNED)? >= MAX_PINNED {
+                    return Err(NyError::invalid_params("Up to 100 entries can be pinned; unpin one first."));
                 }
-                let record = core.insert_record(ITEMS, json!({ "text": p.text, "app": p.app }), &p.text, None)?;
+                let record = core.insert_record(PINNED, data.clone(), data["text"].as_str().unwrap_or_default(), None)?;
+                core.call("records.delete", json!({ "id": p.id }))?;
+                Ok(json!({ "record": record }))
+            }
+            "unpin" => {
+                let p: Id = parse(params)?;
+                let data = entry(core, &p.id, PINNED)?;
+                let record = core.insert_record(ITEMS, data.clone(), data["text"].as_str().unwrap_or_default(), None)?;
+                core.call("records.delete", json!({ "id": p.id }))?;
                 prune(core)?;
                 Ok(json!({ "record": record }))
             }
@@ -88,6 +136,27 @@ impl Module for ClipboardModule {
     }
 }
 
+/// Ids in `collection` holding the same text, or an image with the same pixels. Text is found
+/// through search; an image is compared against the newest entries.
+fn same_as(core: &Core, collection: &str, data: &Value) -> Result<Vec<Value>> {
+    let params = match data["text"].as_str() {
+        Some(text) => json!({ "collection": collection, "search": text, "limit": 50 }),
+        None => json!({ "collection": collection, "limit": 50 }),
+    };
+    let page = core.call("records.list", params)?;
+    let key = if data["text"].is_string() { "text" } else { "digest" };
+    Ok(page["records"].as_array().into_iter().flatten()
+        .filter(|record| record["data"][key] == data[key])
+        .map(|record| record["id"].clone()).collect())
+}
+
+/// An entry's data, if `id` is in `collection`.
+fn entry(core: &Core, id: &str, collection: &str) -> Result<Value> {
+    let record = core.call("records.get", json!({ "id": id }))?;
+    if record["collection"] != collection { return Err(NyError::not_found("That entry is no longer there.")); }
+    Ok(record["data"].clone())
+}
+
 /// Keep only the newest `max_items`, and nothing older than `keep_days`.
 fn prune(core: &Core) -> Result<usize> {
     let keep = core.setting::<i64>("clipboard.max_items")?.clamp(10, 5000) as usize;
@@ -102,9 +171,45 @@ mod tests {
 
     fn core() -> Core { Core::new(Store::open_in_memory().unwrap(), crate::all(), "test", Box::new(|_| {})).unwrap() }
 
-    fn texts(core: &Core) -> Vec<String> {
-        let page = core.call("records.list", json!({ "collection": ITEMS })).unwrap();
-        page["records"].as_array().unwrap().iter().map(|r| r["data"]["text"].as_str().unwrap().to_string()).collect()
+    fn texts_in(core: &Core, collection: &str) -> Vec<String> {
+        let page = core.call("records.list", json!({ "collection": collection })).unwrap();
+        page["records"].as_array().unwrap().iter()
+            .map(|r| r["data"]["text"].as_str().or(r["data"]["digest"].as_str()).unwrap().to_string()).collect()
+    }
+
+    fn texts(core: &Core) -> Vec<String> { texts_in(core, ITEMS) }
+
+    fn image(digest: &str) -> Value {
+        json!({ "image": format!("{}.png", uuid::Uuid::new_v4()), "digest": digest, "width": 40, "height": 30, "app": "Preview" })
+    }
+
+    #[test]
+    fn images_are_kept_and_recognized_when_copied_again() {
+        let core = core();
+        core.call("clipboard.add", image("aaa")).unwrap();
+        core.call("clipboard.add", json!({ "text": "between" })).unwrap();
+        let again = core.call("clipboard.add", image("aaa")).unwrap()["record"].clone();
+        assert_eq!(texts(&core), ["aaa", "between"]);
+        assert_eq!(again["data"]["width"], 40);
+        let add = |params: Value| core.call("clipboard.add", params).unwrap_err().code;
+        assert_eq!(add(json!({ "image": "../x.png", "digest": "d", "width": 1, "height": 1 })), "invalid_params");
+        assert_eq!(add(json!({ "image": format!("{}.png", uuid::Uuid::new_v4()), "width": 1, "height": 1 })), "invalid_params");
+    }
+
+    #[test]
+    fn pinned_entries_stay_out_of_the_history_and_its_pruning() {
+        let core = core();
+        let kept = core.call("clipboard.add", json!({ "text": "my address" })).unwrap()["record"].clone();
+        let pinned = core.call("clipboard.pin", json!({ "id": kept["id"] })).unwrap()["record"].clone();
+        assert_eq!((texts(&core).len(), texts_in(&core, PINNED)), (0, vec!["my address".to_string()]));
+        // Copying it again doesn't add it to the history too.
+        assert_eq!(core.call("clipboard.add", json!({ "text": "my address" })).unwrap()["skipped"], "pinned");
+        core.call("settings.set", json!({ "key": "clipboard.max_items", "value": 10 })).unwrap();
+        for n in 0..12 { core.call("clipboard.add", json!({ "text": format!("item {n}") })).unwrap(); }
+        assert_eq!(texts_in(&core, PINNED).len(), 1);
+        assert_eq!(core.call("clipboard.pin", json!({ "id": pinned["id"] })).unwrap_err().code, "not_found");
+        core.call("clipboard.unpin", json!({ "id": pinned["id"] })).unwrap();
+        assert_eq!((texts(&core)[0].as_str(), texts_in(&core, PINNED).len()), ("my address", 0));
     }
 
     #[test]

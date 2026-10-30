@@ -1,8 +1,10 @@
 import AppKit
+import CryptoKit
 import MacPlatform
 
-/// macOS half of the Clipboard module: watch the pasteboard, hand each copy to the core, and open
-/// the picker that pastes an earlier one back where you were typing.
+/// macOS half of the Clipboard module: watch the pasteboard, hand each copy — text, or an image kept
+/// as a PNG beside the database — to the core, and open the picker that pastes an earlier one back
+/// where you were typing.
 @MainActor
 final class ClipboardShell: ModuleShell {
     let id = "clipboard"
@@ -20,20 +22,27 @@ final class ClipboardShell: ModuleShell {
         "com.agilebits.onepassword", "de.petermaurer.TransientPasteboardType"
     ]
 
+    /// Copied images, as `<uuid>.png` beside the database.
+    static let images = ImageFolder("Clipboard")
+    /// Bigger images (a raw photo) are left out of the history.
+    private static let maximumImageBytes = 30 * 1024 * 1024
+
     private let services: CopilotServices
-    private lazy var picker = ClipboardPicker(core: services.core)
+    private lazy var picker = ClipboardPicker(core: services.core, images: Self.images)
     private var watcher: Timer?
     private var lastChange = NSPasteboard.general.changeCount
 
     init(services: CopilotServices) {
         self.services = services
         _ = try? services.core.call("clipboard.prune")
+        removeUnusedImages()
         // The pasteboard has no change notification; its counter is cheap to read.
         watcher = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkPasteboard() }
         }
         watcher?.tolerance = 0.2
-        picker.onPick = { [weak self] text, target in self?.paste(text, into: target) }
+        picker.onPick = { [weak self] entry, target in self?.paste(entry, into: target) }
+        picker.onCopy = { [weak self] entry in self?.put(entry) }
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
@@ -63,17 +72,45 @@ final class ClipboardShell: ModuleShell {
         lastChange = board.changeCount
         guard !TemporaryPasteboard.ownChanges.contains(lastChange) else { return }
         let types = board.types ?? []
-        // Copied files carry their names as text; those aren't text you copied.
-        guard !types.contains(where: { Self.privateTypes.contains($0.rawValue) || $0 == .fileURL }),
-              let text = board.string(forType: .string) else { return }
+        // Copied files carry their names as text, and their icons as images; neither is what you copied.
+        guard !types.contains(where: { Self.privateTypes.contains($0.rawValue) || $0 == .fileURL }) else { return }
         let app = NSWorkspace.shared.frontmostApplication
-        do {
-            _ = try services.core.call("clipboard.add", ["text": text, "app": app?.localizedName ?? "",
-                                                         "bundle_id": app?.bundleIdentifier ?? ""])
-        } catch {
-            Diagnostics.note("clipboard", "couldn’t keep a copy: \(error.localizedDescription)")
+        let source: [String: Any] = ["app": app?.localizedName ?? "", "bundle_id": app?.bundleIdentifier ?? ""]
+        if let text = board.string(forType: .string) {
+            add(source.merging(["text": text]) { _, new in new })
+        } else if let data = board.data(forType: .png) ?? board.data(forType: .tiff), data.count <= Self.maximumImageBytes {
+            Task { await addImage(data, source: source) }
         }
     }
+
+    /// Images are converted and written off the main thread; a screenshot can be tens of megabytes.
+    private func addImage(_ data: Data, source: [String: Any]) async {
+        let images = Self.images
+        let kept = await Task.detached(priority: .utility) { () -> (name: String, digest: String, width: Int, height: Int)? in
+            guard let bitmap = NSBitmapImageRep(data: data), bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0,
+                  let png = bitmap.representation(using: .png, properties: [:]), let name = images.keep(png: png) else { return nil }
+            let digest = SHA256.hash(data: png).map { String(format: "%02x", $0) }.joined()
+            return (name, digest, bitmap.pixelsWide, bitmap.pixelsHigh)
+        }.value
+        guard let kept else { return }
+        let record = add(source.merging(["image": kept.name, "digest": kept.digest, "width": kept.width, "height": kept.height]) { _, new in new })
+        // Not kept (off, an excluded app, already pinned), or it replaced an earlier copy of the same image.
+        if record == nil { try? FileManager.default.removeItem(at: images.file(kept.name)) }
+        removeUnusedImages()
+    }
+
+    /// The record kept, or nil when the core left the copy out.
+    @discardableResult
+    private func add(_ params: [String: Any]) -> [String: Any]? {
+        do {
+            return (try services.core.call("clipboard.add", params) as? [String: Any])?["record"] as? [String: Any]
+        } catch {
+            Diagnostics.note("clipboard", "couldn’t keep a copy: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private func removeUnusedImages() { Self.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned]) }
 
     // MARK: Picking
 
@@ -90,18 +127,17 @@ final class ClipboardShell: ModuleShell {
 
     /// The pick becomes the clipboard, then is pasted into the field you came from. Without a field
     /// to paste into — or Accessibility — it stays on the clipboard for ⌘V.
-    private func paste(_ text: String, into target: InputTarget?) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        lastChange = NSPasteboard.general.changeCount
-        _ = try? services.core.call("clipboard.add", ["text": text])
+    private func paste(_ entry: ClipboardEntry, into target: InputTarget?) {
+        guard put(entry) else { return }
         guard let target else {
             services.toast.show("Copied", detail: "Press ⌘V to paste.", style: .success)
             return
         }
         Task {
             do {
-                try await target.insert(text, prepareForPaste: { self.picker.close(returningFocus: false) })
+                let close = { self.picker.close(returningFocus: false) }
+                if let text = entry.text { try await target.insert(text, prepareForPaste: close) }
+                else { try await target.pasteClipboard(prepareForPaste: close) }
                 Diagnostics.note("clipboard", "pasted from history")
             } catch {
                 Diagnostics.note("clipboard", "didn’t paste: \(error.localizedDescription)")
@@ -110,5 +146,30 @@ final class ClipboardShell: ModuleShell {
             // Pasting puts the clipboard back as it was: the pick itself.
             lastChange = NSPasteboard.general.changeCount
         }
+    }
+
+    /// The entry on the clipboard, and back at the top of the history; false if its image is gone.
+    @discardableResult
+    private func put(_ entry: ClipboardEntry) -> Bool {
+        let board = NSPasteboard.general
+        if let text = entry.text {
+            board.clearContents()
+            board.setString(text, forType: .string)
+            lastChange = board.changeCount
+            add(["text": text])
+            return true
+        }
+        guard let name = entry.image, let png = try? Data(contentsOf: Self.images.file(name)) else {
+            services.toast.show("That image is no longer kept", style: .warning)
+            return false
+        }
+        let item = NSPasteboardItem()
+        item.setData(png, forType: .png)
+        if let tiff = NSBitmapImageRep(data: png)?.tiffRepresentation { item.setData(tiff, forType: .tiff) }
+        board.clearContents()
+        board.writeObjects([item])
+        lastChange = board.changeCount
+        add(["image": name, "digest": entry.digest ?? "", "width": entry.width ?? 0, "height": entry.height ?? 0, "app": entry.app ?? ""])
+        return true
     }
 }

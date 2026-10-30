@@ -1,23 +1,39 @@
 import AppKit
+import ImageIO
 
-/// The clipboard history as a small floating list near the pointer: type to search, ↑↓ to choose,
-/// Return (or a double-click) to paste, ⌘1–⌘9 to paste one of the first nine, ⌘C to copy without
-/// pasting, ⌘⌫ to forget an entry, Esc to close.
+/// A kept copy: text, or an image file beside the database.
+struct ClipboardEntry: Decodable {
+    let text: String?
+    let image: String?
+    let digest: String?
+    let width: Int?
+    let height: Int?
+    let app: String?
+}
+
+/// The clipboard history as a small floating list near the pointer, pinned entries first: type to
+/// search, ↑↓ to choose, Return (or a double-click) to paste, ⌘1–⌘9 to paste one of the first nine,
+/// ⌘C to copy without pasting, ⌘P to pin or unpin, ⌘⌫ to forget an entry, Esc to close.
 @MainActor
 final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
-    private struct Entry: Decodable { let text: String; let app: String? }
-    private typealias Item = CoreRecord<Entry>
+    private typealias Item = CoreRecord<ClipboardEntry>
 
-    /// The chosen text, and the field it should go back into.
-    var onPick: ((String, InputTarget?) -> Void)?
+    /// The chosen entry, and the field it should go back into.
+    var onPick: ((ClipboardEntry, InputTarget?) -> Void)?
+    /// The entry onto the clipboard without pasting.
+    var onCopy: ((ClipboardEntry) -> Void)?
 
     private let core: NyCore
+    private let images: ImageFolder
+    private let thumbnails = NSCache<NSString, NSImage>()
     private let panel = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
                                     styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: true)
     private let search = NSSearchField()
     private let table = NSTableView()
     private let empty = Design.label("", size: 12.5, color: .tertiaryLabelColor)
     private var items: [Item] = []
+    /// The first `pinnedCount` items are pinned.
+    private var pinnedCount = 0
     private var target: InputTarget?
     private var source: NSRunningApplication?
     private let age: RelativeDateTimeFormatter = {
@@ -27,8 +43,9 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         return formatter
     }()
 
-    init(core: NyCore) {
+    init(core: NyCore, images: ImageFolder) {
         self.core = core
+        self.images = images
         super.init()
         panel.float(at: .floating, shadow: true, behavior: .transient)
         panel.onCancel = { [weak self] in self?.close() }
@@ -58,7 +75,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
 
-        let hint = Design.label("↩ paste   ⌘1–9 pick   ⌘C copy   ⌘⌫ forget   esc close", size: 10.5, color: .tertiaryLabelColor)
+        let hint = Design.label("↩ paste   ⌘1–9 pick   ⌘C copy   ⌘P pin   ⌘⌫ forget   esc close", size: 10.5, color: .tertiaryLabelColor)
         for view in [search, scroll, hint, empty] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             material.addSubview(view)
@@ -109,20 +126,25 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     }
 
     private func reload() {
-        var params: [String: Any] = ["collection": CoreCollection.clipboardItems.rawValue, "limit": 200]
         let query = search.stringValue.trimmingCharacters(in: .whitespaces)
-        if !query.isEmpty { params["search"] = query }
-        items = (try? core.call("records.list", params, as: CorePage<Entry>.self).records) ?? []
+        func list(_ collection: CoreCollection, limit: Int) -> [Item] {
+            var params: [String: Any] = ["collection": collection.rawValue, "limit": limit]
+            if !query.isEmpty { params["search"] = query }
+            return (try? core.call("records.list", params, as: CorePage<ClipboardEntry>.self).records) ?? []
+        }
+        let pinned = list(.clipboardPinned, limit: 100)
+        pinnedCount = pinned.count
+        items = pinned + list(.clipboardItems, limit: 200)
         table.reloadData()
         if !items.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false); table.scrollRowToVisible(0) }
-        empty.stringValue = query.isEmpty ? "Copy some text and it shows up here." : "Nothing matches “\(query)”."
+        empty.stringValue = query.isEmpty ? "Copy some text or an image and it shows up here." : "Nothing matches “\(query)”."
         empty.isHidden = !items.isEmpty
     }
 
     private func pick(_ row: Int) {
         guard items.indices.contains(row) else { return }
-        let text = items[row].data.text, target = target
-        onPick?(text, target)
+        let entry = items[row].data, target = target
+        onPick?(entry, target)
     }
 
     @objc private func pickClicked() { pick(table.clickedRow) }
@@ -130,16 +152,32 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     /// ⌘ shortcuts while the list is up; false lets the key through to the search field.
     private func command(_ key: String) -> Bool {
         if let digit = Int(key), (1...9).contains(digit) { pick(digit - 1); return true }
+        let row = table.selectedRow
         switch key {
         case "c":
-            guard items.indices.contains(table.selectedRow) else { return false }
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(items[table.selectedRow].data.text, forType: .string)
+            guard items.indices.contains(row) else { return false }
+            onCopy?(items[row].data)
             close()
             return true
+        case "p":
+            guard items.indices.contains(row) else { return true }
+            let pinned = row < pinnedCount
+            do {
+                let moved = try core.call(pinned ? "clipboard.unpin" : "clipboard.pin", ["id": items[row].id]) as? [String: Any]
+                reload()
+                // Keep the same entry selected in its new place.
+                let id = (moved?["record"] as? [String: Any])?["id"] as? String
+                if let index = items.firstIndex(where: { $0.id == id }) {
+                    table.selectRowIndexes([index], byExtendingSelection: false)
+                    table.scrollRowToVisible(index)
+                }
+            } catch {
+                NSSound.beep()
+                empty.stringValue = error.localizedDescription
+            }
+            return true
         case "\u{8}", "\u{7F}":
-            guard items.indices.contains(table.selectedRow) else { return true }
-            let row = table.selectedRow
+            guard items.indices.contains(row) else { return true }
             _ = try? core.call("records.delete", ["id": items[row].id])
             reload()
             if !items.isEmpty { table.selectRowIndexes([min(row, items.count - 1)], byExtendingSelection: false) }
@@ -147,6 +185,18 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         default:
             return false
         }
+    }
+
+    /// A small rendition, decoded once: a full screenshot is too big to redraw in a list.
+    private func thumbnail(_ name: String) -> NSImage? {
+        if let cached = thumbnails.object(forKey: name as NSString) { return cached }
+        let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 120,
+                       kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(images.file(name) as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+        let thumbnail = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        thumbnails.setObject(thumbnail, forKey: name as NSString)
+        return thumbnail
     }
 
     // MARK: Search field
@@ -181,14 +231,22 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = tableView.makeView(withIdentifier: .init("clip"), owner: nil) as? ClipRow ?? ClipRow()
         cell.identifier = .init("clip")
-        let item = items[row]
-        cell.preview.stringValue = item.data.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ⏎ ")
+        let item = items[row], entry = item.data
+        if let name = entry.image {
+            cell.show(thumbnail: thumbnail(name))
+            cell.preview.stringValue = "Image  \(entry.width ?? 0) × \(entry.height ?? 0)"
+        } else {
+            cell.show(thumbnail: nil)
+            cell.preview.stringValue = (entry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(whereSeparator: \.isNewline).prefix(2).joined(separator: " ⏎ ")
+        }
         // Never "in 0s": a copy made this instant is simply "now".
         let now = Date()
-        let when = age.localizedString(for: min(Date(timeIntervalSince1970: Double(item.createdAt) / 1000), now), relativeTo: now)
-        cell.metadata.stringValue = [row < 9 ? "⌘\(row + 1)" : nil, item.data.app.flatMap { $0.isEmpty ? nil : $0 }, when]
+        let when = row < pinnedCount ? "Pinned"
+            : age.localizedString(for: min(Date(timeIntervalSince1970: Double(item.createdAt) / 1000), now), relativeTo: now)
+        cell.metadata.stringValue = [row < 9 ? "⌘\(row + 1)" : nil, entry.app.flatMap { $0.isEmpty ? nil : $0 }, when]
             .compactMap { $0 }.joined(separator: "  ·  ")
+        cell.pin.isHidden = row >= pinnedCount
         return cell
     }
 }
@@ -196,19 +254,40 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
 private final class ClipRow: NSTableCellView {
     let preview = Design.label("", size: 13)
     let metadata = Design.label("", size: 10.5, color: .secondaryLabelColor)
+    let pin = Design.symbol("pin.fill", size: 10, color: .controlAccentColor)
+    private let picture = NSImageView()
+    private var textLeading: NSLayoutConstraint!
 
     init() {
         super.init(frame: .zero)
         preview.lineBreakMode = .byTruncatingTail
-        let stack = Design.vstack([preview, metadata], spacing: 3)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
+        picture.imageScaling = .scaleProportionallyUpOrDown
+        picture.wantsLayer = true
+        picture.layer?.cornerRadius = 4
+        picture.layer?.masksToBounds = true
+        let stack = Design.vstack([preview, Design.hstack([pin, metadata], spacing: 4)], spacing: 3)
+        for view in [picture, stack] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        textLeading = stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            picture.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            picture.centerYAnchor.constraint(equalTo: centerYAnchor),
+            picture.widthAnchor.constraint(equalToConstant: 48),
+            picture.heightAnchor.constraint(equalToConstant: 36),
+            textLeading,
             stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            preview.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            preview.widthAnchor.constraint(lessThanOrEqualTo: stack.widthAnchor)
         ])
+    }
+
+    /// An image entry shows its picture before the text.
+    func show(thumbnail: NSImage?) {
+        picture.image = thumbnail
+        picture.isHidden = thumbnail == nil
+        textLeading.constant = thumbnail == nil ? 8 : 8 + 48 + 10
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }

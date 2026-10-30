@@ -21,9 +21,7 @@ const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 /// `<uuid>.png`, nothing else.
 pub fn validate_image_name(name: &str) -> Result<()> {
-    let stem = name.strip_suffix(".png").unwrap_or_default();
-    if stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok() { Ok(()) }
-    else { Err(NyError::invalid_params("An inbox image is named <uuid>.png.")) }
+    if crate::is_image_file_name(name) { Ok(()) } else { Err(NyError::invalid_params("An inbox image is named <uuid>.png.")) }
 }
 
 /// One line, at most `limit` characters: window titles and addresses are context, not content.

@@ -18,6 +18,13 @@ pub mod translate;
 pub mod volcengine;
 pub mod windows;
 
+/// An image file a client keeps beside the database is named `<uuid>.png`, nothing else, so a
+/// record can never point anywhere else on disk.
+pub fn is_image_file_name(name: &str) -> bool {
+    let stem = name.strip_suffix(".png").unwrap_or_default();
+    stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok()
+}
+
 /// Every module this build ships, in menu order. The `llm` module comes first because others use it.
 pub fn all() -> Vec<Arc<dyn Module>> {
     vec![Arc::new(ny_llm::LlmModule), Arc::new(translate::TranslateModule), Arc::new(windows::WindowsModule), Arc::new(capture::CaptureModule),

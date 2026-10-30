@@ -90,7 +90,7 @@ final class Preferences {
     }
 
     /// Private per-user storage for the core database.
-    static var dataDirectory: URL {
+    nonisolated static var dataDirectory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("NyCopilot", isDirectory: true)
     }

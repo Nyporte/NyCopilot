@@ -19,7 +19,7 @@ final class InboxShell: ModuleShell {
 
     private let services: CopilotServices
     /// Screenshots in notes, as `<uuid>.png` beside the database.
-    static let imageFolder = Preferences.dataDirectory.appendingPathComponent("Inbox", isDirectory: true)
+    static let images = ImageFolder("Inbox")
     private let bar = InboxCaptureBar()
     private var window: InboxWindow?
 
@@ -30,7 +30,7 @@ final class InboxShell: ModuleShell {
         }
         bar.onSave = { [weak self] text, context in self?.add(["text": text, "source": "typed"], context: context) }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
-        removeUnusedImages()
+        Self.images.removeUnused(core: services.core, collections: [.inboxNotes, .inboxDone])
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
@@ -62,7 +62,7 @@ final class InboxShell: ModuleShell {
 
     private func openInbox() {
         bar.close(returningFocus: false)
-        if window == nil { window = InboxWindow(core: services.core, imageFolder: Self.imageFolder) }
+        if window == nil { window = InboxWindow(core: services.core, images: Self.images) }
         window?.present()
     }
 
@@ -96,7 +96,7 @@ final class InboxShell: ModuleShell {
     private func send(text: String?, image: NSImage?, context: SourceContext) {
         var params: [String: Any] = ["text": text ?? "", "source": image == nil ? "selection" : "screenshot"]
         if let image {
-            guard let name = Self.keep(image) else {
+            guard let name = Self.images.keep(image) else {
                 services.toast.show("Couldn’t save the screenshot to the inbox", style: .warning)
                 return
             }
@@ -116,39 +116,6 @@ final class InboxShell: ModuleShell {
         } catch {
             services.toast.show("Couldn’t add to the inbox", detail: error.localizedDescription, style: .warning)
             return false
-        }
-    }
-
-    /// The screenshot as a PNG in the inbox folder; its file name, or nil if it couldn't be written.
-    private static func keep(_ image: NSImage) -> String? {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else { return nil }
-        let name = "\(UUID().uuidString).png"
-        do {
-            try FileManager.default.createDirectory(at: imageFolder, withIntermediateDirectories: true)
-            try data.write(to: imageFolder.appendingPathComponent(name), options: .atomic)
-            return name
-        } catch {
-            return nil
-        }
-    }
-
-    /// Screenshots no note uses any more — done notes past 30 days, notes deleted before a quit.
-    private func removeUnusedImages() {
-        struct Note: Decodable { let image: String? }
-        var used: Set<String> = []
-        for collection in [CoreCollection.inboxNotes, .inboxDone] {
-            var before: String?
-            repeat {
-                var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
-                if let before { params["before"] = before }
-                guard let page = try? services.core.call("records.list", params, as: CorePage<Note>.self) else { return }
-                used.formUnion(page.records.compactMap(\.data.image))
-                before = page.next
-            } while before != nil
-        }
-        for file in (try? FileManager.default.contentsOfDirectory(atPath: Self.imageFolder.path)) ?? [] where !used.contains(file) {
-            try? FileManager.default.removeItem(at: Self.imageFolder.appendingPathComponent(file))
         }
     }
 }
@@ -194,7 +161,7 @@ final class InboxPane: SettingsPane {
             guard response == .alertFirstButtonReturn else { return }
             _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxNotes.rawValue])
             _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxDone.rawValue])
-            try? FileManager.default.removeItem(at: InboxShell.imageFolder)
+            InboxShell.images.removeAll()
         }
     }
 }

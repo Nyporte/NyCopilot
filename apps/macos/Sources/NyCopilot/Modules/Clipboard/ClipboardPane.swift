@@ -31,13 +31,13 @@ final class ClipboardPane: SettingsPane {
         clearButton.target = self
         clearButton.action = #selector(clearHistory)
         return [
-            FormSection("History", footer: "Copies stay on this Mac. Passwords and anything an app marks private are never kept, nor copies from password managers.", rows: [
+            FormSection("History", footer: "Copies — text and images — stay on this Mac. Pinned entries (⌘P in the list) are kept until you unpin them. Passwords and anything an app marks private are never kept, nor copies from password managers.", rows: [
                 FormRow("Keep clipboard history", subtitle: "Text you copy, newest first; copying it again moves it to the top.", accessory: enabledSwitch),
                 FormRow("Keep entries for", accessory: keepFor),
                 FormRow("Keep at most", accessory: atMost),
                 FormRow("Forget everything", accessory: clearButton)
             ]),
-            shortcuts.section("Shortcuts", footer: "Type to search, ↩ pastes into the app you were in, ⌘1–9 picks one of the first nine.",
+            shortcuts.section("Shortcuts", footer: "Type to search, ↩ pastes into the app you were in, ⌘1–9 picks one of the first nine, ⌘P pins.",
                               actions: [ClipboardShell.Action.open]),
             shortcuts.errorLabel
         ]
@@ -57,24 +57,28 @@ final class ClipboardPane: SettingsPane {
     @objc private func changeDays() {
         try? services.core.setSetting(.clipboardKeepDays, Self.days[keepFor.indexOfSelectedItem].0)
         _ = try? services.core.call("clipboard.prune")
+        ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
     }
 
     @objc private func changeCount() {
         try? services.core.setSetting(.clipboardMaxItems, Self.counts[atMost.indexOfSelectedItem])
         _ = try? services.core.call("clipboard.prune")
+        ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
     }
 
     @objc private func clearHistory() {
         let alert = NSAlert()
         alert.messageText = "Clear clipboard history?"
-        alert.informativeText = "Every kept copy is removed. What’s on the clipboard now stays."
+        alert.informativeText = "Every kept copy is removed; pinned entries and what’s on the clipboard now stay."
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
         guard let window = view.window else { return }
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.clipboardItems.rawValue])
+            guard let services = self?.services else { return }
+            _ = try? services.core.call("records.clear", ["collection": CoreCollection.clipboardItems.rawValue])
+            ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
         }
     }
 }

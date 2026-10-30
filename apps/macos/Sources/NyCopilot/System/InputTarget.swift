@@ -181,6 +181,23 @@ final class InputTarget: @unchecked Sendable {
     /// same field (when it has one) focused.
     @MainActor
     func insert(_ text: String, prepareForPaste: () async -> Void) async throws {
+        try await returnToField(prepareForPaste: prepareForPaste)
+        // Always use native paste so web editors receive their normal input and paste events.
+        try await paste(text)
+    }
+
+    /// Back to the field, then ⌘V with whatever the clipboard holds — for content that isn't text,
+    /// such as an image the caller has just put there.
+    @MainActor
+    func pasteClipboard(prepareForPaste: () async -> Void) async throws {
+        try await returnToField(prepareForPaste: prepareForPaste)
+        guard let (down, up) = Self.commandKey(kVK_ANSI_V) else { throw Failure.pasteUnavailable }
+        down.postToPid(processIdentifier)
+        up.postToPid(processIdentifier)
+    }
+
+    @MainActor
+    private func returnToField(prepareForPaste: () async -> Void) async throws {
         try await InputFocusHandoff.restore(
             foreground: {
                 switch NSWorkspace.shared.frontmostApplication?.processIdentifier {
@@ -206,9 +223,6 @@ final class InputTarget: @unchecked Sendable {
         try Task.checkCancellation()
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier else { throw Failure.focusChanged }
         await restoreSelection()
-
-        // Always use native paste so web editors receive their normal input and paste events.
-        try await paste(text)
     }
 
     /// Restore the captured window and field, not whichever control happens to be focused.
