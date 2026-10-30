@@ -94,7 +94,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let origin = NSPoint(x: min(max(pointer.x - size.width / 2, visible.minX), visible.maxX - size.width),
                              y: min(max(pointer.y - size.height - 12, visible.minY), visible.maxY - size.height))
         panel.setFrameOrigin(origin)
-        NSApp.activate(ignoringOtherApps: true)
+        // Key without activating the app, so its other windows stay where they are.
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(search)
     }

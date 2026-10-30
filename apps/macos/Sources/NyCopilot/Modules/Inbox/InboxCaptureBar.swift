@@ -96,7 +96,8 @@ final class InboxCaptureBar {
         let visible = screen.visibleFrame
         let top = visible.maxY - visible.height * 0.2
         panel.setFrameTopLeftPoint(NSPoint(x: visible.midX - Self.width / 2, y: top))
-        NSApp.activate(ignoringOtherApps: true)
+        // The panel takes typing without activating the app: activating would bring the app's
+        // other windows (an open inbox) forward along with it.
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(input)
         input.selectAll(nil)
