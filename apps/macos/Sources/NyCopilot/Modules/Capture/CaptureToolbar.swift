@@ -30,6 +30,7 @@ final class CaptureToolbar: NSView {
     private let undoButton: NSButton
     private let redoButton: NSButton
     private let textButton = CaptureToolbar.icon("text.viewfinder", "Recognize Text (T)")
+    private let scrollButton = CaptureToolbar.icon("rectangle.expand.vertical", "Scrolling Capture (S)")
     private let options = Design.hstack([], spacing: 8)
     private let palette: [NSColor]
     private static let textSizes: [CGFloat] = [12, 14, 16, 20, 24, 32, 40, 48, 64, 96]
@@ -66,6 +67,8 @@ final class CaptureToolbar: NSView {
         pin.action = #selector(pin(_:))
         textButton.target = self
         textButton.action = #selector(showText)
+        scrollButton.target = self
+        scrollButton.action = #selector(scrollCapture)
         let save = Self.icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)")
         save.target = self
         save.action = #selector(save(_:))
@@ -76,7 +79,7 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, save, pin, cancel, copy], spacing: 2)
+        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, scrollButton, save, pin, cancel, copy], spacing: 2)
         options.isHidden = true
 
         let column = Design.vstack([mainRow, options], spacing: 6, alignment: .leading)
@@ -268,6 +271,7 @@ final class CaptureToolbar: NSView {
     }
     @objc private func copy(_ sender: Any?) { onAction?(.copy) }
     @objc private func showText() { onText?() }
+    @objc private func scrollCapture() { onAction?(.scroll) }
 
     /// Accent when the selection has text, dimmed when it has none.
     private func refreshTextButton() {

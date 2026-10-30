@@ -400,7 +400,8 @@ final class PinBoard {
     /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
     private var outsideClicks: Any?
 
-    func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) {
+    @discardableResult
+    func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) -> PinWindow {
         let pin = PinWindow(image: image, frame: frame, shadow: shadow)
         pin.onSave = { [weak self] image in self?.onSave?(image) }
         pin.onClose = { [weak self] closed in
@@ -415,6 +416,7 @@ final class PinBoard {
         updateMonitor()
         if areHidden { showAll() }
         pin.orderFrontRegardless()
+        return pin
     }
 
     func toggleVisibility() { areHidden ? showAll() : hideAll() }

@@ -18,6 +18,7 @@ final class CaptureShell: ModuleShell {
     private let services: CopilotServices
     private let board = PinBoard()
     private var session: CaptureSession?
+    private var scrolling: ScrollCapture?
     /// The app in front when capture started, to return to afterwards.
     private var previousApp: NSRunningApplication?
 
@@ -125,6 +126,9 @@ final class CaptureShell: ModuleShell {
 
     private func finish(_ action: CaptureAction, image: NSImage, region: CGRect, screen: NSScreen) {
         switch action {
+        case .scroll:
+            end()
+            startScrolling(region, on: screen)
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -139,9 +143,34 @@ final class CaptureShell: ModuleShell {
                 services.toast.show("Saved “\(url.lastPathComponent)”", detail: url.deletingLastPathComponent().path, style: .success)
             }
         case .pin:
-            board.pin(image, at: CaptureSession.appKitRect(region), shadow: services.core.setting(.pinShadow, default: true))
+            // A scrolling capture is taller than its region: it starts there and fits the screen.
+            let frame = CaptureSession.appKitRect(CGRect(origin: region.origin, size: image.size))
+            let pin = board.pin(image, at: frame, shadow: services.core.setting(.pinShadow, default: true))
+            let visible = screen.visibleFrame
+            if frame.height > visible.height * 0.9 {
+                pin.setZoom(visible.height * 0.9 / frame.height, around: NSPoint(x: frame.minX, y: frame.maxY))
+                pin.setFrameOrigin(NSPoint(x: pin.frame.minX, y: max(visible.minY, min(pin.frame.minY, visible.maxY - pin.frame.height))))
+            }
             record(image, region: region, screen: screen, path: nil)
             end()
+        }
+    }
+
+    /// The region stays live; whatever is scrolled under it is stitched into one tall image, which
+    /// then goes through the same copy, save, and pin as any capture.
+    private func startScrolling(_ region: CGRect, on screen: NSScreen) {
+        let capture = ScrollCapture(region: region, screen: screen)
+        capture.onFinish = { [weak self] action, image in
+            self?.scrolling = nil
+            self?.finish(action, image: image, region: region, screen: screen)
+        }
+        capture.onCancel = { [weak self] in self?.scrolling = nil }
+        scrolling = capture
+        Task { [weak self] in
+            do { try await capture.start() } catch {
+                self?.scrolling = nil
+                self?.services.toast.show("Couldn’t start scrolling capture", detail: error.localizedDescription, style: .warning)
+            }
         }
     }
 
