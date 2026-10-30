@@ -20,10 +20,15 @@ final class CaptureShell: ModuleShell {
     private var session: CaptureSession?
     /// The app in front when capture started, to return to afterwards.
     private var previousApp: NSRunningApplication?
+    private var textWindows: [RecognizedTextWindow] = []
 
     init(services: CopilotServices) {
         self.services = services
         board.onSave = { [weak self] image in self?.saveWithPanel(image, region: nil) }
+        board.onRecognizeText = { [weak self] image, frame in
+            guard let pixels = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            self?.showText(Task { try await TextRecognizer.text(in: pixels) }, near: frame)
+        }
     }
 
     /// Snipaste's keys: F1 to capture, F3 to pin the clipboard, ⇧F3 to hide or show pins.
@@ -101,7 +106,9 @@ final class CaptureShell: ModuleShell {
                     try? self?.services.core.setSetting(.captureStroke, Double(stroke))
                     try? self?.services.core.setSetting(.captureStyle, style.json)
                 }
-                session.onFinish = { [weak self] action, image, region, screen in self?.finish(action, image: image, region: region, screen: screen) }
+                session.onFinish = { [weak self] action, image, region, screen, text in
+                    self?.finish(action, image: image, region: region, screen: screen, text: text)
+                }
                 session.onCancel = { [weak self] in self?.end() }
                 self.session = session
                 session.show()
@@ -116,8 +123,11 @@ final class CaptureShell: ModuleShell {
         if returnFocus, let app = previousApp, !app.isTerminated { app.activate(options: []) }
     }
 
-    private func finish(_ action: CaptureAction, image: NSImage, region: CGRect, screen: NSScreen) {
+    private func finish(_ action: CaptureAction, image: NSImage, region: CGRect, screen: NSScreen, text: Task<String, Error>?) {
         switch action {
+        case .text:
+            end(returnFocus: false)
+            showText(text ?? Task { "" }, near: CaptureSession.appKitRect(region))
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -136,6 +146,21 @@ final class CaptureShell: ModuleShell {
             record(image, region: region, screen: screen, path: nil)
             end()
         }
+    }
+
+    /// Opens a Recognized Text window; closing the last one returns to the app that was in front.
+    private func showText(_ text: Task<String, Error>, near anchor: NSRect) {
+        let front = NSWorkspace.shared.frontmostApplication
+        let returnTo = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? previousApp : front
+        let window = RecognizedTextWindow(near: anchor, text: text)
+        window.onClose = { [weak self] closed in
+            guard let self else { return }
+            textWindows.removeAll { $0 === closed }
+            if textWindows.isEmpty, let app = returnTo, !app.isTerminated { app.activate(options: []) }
+        }
+        textWindows.append(window)
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
     }
 
     private func copy(_ image: NSImage) {

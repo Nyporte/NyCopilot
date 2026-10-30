@@ -20,11 +20,14 @@ final class CaptureToolbar: NSView {
     var style = CaptureStyle()
     var canUndo = false { didSet { undoButton.isEnabled = canUndo } }
     var canRedo = false { didSet { redoButton.isEnabled = canRedo } }
+    /// Lines of text found in the selection; nil while still reading.
+    var recognizedLines: Int? { didSet { refreshTextButton() } }
 
     private var toolButtons: [AnnotationTool: NSButton] = [:]
     private var swatches: [(NSColor, Swatch)] = []
     private let undoButton: NSButton
     private let redoButton: NSButton
+    private let textButton = CaptureToolbar.icon("text.viewfinder", "Recognize Text (T)")
     private let options = Design.hstack([], spacing: 8)
     private let palette: [NSColor]
     private static let textSizes: [CGFloat] = [12, 14, 16, 20, 24, 32, 40, 48, 64, 96]
@@ -59,6 +62,8 @@ final class CaptureToolbar: NSView {
         let pin = Self.icon("pin", "Pin to screen (⌘T)")
         pin.target = self
         pin.action = #selector(pin(_:))
+        textButton.target = self
+        textButton.action = #selector(showText)
         let save = Self.icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)")
         save.target = self
         save.action = #selector(save(_:))
@@ -69,7 +74,7 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), save, pin, cancel, copy], spacing: 2)
+        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, save, pin, cancel, copy], spacing: 2)
         options.isHidden = true
 
         let column = Design.vstack([mainRow, options], spacing: 6, alignment: .leading)
@@ -260,6 +265,22 @@ final class CaptureToolbar: NSView {
         onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save)
     }
     @objc private func copy(_ sender: Any?) { onAction?(.copy) }
+    @objc private func showText() { onAction?(.text) }
+
+    /// Accent when the selection has text, dimmed when it has none.
+    private func refreshTextButton() {
+        switch recognizedLines {
+        case nil:
+            textButton.contentTintColor = .white
+            textButton.toolTip = "Recognize Text (T)"
+        case 0?:
+            textButton.contentTintColor = .white.withAlphaComponent(0.4)
+            textButton.toolTip = "No text found here (T)"
+        case let lines?:
+            textButton.contentTintColor = .controlAccentColor
+            textButton.toolTip = "Show \(lines) line\(lines == 1 ? "" : "s") of text (T)"
+        }
+    }
     @objc private func cancelTapped() { onCancel?() }
 
     private static func icon(_ symbol: String, _ tip: String) -> NSButton {

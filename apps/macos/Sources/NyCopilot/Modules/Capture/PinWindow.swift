@@ -1,12 +1,14 @@
 import AppKit
 
 /// An image floating above every window. Drag to move, scroll to zoom, ⌥-scroll to fade, 1–4 to rotate
-/// and flip, ⌘C to copy, ⌘S to save, Esc or a double-click to close. Right-click for everything else.
+/// and flip, T to show its text, ⌘C to copy, ⌘S to save, Esc or a double-click to close. Right-click for
+/// everything else.
 @MainActor
 final class PinWindow: NSPanel {
     var onSave: ((NSImage) -> Void)?
     var onClose: ((PinWindow) -> Void)?
     var onCloseAll: (() -> Void)?
+    var onRecognizeText: ((PinWindow) -> Void)?
     /// Clicked: the board unfocuses every other pin.
     var onFocus: ((PinWindow) -> Void)?
 
@@ -134,6 +136,7 @@ final class PinWindow: NSPanel {
         }
         add("Copy", #selector(copyFromMenu), key: "c")
         add("Save…", #selector(saveFromMenu), key: "s")
+        add("Recognize Text", #selector(recognizeFromMenu), key: "t")
         menu.addItem(.separator())
         add("Actual Size", #selector(actualSize), key: "0")
         let opacity = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
@@ -156,12 +159,16 @@ final class PinWindow: NSPanel {
         menu.addItem(.separator())
         add("Close", #selector(closeFromMenu))
         add("Close All Pins", #selector(closeAllFromMenu))
-        for item in menu.items where !item.keyEquivalent.isEmpty { item.keyEquivalentModifierMask = item.keyEquivalent.first!.isNumber ? [] : [.command] }
+        // Digits and T work on their own; copy and save take ⌘.
+        for item in menu.items where !item.keyEquivalent.isEmpty {
+            item.keyEquivalentModifierMask = item.keyEquivalent.first!.isNumber || item.keyEquivalent == "t" ? [] : [.command]
+        }
         return menu
     }
 
     @objc private func copyFromMenu() { copyImage() }
     @objc private func saveFromMenu() { onSave?(displayedImage) }
+    @objc private func recognizeFromMenu() { onRecognizeText?(self) }
     @objc private func actualSize() { setZoom(1) }
     @objc private func pickOpacity(_ sender: NSMenuItem) { setOpacity(CGFloat(sender.tag) / 100) }
     @objc private func rotateLeft() { rotate(clockwise: false) }
@@ -288,6 +295,7 @@ private final class PinView: NSView {
         case ("c", true): pin.copyImage()
         case ("s", true): pin.onSave?(pin.displayedImage)
         case ("w", true): pin.close()
+        case ("t", false): pin.onRecognizeText?(pin)
         case ("0", _): pin.setZoom(1)
         case ("1", false): pin.rotate(clockwise: false)
         case ("2", false): pin.rotate(clockwise: true)
@@ -305,6 +313,8 @@ private final class PinView: NSView {
 @MainActor
 final class PinBoard {
     var onSave: ((NSImage) -> Void)?
+    /// A pin's image as shown, and its frame, to place the text beside it.
+    var onRecognizeText: ((NSImage, NSRect) -> Void)?
     private(set) var pins: [PinWindow] = []
     private(set) var areHidden = false
     /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
@@ -318,6 +328,7 @@ final class PinBoard {
             self?.updateMonitor()
         }
         pin.onCloseAll = { [weak self] in self?.closeAll() }
+        pin.onRecognizeText = { [weak self] pin in self?.onRecognizeText?(pin.displayedImage, pin.frame) }
         pin.onFocus = { [weak self] focused in
             for other in self?.pins ?? [] where other !== focused { other.isFocused = false }
         }

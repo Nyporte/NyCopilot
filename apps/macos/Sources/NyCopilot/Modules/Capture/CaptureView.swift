@@ -1,7 +1,7 @@
 import AppKit
 
 /// What the user chose to do with a capture.
-enum CaptureAction { case copy, save, quickSave, pin }
+enum CaptureAction { case copy, save, quickSave, pin, text }
 
 /// The interactive layer of one display during a capture: dims the frozen screen, highlights the
 /// window under the pointer, lets you drag or adjust a selection, shows a magnifier, and draws
@@ -23,6 +23,10 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private var current: Annotation?
     private var textEditor: TextAnnotationEditor?
     private var recentIndex = -1
+    /// Text in the selection, read in the background once the selection settles, so it's ready
+    /// the moment it's asked for.
+    private var recognition: (rect: CGRect, task: Task<String, Error>)?
+    private var pendingRecognition: DispatchWorkItem?
     /// Which format C copies; Shift switches between HEX and RGB.
     private var copiesHex = true
     /// "Copied …" shown briefly in the magnifier after C.
@@ -345,6 +349,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
             }
             hoverWindow = nil
             placeToolbar()
+            selectionSettled()
+        case .moving, .resizing:
+            selectionSettled()
         case .drawing:
             if var finished = current, finished.points.count > 1 || finished.tool.isFreehand {
                 if finished.points.count == 1 { finished.points.append(finished.points[0]) }
@@ -536,6 +543,33 @@ final class CaptureView: NSView, NSTextViewDelegate {
         onFinish?(action)
     }
 
+    // MARK: Text recognition
+
+    /// Arrow keys and drags settle many times a second; read the text once things are still.
+    private func selectionSettled() {
+        pendingRecognition?.cancel()
+        let work = DispatchWorkItem { [weak self] in _ = self?.recognizedText() }
+        pendingRecognition = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    /// The text in the current selection, from the screen as it was — annotations don't get in the way.
+    func recognizedText() -> Task<String, Error>? {
+        guard let selection else { return nil }
+        if let recognition, recognition.rect == selection { return recognition.task }
+        guard let image = CaptureRenderer.render(frozen, selection: selection, annotations: [], pixelated: nil)?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        let task = Task { try await TextRecognizer.text(in: image) }
+        recognition = (selection, task)
+        toolbar.recognizedLines = nil
+        Task { [weak self] in
+            let lines = (try? await task.value).map { $0.isEmpty ? 0 : $0.split(separator: "\n").count } ?? 0
+            guard let self, recognition?.rect == selection else { return }
+            toolbar.recognizedLines = lines
+        }
+        return task
+    }
+
     /// The finished image: selection plus annotations at full resolution.
     func renderedImage() -> NSImage? {
         guard let selection else { return nil }
@@ -570,6 +604,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             } else if flags.isEmpty {
                 switch key {
                 case "c" where showsMagnifier: copyColor()
+                case "t" where selection != nil: finish(.text)
                 case ",": stepRecent(by: 1)
                 case ".": stepRecent(by: -1)
                 case "1", "2", "3", "4", "5", "6", "7", "8":
@@ -615,6 +650,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         }
         selection = rect.intersection(bounds)
         placeToolbar()
+        selectionSettled()
         needsDisplay = true
     }
 
@@ -624,6 +660,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         selection = bounds
         hoverWindow = nil
         placeToolbar()
+        selectionSettled()
         needsDisplay = true
     }
 
@@ -634,6 +671,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         onSelectionStarted?()
         selection = recent[recentIndex]
         placeToolbar()
+        selectionSettled()
         needsDisplay = true
     }
 
