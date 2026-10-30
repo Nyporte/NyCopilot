@@ -22,9 +22,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private var redoStack: [Annotation] = []
     /// What a click would take: the element under the pointer, or — in window mode — its window.
     private var hoverWindow: CGRect?
-    /// Tab switches between outlining elements and whole windows, as in Snipaste. Shared by every
-    /// display's overlay, and back to elements with each new capture.
-    static var detectsWindows = false
+    /// Tab switches between outlining whole windows and elements, as in Snipaste. Shared by every
+    /// display's overlay, and back to windows with each new capture.
+    static var detectsWindows = true
     private var pointer: CGPoint?
     private var drag: Drag = .none
     private var current: Annotation?

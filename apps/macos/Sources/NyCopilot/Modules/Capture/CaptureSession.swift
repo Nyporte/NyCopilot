@@ -17,8 +17,8 @@ final class CaptureSession {
 
     init(frozen: [FrozenScreen], recent: [CGRect], palette: [NSColor], color: NSColor, stroke: CGFloat, style: CaptureStyle,
          onStyleChange: @escaping (NSColor, CGFloat, CaptureStyle) -> Void) {
-        // Each capture starts by outlining elements; Tab switches to windows.
-        CaptureView.detectsWindows = false
+        // Each capture starts by outlining windows; Tab switches to elements.
+        CaptureView.detectsWindows = true
         for screen in frozen {
             let origin = Self.globalOrigin(of: screen.screen)
             let local = recent.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
