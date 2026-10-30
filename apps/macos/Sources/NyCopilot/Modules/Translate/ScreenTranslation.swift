@@ -9,9 +9,8 @@ import MacPlatform
 ///
 /// Keeping up cheaply: each display is glanced at five times a second at an eighth of its resolution.
 /// Where it changed, the highlights there are taken down at once — nothing stale stays up — and once
-/// it has settled, only the changed band of the screen is read again, at full resolution. Everything
-/// highlighted is translated in the background, so cards are usually ready before they're asked for;
-/// a block pointed at before then is translated first.
+/// it has settled, only the changed band of the screen is read again, at full resolution. Only a block
+/// you point at is translated, once the pointer rests on it, and never twice in a session.
 @MainActor
 final class ScreenTranslator {
     private let services: CopilotServices
@@ -227,7 +226,6 @@ final class ScreenTranslator {
         display.entries += found
         update(display)
         display.overlay.status = .ready
-        await translate(displays.flatMap(\.paragraphs).filter(\.needsTranslation).map(\.text))
     }
 
     /// Regroups a display's blocks and redraws its highlights; the card follows if its block went away.
@@ -239,31 +237,23 @@ final class ScreenTranslator {
 
     // MARK: Translating
 
-    /// The texts without a translation yet, in one batch; the card updates if it was waiting on one.
-    private func translate(_ texts: [String]) async {
-        var missing: [String] = [], bytes = 0
-        for text in texts where translations[text] == nil && !requested.contains(text) && !missing.contains(text) {
-            guard missing.count < 400, bytes + text.utf8.count < 60_000 else { break }
-            missing.append(text)
-            bytes += text.utf8.count
-        }
-        guard !missing.isEmpty else { return }
-        requested.formUnion(missing)
-        if missing.count > 1 { displays.forEach { $0.overlay.status = .translating(missing.count) } }
-        defer { requested.subtract(missing) }
+    /// The block pointed at, unless it's already translated or on its way; the card updates if it's
+    /// still showing that block when the translation arrives.
+    private func translate(_ text: String) async {
+        guard translations[text] == nil, !requested.contains(text) else { return }
+        requested.insert(text)
+        defer { requested.remove(text) }
         struct Batch: Decodable { let texts: [String] }
-        let params: [String: Any] = ["texts": missing, "target_language": language]
+        let params: [String: Any] = ["texts": [text], "target_language": language]
         do {
             let result = try await services.core.perform("translate.batch", params.merging(keys) { _, key in key }, as: Batch.self)
-            guard isActive, result.texts.count == missing.count else { return }
+            guard isActive, let translation = result.texts.first else { return }
             if translations.count > 5000 { translations = [:] }
-            for (source, text) in zip(missing, result.texts) { translations[source] = text }
-            displays.forEach { $0.overlay.status = .ready }
-            if let hovered, card.isVisible, let text = translations[hovered.paragraph.text] { card.show(text) }
+            translations[text] = translation
+            if let hovered, hovered.paragraph.text == text, card.isVisible { card.show(translation) }
         } catch {
-            guard isActive else { return }
-            displays.forEach { $0.overlay.status = .failed(error.localizedDescription) }
-            if let hovered, card.isVisible, missing.contains(hovered.paragraph.text) { card.show(failure: error.localizedDescription) }
+            guard isActive, let hovered, hovered.paragraph.text == text, card.isVisible else { return }
+            card.show(failure: error.localizedDescription)
         }
     }
 
@@ -277,8 +267,9 @@ final class ScreenTranslator {
         hover(display.paragraphs.last { $0.rect.insetBy(dx: -4, dy: -3).contains(point) }.map { (display, $0) })
     }
 
-    /// Brightens the block's highlight at once; its card follows after a brief pause, so moving across
-    /// the page doesn't flicker cards.
+    /// Brightens the block's highlight at once; its card — and its translation, if it needs one —
+    /// follows once the pointer has rested a moment, so sweeping across a page neither flickers cards
+    /// nor sends a request for every block passed over.
     private func hover(_ target: (display: Display, paragraph: Paragraph)?) {
         if target?.display === hovered?.display, target?.paragraph.text == hovered?.paragraph.text, target?.paragraph.rect == hovered?.paragraph.rect { return }
         hovered = target
@@ -289,7 +280,7 @@ final class ScreenTranslator {
         guard let target, target.paragraph.needsTranslation else { return }
         let work = DispatchWorkItem { [weak self] in self?.present(target) }
         pendingCard = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
     private func present(_ target: (display: Display, paragraph: Paragraph)) {
@@ -299,9 +290,8 @@ final class ScreenTranslator {
         if let text = translations[target.paragraph.text] {
             card.show(text)
         } else {
-            // Pointed at before the background batch got to it: this one goes first, on its own.
             card.showWaiting()
-            Task { await translate([target.paragraph.text]) }
+            Task { await translate(target.paragraph.text) }
         }
     }
 
@@ -401,7 +391,7 @@ private extension NSColor {
 @MainActor
 final class TranslationOverlay: NSWindow {
     enum Status: Equatable {
-        case reading, translating(Int), ready, failed(String)
+        case reading, ready
     }
 
     var status: Status = .reading { didSet { if status != oldValue { canvas.status = status } } }
@@ -561,8 +551,6 @@ final class TranslationOverlay: NSWindow {
             let state: String = switch status {
             case .ready: "Point at text to read it in \(language) · Esc to exit"
             case .reading: "Reading the screen… · Esc to exit"
-            case .translating(let count): "Translating \(count) block\(count == 1 ? "" : "s")… · Esc to exit"
-            case .failed(let message): message
             }
             let text = NSMutableAttributedString(string: "Screen translation", attributes: [
                 .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.white])

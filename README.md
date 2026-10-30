@@ -80,12 +80,11 @@ menu bar menu shows **Finish Setting Up…**.
   the page itself stays exactly as it is. Point at a block that isn't in your language and its lines
   are outlined and a card with its translation floats just below it. Lines wrapped from one paragraph are one block, so sentences are
   translated whole; sidebar labels, list items, and headings are their own blocks. Text is read on
-  your Mac, and everything highlighted is translated in the background through your engines in one
-  batch, so cards are usually ready before you point (a block you point at first jumps the queue).
+  your Mac; only a block you rest the pointer on is sent for translation (nothing is spent on text you
+  don't look at), and each is translated once a session, so coming back to it is instant.
   You keep using the computer as usual: clicks and scrolling go straight through. It keeps up as the
   screen changes: highlights disappear the moment what's under them changes, and once things settle,
-  only the changed part is read again and only new text is translated (nothing is translated twice in
-  a session). A glow around the screen edges and a pill at the bottom show it's on; **Esc** ends it
+  only the changed part is read again. A glow around the screen edges and a pill at the bottom show it's on; **Esc** ends it
   (or hold the shortcut again, or **Translate Screen** in the menu bar menu).
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations
   are stored, never your source text.
