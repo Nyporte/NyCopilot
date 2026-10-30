@@ -75,9 +75,9 @@ menu bar menu shows **Finish Setting Up…**.
     line breaks and indentation come back exactly.
   - **Test** in each section translates a sample with the values on screen, before you save.
 - **Hold ⌥⌘T** (the translate shortcut — a tap still opens the composer) to translate what's on
-  screen. Every block of text on every display that isn't in your language gets a soft highlight, like
-  Live Text — the page itself stays exactly as it is. Point at a highlighted block and a card with its
-  translation floats just below it. Lines wrapped from one paragraph are one block, so sentences are
+  screen. Like Live Text, the screen dims a little and every line of text on every display glows —
+  the page itself stays exactly as it is. Point at a block that isn't in your language and its lines
+  are outlined and a card with its translation floats just below it. Lines wrapped from one paragraph are one block, so sentences are
   translated whole; sidebar labels, list items, and headings are their own blocks. Text is read on
   your Mac, and everything highlighted is translated in the background through your engines in one
   batch, so cards are usually ready before you point (a block you point at first jumps the queue).

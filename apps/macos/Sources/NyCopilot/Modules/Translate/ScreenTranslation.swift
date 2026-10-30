@@ -2,8 +2,8 @@ import AppKit
 import Carbon
 import MacPlatform
 
-/// Screen translation: hold the translate shortcut and every block of text on every display that
-/// isn't in your language is highlighted, like Live Text. Point at one and a card with its translation
+/// Screen translation: hold the translate shortcut and every line of text on every display is
+/// highlighted, like Live Text. Point at a block not in your language and a card with its translation
 /// floats beside it. The page itself is left exactly as it is. The overlay lets every click and scroll
 /// through, so the computer works as usual underneath, and it keeps up as the screen changes. Esc ends it.
 ///
@@ -113,18 +113,20 @@ final class ScreenTranslator {
         let fontSize: CGFloat
     }
 
-    /// Lines wrapped from one paragraph: highlighted and translated as one block.
+    /// Lines wrapped from one paragraph: pointed at and translated as one block.
     struct Paragraph {
         let entries: [Entry]
         let text: String
         let rect: CGRect
+        /// Not already in the target language (nor just numbers or symbols): it gets a card.
+        let needsTranslation: Bool
     }
 
     /// Lines into paragraphs: directly below one another at line spacing, in the same column, the
     /// same size, on the same background. Only a line long enough to have wrapped carries on to the
     /// next — short labels stacked in a sidebar or a menu stay apart, and a paragraph's short last line
     /// ends it — and a bullet or number starts a new one.
-    static func paragraphs(_ entries: [Entry]) -> [Paragraph] {
+    static func paragraphs(_ entries: [Entry], language code: String?) -> [Paragraph] {
         var groups: [[Entry]] = []
         for entry in entries.sorted(by: { $0.line.rect.minY < $1.line.rect.minY }) {
             let candidates = groups.indices.filter { continues(groups[$0], with: entry) }
@@ -136,8 +138,9 @@ final class ScreenTranslator {
             }
         }
         return groups.map { group in
-            Paragraph(entries: group, text: ScreenText.joined(group.map(\.line.text)),
-                      rect: group.map(\.line.rect).reduce(group[0].line.rect) { $0.union($1) })
+            let text = ScreenText.joined(group.map(\.line.text))
+            return Paragraph(entries: group, text: text, rect: group.map(\.line.rect).reduce(group[0].line.rect) { $0.union($1) },
+                             needsTranslation: ScreenText.needsTranslation(text, into: code))
         }
     }
 
@@ -215,9 +218,8 @@ final class ScreenTranslator {
             return
         }
         let pixels = PixelSampler(crop, scale: scale, origin: band.origin)
-        let code = ScreenText.code(for: language)
+        // Every line is highlighted, whatever its language — only blocks that need it get translated.
         let found = lines.map { ScreenText.Line(text: $0.text, rect: $0.rect.offsetBy(dx: band.minX, dy: band.minY)) }
-            .filter { ScreenText.needsTranslation($0.text, into: code) }
             // Lines where the screen changed meanwhile wait for the next read.
             .filter { line in !display.changedDuringRead.contains { $0.intersects(line.rect) } }
             .map { Entry(line: $0, background: pixels.background(around: $0.rect), fontSize: ScreenText.fontSize(of: $0)) }
@@ -225,13 +227,13 @@ final class ScreenTranslator {
         display.entries += found
         update(display)
         display.overlay.status = .ready
-        await translate(displays.flatMap(\.paragraphs).map(\.text))
+        await translate(displays.flatMap(\.paragraphs).filter(\.needsTranslation).map(\.text))
     }
 
     /// Regroups a display's blocks and redraws its highlights; the card follows if its block went away.
     private func update(_ display: Display) {
-        display.paragraphs = Self.paragraphs(display.entries)
-        display.overlay.show(display.paragraphs.map(\.rect))
+        display.paragraphs = Self.paragraphs(display.entries, language: ScreenText.code(for: language))
+        display.overlay.show(display.entries.map(\.line.rect))
         pointerMoved()
     }
 
@@ -280,10 +282,11 @@ final class ScreenTranslator {
     private func hover(_ target: (display: Display, paragraph: Paragraph)?) {
         if target?.display === hovered?.display, target?.paragraph.text == hovered?.paragraph.text, target?.paragraph.rect == hovered?.paragraph.rect { return }
         hovered = target
-        displays.forEach { $0.overlay.hovered = $0 === target?.display ? target?.paragraph.rect : nil }
+        displays.forEach { $0.overlay.hovered = $0 === target?.display ? target?.paragraph.entries.map(\.line.rect) ?? [] : [] }
         pendingCard?.cancel()
         card.orderOut(nil)
-        guard let target else { return }
+        // Text already in your language is highlighted but has nothing to show.
+        guard let target, target.paragraph.needsTranslation else { return }
         let work = DispatchWorkItem { [weak self] in self?.present(target) }
         pendingCard = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
@@ -391,9 +394,9 @@ private extension NSColor {
     }
 }
 
-/// One display's overlay: a soft highlight over each block of text that can be translated (brighter
-/// under the pointer), a glow along the screen's edges, and a status pill. Every click and scroll goes
-/// through to what's underneath.
+/// One display's overlay, in the manner of Live Text: the screen dimmed a little except for its lines
+/// of text, which glow; the block under the pointer outlined; a glow along the screen's edges; and a
+/// status pill. Every click and scroll goes through to what's underneath.
 @MainActor
 final class TranslationOverlay: NSWindow {
     enum Status: Equatable {
@@ -401,8 +404,8 @@ final class TranslationOverlay: NSWindow {
     }
 
     var status: Status = .reading { didSet { if status != oldValue { canvas.status = status } } }
-    /// The block under the pointer, in this display's points (top-left).
-    var hovered: CGRect? { didSet { if hovered != oldValue { canvas.hovered = hovered } } }
+    /// The lines of the block under the pointer, in this display's points (top-left).
+    var hovered: [CGRect] = [] { didSet { if hovered != oldValue { canvas.hovered = hovered } } }
     private let canvas: Canvas
 
     init(screen: NSScreen, language: String) {
@@ -419,12 +422,12 @@ final class TranslationOverlay: NSWindow {
         setFrame(screen.frame, display: false)
     }
 
-    /// The blocks to highlight, in this display's points (top-left).
-    func show(_ blocks: [CGRect]) { canvas.blocks = blocks }
+    /// The lines to highlight, in this display's points (top-left).
+    func show(_ lines: [CGRect]) { canvas.lines = lines }
 
     private final class Canvas: NSView {
-        var blocks: [CGRect] = [] { didSet { needsDisplay = true } }
-        var hovered: CGRect? { didSet { needsDisplay = true } }
+        var lines: [CGRect] = [] { didSet { needsDisplay = true } }
+        var hovered: [CGRect] = [] { didSet { needsDisplay = true } }
         var status: Status = .reading { didSet { needsDisplay = true } }
         private let language: String
         /// The Dock's height at the bottom, if it's there.
@@ -440,15 +443,36 @@ final class TranslationOverlay: NSWindow {
 
         override var isFlipped: Bool { true }
 
+        private func shape(_ line: CGRect) -> NSBezierPath {
+            NSBezierPath(roundedRect: line.insetBy(dx: -3, dy: -2), xRadius: 4, yRadius: 4)
+        }
+
         override func draw(_ dirtyRect: NSRect) {
-            let accent = NSColor.controlAccentColor
-            for block in blocks {
-                let lit = block == hovered
-                let path = NSBezierPath(roundedRect: block.insetBy(dx: -4, dy: -3), xRadius: 5, yRadius: 5)
-                accent.withAlphaComponent(lit ? 0.2 : 0.09).setFill()
-                path.fill()
-                accent.withAlphaComponent(lit ? 0.9 : 0.4).setStroke()
-                path.lineWidth = lit ? 1.5 : 1
+            guard let context = NSGraphicsContext.current?.cgContext else { return }
+            // Dim the screen, then cut every line back out, so the text stands out as with Live Text.
+            NSColor.black.withAlphaComponent(0.2).setFill()
+            bounds.fill()
+            context.setBlendMode(.clear)
+            for line in lines { shape(line).fill() }
+            context.setBlendMode(.normal)
+            // A soft white glow along each line's edge.
+            NSGraphicsContext.saveGraphicsState()
+            let glow = NSShadow()
+            glow.shadowColor = NSColor.white.withAlphaComponent(0.9)
+            glow.shadowBlurRadius = 5
+            glow.set()
+            NSColor.white.withAlphaComponent(0.75).setStroke()
+            for line in lines {
+                let path = shape(line)
+                path.lineWidth = 1
+                path.stroke()
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            // The block under the pointer, outlined line by line.
+            NSColor.controlAccentColor.setStroke()
+            for line in hovered {
+                let path = shape(line)
+                path.lineWidth = 2
                 path.stroke()
             }
             drawEdges()
@@ -470,7 +494,7 @@ final class TranslationOverlay: NSWindow {
         /// the least text to cover.
         private func drawPill() {
             let state: String = switch status {
-            case .ready: "Point at highlighted text to read it in \(language) · Esc to exit"
+            case .ready: "Point at text to read it in \(language) · Esc to exit"
             case .reading: "Reading the screen… · Esc to exit"
             case .translating(let count): "Translating \(count) block\(count == 1 ? "" : "s")… · Esc to exit"
             case .failed(let message): message
