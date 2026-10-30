@@ -175,8 +175,8 @@ final class TranslateShell: ModuleShell {
         }
     }
 
-    /// The result is already in history. Paste once into the verified field; anything less certain
-    /// falls back to the clipboard with a short note.
+    /// The result is already in history. Paste once into the field the composer came from; if that
+    /// can't be done safely, the translation goes on the clipboard with a short note.
     private func deliver(_ text: String, id: UUID) async {
         let anchor = Self.anchor(for: target).map(Self.appKitRect)
         guard let target else {
@@ -190,7 +190,10 @@ final class TranslateShell: ModuleShell {
             return
         }
         do {
-            try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
+            let verified = try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
+            if !verified {
+                services.toast.show("Pasted", detail: "It’s on your clipboard too, in case the app didn’t take it.", style: .success, near: anchor)
+            }
         } catch is CancellationError {
         } catch TemporaryPasteboard.Failure.restoreFailed {
             services.toast.show("Pasted", detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)

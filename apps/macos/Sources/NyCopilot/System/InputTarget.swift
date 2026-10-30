@@ -7,24 +7,30 @@ import os
 /// Geometry and roles only; captured text is never logged.
 private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "capture")
 
-/// An immutable snapshot binds a composition to one field, its contents, and its original selection.
+/// The field a composition goes back to. A *verified* target is a text field macOS Accessibility can
+/// read: NyCopilot restores its focus and selection and pastes through a temporary clipboard. Some
+/// editors never expose their text (canvas editors, some web views); for those the target is just the
+/// app and whatever it had focused, and the translation is pasted there and left on the clipboard,
+/// so it is never lost if the app ignores the paste.
 final class InputTarget: @unchecked Sendable {
     let processIdentifier: pid_t
     let frame: CGRect?
     /// The text cursor (or selection) on screen, in AX coordinates, when the app reports it.
     let caret: CGRect?
-    private let element: AXUIElement
+    /// The field's text and selection when the composer opened; nil when the field can't be read.
+    private let original: (value: String, range: CFRange)?
+    private let element: AXUIElement?
     private let sourceWindow: AXUIElement?
-    private let originalValue: String
-    private let originalRange: CFRange
+
+    var isVerified: Bool { original != nil }
 
     /// Keep accessibility objects alive while the user composes without storing anything on disk.
-    private init(pid: pid_t, element: AXUIElement, window: AXUIElement?, value: String, range: CFRange, frame: CGRect?, caret: CGRect?) {
+    private init(pid: pid_t, element: AXUIElement?, window: AXUIElement?, original: (value: String, range: CFRange)?,
+                 frame: CGRect?, caret: CGRect?) {
         processIdentifier = pid
         self.element = element
         sourceWindow = window
-        originalValue = value
-        originalRange = range
+        self.original = original
         self.frame = frame
         self.caret = caret
     }
@@ -35,58 +41,83 @@ final class InputTarget: @unchecked Sendable {
         return try await Task.detached(priority: .userInitiated) {
             let app = AXUIElementCreateApplication(pid)
             AXUIElementSetMessagingTimeout(app, 0.5)
-            guard let element = focusedElement(in: app) else { throw Failure.unsupportedField }
-            AXUIElementSetMessagingTimeout(element, 0.5)
-            let role = attribute(element, kAXRoleAttribute) as? String
-            let subrole = attribute(element, kAXSubroleAttribute) as? String
-            guard subrole != kAXSecureTextFieldSubrole else { throw Failure.secureField }
-            guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role ?? ""),
-                  attribute(element, kAXEnabledAttribute) as? Bool != false,
-                  let value = attribute(element, kAXValueAttribute) as? String,
-                  value.utf8.count <= 1024 * 1024,
-                  let range = selectedRange(element),
-                  TextInsertion.replacing(value, range: NSRange(location: range.location, length: range.length), with: "") != nil else {
-                throw Failure.unsupportedField
+            let appName = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
+            var element = focusedElement(in: app)
+            if readable(element) == nil, exposeWebContent(app, pid: pid) {
+                // Chromium builds the tree on request, a moment later.
+                for _ in 0..<10 where readable(element) == nil {
+                    try? await Task.sleep(nanoseconds: 50_000_000)
+                    element = focusedElement(in: app)
+                }
+            }
+            if let element { AXUIElementSetMessagingTimeout(element, 0.5) }
+            let role = element.flatMap { attribute($0, kAXRoleAttribute) as? String }
+            guard element.flatMap({ attribute($0, kAXSubroleAttribute) as? String }) != kAXSecureTextFieldSubrole else {
+                throw Failure.secureField
+            }
+            let window = element.flatMap { elementAttribute($0, kAXWindowAttribute) }
+            if let window { AXUIElementSetMessagingTimeout(window, 0.5) }
+            guard let element, let original = readable(element) else {
+                log.notice("captured \(appName, privacy: .public) unverified, role=\(role ?? "none", privacy: .public)")
+                return InputTarget(pid: pid, element: element, window: window, original: nil, frame: nil, caret: nil)
             }
             // AX uses screen coordinates with a top-left origin; conversion happens in the UI.
             var position = CGPoint.zero
             var size = CGSize.zero
             let hasFrame = readAXValue(element, name: kAXPositionAttribute, type: .cgPoint, into: &position)
                 && readAXValue(element, name: kAXSizeAttribute, type: .cgSize, into: &size)
-            let window = elementAttribute(element, kAXWindowAttribute)
-            if let window { AXUIElementSetMessagingTimeout(window, 0.5) }
             let frame = hasFrame ? CGRect(origin: position, size: size) : nil
-            let appName = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
-            let caret = locateCaret(element, app: app, range: range, text: value as NSString, frame: frame, appName: appName)
+            let caret = locateCaret(element, app: app, range: original.range, text: original.value as NSString, frame: frame, appName: appName)
             log.notice("""
                 captured \(appName, privacy: .public) role=\(role ?? "?", privacy: .public) \
                 frame=\(String(describing: frame), privacy: .public) caret=\(String(describing: caret), privacy: .public)
                 """)
-            return InputTarget(pid: pid, element: element, window: window, value: value, range: range,
-                               frame: frame, caret: caret)
+            return InputTarget(pid: pid, element: element, window: window, original: original, frame: frame, caret: caret)
         }.value
     }
 
-    /// Detect edits and caret movement before any mutation, including a request completed much later.
+    /// An enabled text field's text and selection, if the element is one.
+    private static func readable(_ element: AXUIElement?) -> (value: String, range: CFRange)? {
+        guard let element,
+              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(attribute(element, kAXRoleAttribute) as? String ?? ""),
+              attribute(element, kAXEnabledAttribute) as? Bool != false,
+              let value = attribute(element, kAXValueAttribute) as? String,
+              value.utf8.count <= 1024 * 1024,
+              let range = selectedRange(element),
+              TextInsertion.replacing(value, range: NSRange(location: range.location, length: range.length), with: "") != nil else {
+            return nil
+        }
+        return (value, range)
+    }
+
+    /// Electron apps (Claude, Slack, VS Code…) keep their web content out of Accessibility until a
+    /// client asks for it; true when the app takes the request.
+    private static func exposeWebContent(_ app: AXUIElement, pid: pid_t) -> Bool {
+        let accepted = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success
+        let electron = NSRunningApplication(processIdentifier: pid)?.bundleURL.map {
+            FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
+        } ?? false
+        return accepted || electron
+    }
+
+    /// The field is still there to paste into. Its text may have changed meanwhile — apps update
+    /// drafts, and the paste goes wherever the cursor is — so only its disappearance stops a paste.
     func validate() async throws {
         try await Task.detached(priority: .userInitiated) { [self] in
             try validateSnapshot()
         }.value
     }
 
-    /// Recheck the immutable snapshot before restoring focus or sending a paste event.
     private func validateSnapshot() throws {
-        guard let value = Self.attribute(element, kAXValueAttribute) as? String,
-              value == originalValue,
-              let range = Self.selectedRange(element),
-              range.location == originalRange.location, range.length == originalRange.length else {
-            throw Failure.targetChanged
-        }
+        guard let element, original != nil else { return }
+        guard Self.attribute(element, kAXValueAttribute) is String else { throw Failure.targetChanged }
     }
 
-    /// Activate and verify the exact field; no keystroke is sent to an unverified foreground target.
+    /// Activate and verify the field; no keystroke is sent unless the app is back in front with the
+    /// same field (when it has one) focused. Returns whether the paste went to a verified field.
     @MainActor
-    func insert(_ text: String, prepareForPaste: () async -> Void) async throws {
+    @discardableResult
+    func insert(_ text: String, prepareForPaste: () async -> Void) async throws -> Bool {
         try await InputFocusHandoff.restore(
             foreground: {
                 switch NSWorkspace.shared.frontmostApplication?.processIdentifier {
@@ -111,24 +142,44 @@ final class InputTarget: @unchecked Sendable {
         try await validate()
         try Task.checkCancellation()
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier else { throw Failure.focusChanged }
+        await restoreSelection()
 
         // Always use native paste so web editors receive their normal input and paste events.
         try await paste(text)
+        return isVerified
     }
 
-    /// Restore the captured window and exact AX field, not whichever control happens to be focused.
+    /// Restore the captured window and field, not whichever control happens to be focused.
     private func restoreOriginalField() async throws {
         try await Task.detached(priority: .userInitiated) { [self] in
             try validateSnapshot()
             if let sourceWindow { _ = AXUIElementPerformAction(sourceWindow, kAXRaiseAction as CFString) }
+            guard let element else { return }
             let status = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-            guard status == .success else { throw InputFocusHandoff.Failure.restorationFailed }
+            // A field that can't be read may not take focus by request either; its app restores it.
+            guard status == .success || original == nil else { throw InputFocusHandoff.Failure.restorationFailed }
+        }.value
+    }
+
+    /// Web editors often move the cursor when focus comes back; put the original selection back, so
+    /// the translation replaces what was selected, or lands where the cursor was. Left alone if the
+    /// text itself changed.
+    private func restoreSelection() async {
+        await Task.detached(priority: .userInitiated) { [self] in
+            guard let element, let original, Self.attribute(element, kAXValueAttribute) as? String == original.value,
+                  let range = Self.selectedRange(element),
+                  range.location != original.range.location || range.length != original.range.length else { return }
+            var wanted = original.range
+            guard let value = AXValueCreate(.cfRange, &wanted) else { return }
+            _ = AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, value)
         }.value
     }
 
     /// An editor may focus its inner text node; accept only the captured field or its descendants.
+    /// With no field captured, the app being in front is all that can be checked.
     private func isFocused() async -> Bool {
-        await Task.detached(priority: .userInitiated) { [self] in
+        guard let element else { return true }
+        return await Task.detached(priority: .userInitiated) { [self] in
             let app = AXUIElementCreateApplication(processIdentifier)
             AXUIElementSetMessagingTimeout(app, 0.5)
             var focused = Self.focusedElement(in: app)
@@ -142,7 +193,8 @@ final class InputTarget: @unchecked Sendable {
         }.value
     }
 
-    /// Snapshot all clipboard types and restore them only if no other app changed the clipboard.
+    /// A verified field gets the text through a temporary clipboard that is then restored; an
+    /// unverified one keeps the translation on the clipboard, in case the app ignored the paste.
     @MainActor
     private func paste(_ text: String) async throws {
         guard let source = CGEventSource(stateID: .privateState),
@@ -152,6 +204,13 @@ final class InputTarget: @unchecked Sendable {
         }
         down.flags = .maskCommand
         up.flags = .maskCommand
+        guard isVerified else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            down.postToPid(processIdentifier)
+            up.postToPid(processIdentifier)
+            return
+        }
         try await TemporaryPasteboard.withText(text, validate: {
             try await self.validate()
             guard await self.isFocused(),
@@ -267,14 +326,13 @@ final class InputTarget: @unchecked Sendable {
 
     /// On any uncertainty the result remains available for manual copy instead of another write.
     enum Failure: LocalizedError {
-        case permissionRequired, unsupportedField, secureField, targetChanged, focusChanged
+        case permissionRequired, secureField, targetChanged, focusChanged
         case pasteUnavailable
         var errorDescription: String? {
             switch self {
             case .permissionRequired: return "NyCopilot needs Accessibility access to work with text fields."
-            case .unsupportedField: return "This field doesn’t expose its text to macOS Accessibility."
             case .secureField: return "NyCopilot never reads or writes password fields."
-            case .targetChanged: return "The original text changed while you were typing, so NyCopilot didn’t paste."
+            case .targetChanged: return "The original field closed while you were typing, so NyCopilot didn’t paste."
             case .focusChanged: return "Focus moved to another field, so NyCopilot didn’t paste."
             case .pasteUnavailable: return "macOS couldn’t create a paste event."
             }

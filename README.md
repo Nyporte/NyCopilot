@@ -57,10 +57,12 @@ menu bar menu shows **Finish Setting Up…**.
   language (EN, 中, 日…). **Tab** and **Shift+Tab** step through your favorite languages; the choice
   is remembered. **Return** translates and replaces your selection, **Shift+Return** adds a line,
   **Esc** cancels. Return confirms an input-method candidate first; nothing is submitted in your app.
-- If the field can't be edited directly, or Accessibility is off, the composer works in **copy mode**
-  and puts the translation on your clipboard. If anything changes before pasting (you switched apps,
-  edited the field, moved the cursor), NyCopilot doesn't paste; the result goes to your clipboard and
-  History with a short note.
+- The translation is pasted back into the field you came from, with your selection and clipboard
+  restored. Electron apps (Claude, Slack, VS Code…) are asked to expose their text fields first. A
+  field that still can't be read (some web and canvas editors) gets the paste too, once its app is
+  back in front, and the translation stays on your clipboard in case the app ignores it. If you
+  switched apps or fields meanwhile, NyCopilot doesn't paste; the result goes to your clipboard and
+  History with a short note. With Accessibility off, the composer works in **copy mode**.
 - **Engines** (Settings → Translate) lists the translation services in the order they're tried —
   Google Translate, Volcengine, then the model by default. ▲ ▼ reorder them and each has a switch.
   A translation goes to the first engine that's on and set up; when it fails, or doesn't offer the
