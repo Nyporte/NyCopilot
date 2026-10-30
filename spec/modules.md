@@ -24,7 +24,7 @@ can't provide them doesn't load the module.
 | Module | Core (Rust) | macOS shell | Status |
 | --- | --- | --- | --- |
 | `llm` — Model | Provider settings, Chat Completions client, connection test | Model pane in Settings, Keychain | Shipped |
-| `translate` — Translate | Google Translate via an Apps Script web app with model fallback, editable instructions, favorite languages and Tab cycling, badge codes and native names, whitespace trimming, history collection, legacy import | Composer at the text cursor, capture and paste, History window, Translate pane (language list, Google Translate, instructions, shortcuts) | Shipped |
+| `translate` — Translate | ordered translation engines (Google Translate via an Apps Script web app, Volcengine, the model) with fallback, editable instructions, favorite languages and Tab cycling, badge codes and native names, whitespace trimming, history collection, legacy import | Composer at the text cursor, capture and paste, History window, Translate pane (language list, engines, Google and Volcengine setup, instructions, shortcuts) | Shipped |
 | `windows` — Window Layouts | Layout geometry (halves, corners, thirds, maximize, center, resize), gaps, size cycling, display moves, drag snap areas | Shortcuts, Accessibility window moves, restore memory, drag monitor and preview, Windows pane | Shipped |
 | `capture` — Screenshot & Pin | Output settings (folder, format, file name pattern), annotation style, pin shadow, capture history and recent regions, safe file names | Screen freeze per display, window detection, selection and magnifier, eight annotation tools, copy/save/pin, pins (zoom, opacity, rotate, flip, click-through), pin clipboard, Screenshot pane | Shipped |
 

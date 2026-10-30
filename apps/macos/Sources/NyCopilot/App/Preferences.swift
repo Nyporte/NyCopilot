@@ -20,9 +20,11 @@ final class Preferences {
         Provider(endpoint: core.setting(.llmEndpoint, default: ""), model: core.setting(.llmModel, default: ""))
     }
 
-    /// Something can translate: a model, or Google Translate through a web app.
+    /// Some translation engine is on and set up.
     var canTranslate: Bool {
-        provider.isComplete || (core.setting(.googleEnabled, default: true) && !core.setting(.googleURL, default: "").isEmpty)
+        (core.setting(.modelEnabled, default: true) && provider.isComplete)
+            || (core.setting(.googleEnabled, default: true) && !core.setting(.googleURL, default: "").isEmpty)
+            || (core.setting(.volcengineEnabled, default: true) && KeychainStore.hasKey(.volcengine))
     }
 
     /// Validated by the core. The model is checked first so an invalid pair never half-saves.

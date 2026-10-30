@@ -44,8 +44,8 @@ A short guide opens on first launch:
    windows.
 2. **Connect a translator.** Settings → Model takes any OpenAI-compatible Chat Completions endpoint,
    hosted or local (Ollama, LM Studio…), a model ID, and an optional API key; **Test Connection** checks
-   it. Or set up **Google Translate** in Settings → Translate (below). Either is enough; with both,
-   Google goes first and the model is the fallback.
+   it. Or set up **Google Translate** or **Volcengine** in Settings → Translate (below). Any one is
+   enough; with several, they back each other up.
 3. **Try it.** Press ⌥⌘T in any text field.
 
 Screenshot & Pin asks for **Screen Recording** the first time you capture. Until setup is done, the
@@ -61,12 +61,19 @@ menu bar menu shows **Finish Setting Up…**.
   and puts the translation on your clipboard. If anything changes before pasting (you switched apps,
   edited the field, moved the cursor), NyCopilot doesn't paste; the result goes to your clipboard and
   History with a short note.
-- **Google Translate** (Settings → Translate) goes first when it's on and has a web app URL. Your
-  Apps Script web app receives `{key, text, source: "auto", target}` as a POST body and answers with
-  `{code, translated}`. Deploy it with **Execute as: Me** and **Who has access: Anyone**: any other
-  access setting sends requests to Google's sign-in page, so the script never runs. **Test** translates
-  a sample with the values on screen. The model takes over, with a short note, when Google fails, and
-  for languages Google has no code for, such as "formal Japanese".
+- **Engines** (Settings → Translate) lists the translation services in the order they're tried —
+  Google Translate, Volcengine, then the model by default. ▲ ▼ reorder them and each has a switch.
+  A translation goes to the first engine that's on and set up; when it fails, or doesn't offer the
+  language, the next one takes over and a short note says which failed and why. Only the model
+  follows the instructions, and only the model handles qualified languages such as "formal Japanese".
+  - **Google Translate** runs through your own Apps Script web app, which receives
+    `{key, text, source: "auto", target}` as a POST body and answers with `{code, translated}`. Deploy
+    it with **Execute as: Me** and **Who has access: Anyone**; any other access setting sends requests
+    to Google's sign-in page, so the script never runs.
+  - **Volcengine** is Doubao's machine translation (32 languages). Paste an API key from the new
+    console, or an App ID and access token from the old one. Each line is translated separately, so
+    line breaks and indentation come back exactly.
+  - **Test** in each section translates a sample with the values on screen, before you save.
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations
   are stored, never your source text.
 - **Settings → Translate**
@@ -140,16 +147,16 @@ Keyboard. **Settings → General** shows the Accessibility status and an **Open 
 ## Privacy and data
 
 - Text is sent only when you press Return in Translate, and only to the services you configured
-  (your Google web app, then the model if Google fails). There
+  (the first engine that succeeds, in your order). There
   is no telemetry. Screenshots never leave your Mac.
 - Data lives in `~/Library/Application Support/NyCopilot/nycopilot.db` (folder 0700, file 0600):
   settings, translation history, and capture history (regions and file paths, not images). Deleting
   an item removes its content immediately and leaves a content-free tombstone for future sync.
-- The model's API key and the Google web app's access key are stored only in the macOS Keychain
-  (`dev.nycopilot.NyCopilot`) and passed to the core per request; they are never written to the
-  database or to preferences. The access key travels only in the POST body, never in a URL.
+- The model's API key, the Google web app's access key, and the Volcengine key are stored only in the
+  macOS Keychain (`dev.nycopilot.NyCopilot`) and passed to the core per request; they are never written
+  to the database or to preferences, and never put in a URL.
 - Requests are bounded: 64 KiB of input, 1 MiB reply, 60 s total, no retries, no caching. Model
-  requests follow no redirects; Google requests follow exactly one, to `script.googleusercontent.com`,
+  and Volcengine requests follow no redirects; Google requests follow exactly one, to `script.googleusercontent.com`,
   as a plain GET without the key. HTTP errors never expose the server's response body.
 
 ## Coming from NyTranslate

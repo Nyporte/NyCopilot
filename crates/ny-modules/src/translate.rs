@@ -6,7 +6,7 @@ use std::time::Instant;
 use ny_core::{parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use ny_llm::{ChatPrompt, ProviderConfig};
 
-use crate::google;
+use crate::{google, volcengine};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -106,35 +106,124 @@ pub fn validate_instructions(instructions: &str) -> Result<()> {
     Ok(())
 }
 
-/// Which service produced a translation, and why the preferred one was skipped, if it was.
+/// A service that can translate. They are tried in the user's order; each is skipped when it's off,
+/// not set up, or has no code for the language, and the next one takes over when one fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine { Google, Volcengine, Model }
+
+impl Engine {
+    pub const ALL: [Engine; 3] = [Engine::Google, Engine::Volcengine, Engine::Model];
+
+    pub fn id(self) -> &'static str {
+        match self { Engine::Google => "google", Engine::Volcengine => "volcengine", Engine::Model => "model" }
+    }
+
+    /// As used mid-sentence: "Google Translate failed, so the model translated this."
+    pub fn name(self) -> &'static str {
+        match self { Engine::Google => "Google Translate", Engine::Volcengine => "Volcengine", Engine::Model => "the model" }
+    }
+
+    fn enabled_setting(self) -> String { format!("translate.{}_enabled", self.id()) }
+
+    fn from_id(id: &str) -> Option<Engine> { Engine::ALL.into_iter().find(|engine| engine.id() == id) }
+}
+
+/// The saved order, with any engine it doesn't mention appended, so new engines always take part.
+pub fn engine_order(core: &Core) -> Result<Vec<Engine>> {
+    let mut order: Vec<Engine> = Vec::new();
+    let saved = core.setting::<Vec<String>>("translate.engine_order")?;
+    for engine in saved.iter().filter_map(|id| Engine::from_id(id)).chain(Engine::ALL) {
+        if !order.contains(&engine) { order.push(engine); }
+    }
+    Ok(order)
+}
+
+/// A permutation of some engine ids, without repeats.
+pub fn validate_engine_order(value: &Value) -> Result<()> {
+    let invalid = || NyError::invalid_setting("The engine order lists google, volcengine, and model, each at most once.");
+    let ids = value.as_array().ok_or_else(invalid)?;
+    let mut seen = Vec::new();
+    for id in ids {
+        let engine = id.as_str().and_then(Engine::from_id).ok_or_else(invalid)?;
+        if seen.contains(&engine) { return Err(invalid()); }
+        seen.push(engine);
+    }
+    Ok(())
+}
+
+/// Secrets for each engine, read by the client from its credential store for this one request.
+#[derive(Default, Deserialize)]
+pub struct Keys { #[serde(default)] pub api_key: String, #[serde(default)] pub google_key: String, #[serde(default)] pub volcengine_key: String }
+
+/// Which engine produced a translation, and why earlier ones didn't, if any failed.
 pub struct Translation { pub text: String, pub engine: &'static str, pub notice: Option<String> }
 
-/// Google first when it is on, set up, and has a code for the language; the model otherwise, and
-/// whenever Google fails. Text that is empty or too long fails the same way on both, so it isn't retried.
-pub fn translate_text(core: &Core, text: &str, language: &str, api_key: &str, google_key: &str) -> Result<Translation> {
-    let model = ProviderConfig::from_core(core)?;
-    let via_model = || -> Result<String> {
-        let instructions = core.setting::<String>("translate.instructions")?;
-        ny_llm::complete(&prompt(text, language, &instructions), &model, api_key)
-    };
-    let url = core.setting::<String>("translate.google_url")?;
-    if !core.setting::<bool>("translate.google_enabled")? || url.trim().is_empty() {
-        return Ok(Translation { text: via_model()?, engine: "model", notice: None });
+/// Try each ready engine in order until one succeeds.
+pub fn translate_text(core: &Core, text: &str, language: &str, keys: &Keys) -> Result<Translation> {
+    if text.trim().is_empty() { return Err(NyError::new("empty_input", "Type something first.")); }
+    let mut failures: Vec<(Engine, NyError)> = Vec::new();
+    let mut lacks_language = false;
+    for engine in engine_order(core)? {
+        if !core.setting::<bool>(&engine.enabled_setting())? { continue; }
+        let attempt = match engine {
+            Engine::Google => {
+                let url = core.setting::<String>("translate.google_url")?;
+                if url.trim().is_empty() { continue; }
+                let Some(code) = google::language_code(language) else { lacks_language = true; continue };
+                google::translate(&url, &keys.google_key, text, &code)
+            }
+            Engine::Volcengine => {
+                if keys.volcengine_key.trim().is_empty() { continue; }
+                let Some(code) = volcengine::language_code(language) else { lacks_language = true; continue };
+                volcengine::translate(&volcengine::endpoint(), &core.setting::<String>("translate.volcengine_app_id")?,
+                                      &keys.volcengine_key, text, &code)
+            }
+            Engine::Model => {
+                let model = ProviderConfig::from_core(core)?;
+                if !model.is_complete() { continue; }
+                let instructions = core.setting::<String>("translate.instructions")?;
+                ny_llm::complete(&prompt(text, language, &instructions), &model, &keys.api_key)
+            }
+        };
+        match attempt {
+            Ok(text) => {
+                let notice = (!failures.is_empty()).then(|| format!("{} failed, so {} translated this. {}",
+                    capitalized(&names(&failures)), engine.name(), reasons(&failures)));
+                return Ok(Translation { text, engine: engine.id(), notice });
+            }
+            Err(error) => failures.push((engine, error)),
+        }
     }
-    let Some(code) = google::language_code(language) else {
-        if model.is_complete() { return Ok(Translation { text: via_model()?, engine: "model", notice: None }); }
-        return Err(NyError::new("unsupported_language", format!(
-            "Google Translate has no code for “{language}”. Choose a standard language, or connect a model in Settings → Model.")));
-    };
-    match google::translate(&url, google_key, text, &code) {
-        Ok(text) => Ok(Translation { text, engine: "google", notice: None }),
-        Err(error) if model.is_complete() && !matches!(error.code.as_str(), "empty_input" | "input_too_large") => match via_model() {
-            Ok(text) => Ok(Translation { text, engine: "model",
-                                         notice: Some(format!("Google Translate failed, so the model translated this. {}", error.message)) }),
-            Err(fallback) => Err(NyError { message: format!("{} The model fallback failed too: {}", error.message, fallback.message), ..error }),
-        },
-        Err(error) => Err(error),
+    match failures.len() {
+        0 if lacks_language => Err(NyError::new("unsupported_language", format!(
+            "None of your translation services offers “{language}”. Choose a standard language, or connect a model in Settings → Model."))),
+        0 => Err(NyError::new("provider_not_configured",
+            "Set up a translation service first: Google Translate or Volcengine in Settings → Translate, or a model in Settings → Model.")),
+        1 => Err(failures.remove(0).1),
+        _ => {
+            let message = reasons(&failures);
+            Err(NyError { message, ..failures.remove(0).1 })
+        }
     }
+}
+
+fn names(failures: &[(Engine, NyError)]) -> String {
+    let names: Vec<&str> = failures.iter().map(|(engine, _)| engine.name()).collect();
+    match names.as_slice() {
+        [one] => one.to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        [] => String::new(),
+    }
+}
+
+fn reasons(failures: &[(Engine, NyError)]) -> String {
+    if let [(_, error)] = failures { return error.message.clone(); }
+    failures.iter().map(|(engine, error)| format!("{}: {}", capitalized(engine.name()), error.message)).collect::<Vec<_>>().join(" ")
+}
+
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| first.to_uppercase().chain(chars).collect())
 }
 
 /// Source text travels only as the user message so it cannot rewrite the instructions.
@@ -161,14 +250,20 @@ impl Module for TranslateModule {
                                  "Remove spaces, tabs, and line breaks from the start and end of each translation."),
                 SettingSpec::new("translate.favorite_languages", json!(DEFAULT_FAVORITES), Scope::Synced,
                                  "Languages that Tab steps through in the composer, in order."),
-                SettingSpec::new("translate.google_enabled", json!(true), Scope::Synced,
-                                 "Try Google Translate before the model when a web app URL is set."),
+                SettingSpec::new("translate.engine_order", json!(Engine::ALL.map(Engine::id)), Scope::Synced,
+                                 "Translation services in the order they are tried; the next takes over when one fails."),
+                SettingSpec::new("translate.google_enabled", json!(true), Scope::Synced, "Use Google Translate when its web app URL is set."),
                 SettingSpec::new("translate.google_url", json!(""), Scope::Synced,
-                                 "The Apps Script web app (/exec URL) that runs Google Translate; empty uses the model only."),
+                                 "The Apps Script web app (/exec URL) that runs Google Translate."),
+                SettingSpec::new("translate.volcengine_enabled", json!(true), Scope::Synced, "Use Volcengine when its key is saved."),
+                SettingSpec::new("translate.volcengine_app_id", json!(""), Scope::Synced,
+                                 "Volcengine App ID, only for old-console credentials (App ID + access token)."),
+                SettingSpec::new("translate.model_enabled", json!(true), Scope::Synced, "Use the model when one is connected."),
             ],
             commands: vec![
-                CommandSpec::new("run", "Translate {text, target_language?, api_key?, google_key?, request_id?}, Google first → {text, target_language, engine, notice?, record}."),
+                CommandSpec::new("run", "Translate {text, target_language?, api_key?, google_key?, volcengine_key?, request_id?} with the first engine that succeeds → {text, target_language, engine, notice?, record}."),
                 CommandSpec::new("test_google", "Check a web app: {url, key} → {text, elapsed_ms} for a short sample."),
+                CommandSpec::new("test_volcengine", "Check Volcengine credentials: {app_id?, key} → {text, elapsed_ms} for a short sample."),
                 CommandSpec::new("languages", "Suggested languages: [{name, native, code}]."),
                 CommandSpec::new("cycle", "Step the target through the favorites: {step: 1 or -1} → {target_language, native, code}."),
                 CommandSpec::new("native_name", "A language's own name and badge code: {language} → {native, code}."),
@@ -179,10 +274,7 @@ impl Module for TranslateModule {
 
     fn call(&self, core: &Core, command: &str, params: Value) -> Result<Value> {
         #[derive(Deserialize)]
-        struct Run {
-            text: String, target_language: Option<String>, #[serde(default)] api_key: String,
-            #[serde(default)] google_key: String, request_id: Option<String>,
-        }
+        struct Run { text: String, target_language: Option<String>, request_id: Option<String>, #[serde(flatten)] keys: Keys }
         #[derive(Deserialize)]
         struct Import { path: PathBuf }
         match command {
@@ -192,7 +284,7 @@ impl Module for TranslateModule {
                 let language = match p.target_language { Some(l) => l, None => core.setting::<String>("translate.target_language")? };
                 let language = language.trim().to_string();
                 validate_language(&language)?;
-                let result = translate_text(core, &p.text, &language, &p.api_key, &p.google_key)?;
+                let result = translate_text(core, &p.text, &language, &p.keys)?;
                 let text = finish(result.text, core.setting("translate.trim_whitespace")?);
                 request.check()?;
                 // Saved before the client attempts to paste, so a failed paste never loses the result.
@@ -207,6 +299,15 @@ impl Module for TranslateModule {
                 google::validate_url(&p.url)?;
                 let started = Instant::now();
                 let text = google::translate(&p.url, &p.key, "Hello, world.", "zh-CN")?;
+                Ok(json!({ "text": text, "elapsed_ms": started.elapsed().as_millis() as u64 }))
+            }
+            "test_volcengine" => {
+                #[derive(Deserialize)]
+                struct Test { #[serde(default)] app_id: String, key: String }
+                let p: Test = parse(params)?;
+                volcengine::validate_app_id(&p.app_id)?;
+                let started = Instant::now();
+                let text = volcengine::translate(&volcengine::endpoint(), &p.app_id, &p.key, "Hello, world.", "zh")?;
                 Ok(json!({ "text": text, "elapsed_ms": started.elapsed().as_millis() as u64 }))
             }
             "languages" => Ok(json!(SUGGESTED_LANGUAGES.iter()
@@ -242,6 +343,8 @@ impl Module for TranslateModule {
             "translate.instructions" => validate_instructions(text),
             "translate.favorite_languages" => validate_favorites(value),
             "translate.google_url" if !text.trim().is_empty() => google::validate_url(text),
+            "translate.volcengine_app_id" => volcengine::validate_app_id(text),
+            "translate.engine_order" => validate_engine_order(value),
             // Booleans such as trim_whitespace are already type-checked against their default.
             _ => Ok(()),
         }

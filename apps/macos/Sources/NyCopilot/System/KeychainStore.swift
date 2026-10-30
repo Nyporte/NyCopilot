@@ -1,13 +1,19 @@
 import Foundation
 import Security
 
-/// Store secrets — the model provider's API key and the Google web app's access key — without
+/// Store secrets — the model provider's API key and the translation services' keys — without
 /// writing them to defaults or project files.
 enum KeychainStore {
     enum Item {
-        case provider, google
+        case provider, google, volcengine
 
-        fileprivate var account: String { self == .provider ? "provider-api-key" : "google-translate-key" }
+        fileprivate var account: String {
+            switch self {
+            case .provider: "provider-api-key"
+            case .google: "google-translate-key"
+            case .volcengine: "volcengine-key"
+            }
+        }
     }
 
     private static let service = "dev.nycopilot.NyCopilot"

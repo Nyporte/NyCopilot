@@ -107,13 +107,15 @@ final class TranslateShell: ModuleShell {
         }
     }
 
-    private struct RunResult: Decodable { let text: String; let targetLanguage: String; let notice: String? }
+    private struct RunResult: Decodable { let text: String; let targetLanguage: String; let engine: String; let notice: String? }
 
     /// One request per submit. A newer submit or a cancel makes older results irrelevant, and the
     /// core discards a cancelled result before it reaches history.
     private func translate(_ text: String) {
-        let apiKey: String, googleKey: String
-        do { (apiKey, googleKey) = (try services.apiKey(), try services.googleKey()) } catch {
+        let keys: [String: String]
+        do {
+            keys = ["api_key": try services.apiKey(), "google_key": try services.googleKey(), "volcengine_key": try services.volcengineKey()]
+        } catch {
             composer.showError(error.localizedDescription)
             return
         }
@@ -126,8 +128,8 @@ final class TranslateShell: ModuleShell {
         operation = Task { [weak self] in
             let result: RunResult
             do {
-                result = try await core.perform("translate.run", ["text": text, "target_language": language, "api_key": apiKey,
-                                                                 "google_key": googleKey, "request_id": id.uuidString], as: RunResult.self)
+                let params: [String: Any] = ["text": text, "target_language": language, "request_id": id.uuidString]
+                result = try await core.perform("translate.run", params.merging(keys) { _, key in key }, as: RunResult.self)
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
                 showFailure(error)
@@ -135,19 +137,22 @@ final class TranslateShell: ModuleShell {
             }
             guard let self, !Task.isCancelled, operationID == id else { return }
             await deliver(result.text, id: id)
-            if let notice = result.notice { services.toast.show("Translated by the model", detail: notice, style: .warning) }
+            if let notice = result.notice {
+                let engine = ["google": "Google Translate", "volcengine": "Volcengine"][result.engine] ?? "the model"
+                services.toast.show("Translated by \(engine)", detail: notice, style: .warning)
+            }
         }
     }
 
     private func showFailure(_ error: Error) {
         let code = (error as? NyCore.Failure)?.code
         switch code {
-        case "google_access", "invalid_key", "unsupported_language":
+        case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error":
             composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
                 self?.composer.cancel()
                 self?.services.openSettings("translate")
             }))
-        case "provider_not_configured", "invalid_setting":
+        case "invalid_setting":
             composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
                 self?.composer.cancel()
                 self?.services.openSettings("model")

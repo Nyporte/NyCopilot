@@ -13,6 +13,7 @@ use ny_core::Module;
 pub mod capture;
 pub mod google;
 pub mod translate;
+pub mod volcengine;
 pub mod windows;
 
 /// Every module this build ships, in menu order. The `llm` module comes first because others use it.

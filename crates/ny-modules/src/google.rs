@@ -136,7 +136,7 @@ fn unexpected() -> NyError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::io::{Read, Write};
     use std::net::TcpListener;
@@ -179,7 +179,7 @@ mod tests {
     }
 
     /// A loopback stand-in for Apps Script: each connection gets the next canned response.
-    fn serve(responses: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>) {
+    pub(crate) fn serve(responses: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
         let log = Arc::new(Mutex::new(Vec::new()));
@@ -206,7 +206,7 @@ mod tests {
         (base, log)
     }
 
-    fn http(status: &str, headers: &str, body: &str) -> String {
+    pub(crate) fn http(status: &str, headers: &str, body: &str) -> String {
         format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\n{headers}Connection: close\r\n\r\n{body}", body.len())
     }
 
@@ -222,13 +222,16 @@ mod tests {
     }
 
     #[test]
-    fn google_goes_first_and_the_model_catches_failures() {
-        use crate::translate::translate_text;
+    fn engines_are_tried_in_order_and_the_next_catches_failures() {
+        use crate::translate::{translate_text, Keys};
+        use crate::volcengine::tests::ENDPOINT_OVERRIDE;
         let core = ny_core::Core::new(ny_core::Store::open_in_memory().unwrap(), crate::all(), "test", Box::new(|_| {})).unwrap();
         let set = |key: &str, value: serde_json::Value| { core.call("settings.set", json!({ "key": key, "value": value })).unwrap(); };
-        // Before a model is connected, a language Google can't take is explained, not sent anywhere.
+        let keys = Keys { google_key: "k".into(), ..Default::default() };
+        assert_eq!(translate_text(&core, "Hello", "Japanese", &keys).err().unwrap().code, "provider_not_configured");
+        // Before a model is connected, a language no service offers is explained, not sent anywhere.
         set("translate.google_url", json!("http://127.0.0.1:9/exec"));
-        assert_eq!(translate_text(&core, "Hello", "formal Japanese", "", "k").err().unwrap().code, "unsupported_language");
+        assert_eq!(translate_text(&core, "Hello", "formal Japanese", &keys).err().unwrap().code, "unsupported_language");
 
         let model_reply = r#"{"choices":[{"message":{"content":"from model"},"finish_reason":"stop"}]}"#;
         let (google, _) = serve(vec![http("200 OK", "", r#"{"code":200,"translated":"from google"}"#)]);
@@ -236,18 +239,37 @@ mod tests {
         set("llm.endpoint", json!(format!("{model}/v1/chat/completions")));
         set("llm.model", json!("m"));
         set("translate.google_url", json!(format!("{google}/exec")));
-        let first = translate_text(&core, "Hello", "Japanese", "", "k").unwrap();
+        let first = translate_text(&core, "Hello", "Japanese", &keys).unwrap();
         assert_eq!((first.text.as_str(), first.engine), ("from google", "google"));
         assert!(model_requests.lock().unwrap().is_empty());
         // The stand-in served its only reply and closed, so Google is now unreachable.
-        let fallback = translate_text(&core, "Hello", "Japanese", "", "k").unwrap();
+        let fallback = translate_text(&core, "Hello", "Japanese", &keys).unwrap();
         assert_eq!((fallback.text.as_str(), fallback.engine), ("from model", "model"));
-        assert!(fallback.notice.unwrap().starts_with("Google Translate failed"));
-        let qualified = translate_text(&core, "Hello", "formal Japanese", "", "k").unwrap();
+        assert!(fallback.notice.unwrap().starts_with("Google Translate failed, so the model translated this."));
+        let qualified = translate_text(&core, "Hello", "formal Japanese", &keys).unwrap();
         assert_eq!((qualified.engine, qualified.notice), ("model", None));
-        set("translate.google_enabled", json!(false));
-        assert_eq!(translate_text(&core, "Hello", "Japanese", "", "k").unwrap().engine, "model");
-        assert_eq!(model_requests.lock().unwrap().len(), 3);
+
+        // Volcengine first: its failure falls through to Google, and the notice names it.
+        let volc_failure = r#"{"code":55000001,"message":"pipeline failed"}"#;
+        let (volc, volc_requests) = serve(vec![http("200 OK", "", volc_failure); 2]);
+        ENDPOINT_OVERRIDE.with(|url| *url.borrow_mut() = Some(format!("{volc}/mt")));
+        let (google, _) = serve(vec![http("200 OK", "", r#"{"code":200,"translated":"from google"}"#)]);
+        set("translate.google_url", json!(format!("{google}/exec")));
+        set("translate.engine_order", json!(["volcengine", "google"]));
+        set("translate.model_enabled", json!(false));
+        let keys = Keys { volcengine_key: "v".into(), ..keys };
+        let second = translate_text(&core, "Hello", "Japanese", &keys).unwrap();
+        assert_eq!(second.engine, "google");
+        assert_eq!(second.notice.unwrap(), "Volcengine failed, so Google Translate translated this. Volcengine had an internal problem. Try again shortly.");
+        // Everything failing reports each service.
+        let error = translate_text(&core, "Hello", "Japanese", &keys).err().unwrap();
+        assert!(error.message.starts_with("Volcengine: Volcengine had an internal problem.") && error.message.contains(" Google Translate: "), "{}", error.message);
+        assert_eq!(volc_requests.lock().unwrap().len(), 2);
+        assert_eq!(model_requests.lock().unwrap().len(), 2);
+        for bad in [json!(["google", "google"]), json!(["deepl"]), json!("google")] {
+            assert!(core.call("settings.set", json!({ "key": "translate.engine_order", "value": bad })).is_err(), "{bad}");
+        }
+        ENDPOINT_OVERRIDE.with(|url| *url.borrow_mut() = None);
     }
 
     #[test]

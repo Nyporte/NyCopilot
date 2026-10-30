@@ -64,7 +64,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         removingKey = false
         refreshKeyField()
         status.show(provider.isComplete ? nil : services.preferences.canTranslate
-                    ? "Optional while Google Translate is set up: the model takes over when Google fails or a language needs it."
+                    ? "Optional while another translation engine is set up: the model takes over when it fails or a language needs the model."
                     : "Add an endpoint and model to start using NyCopilot.", style: .info)
         updateButtons()
     }
