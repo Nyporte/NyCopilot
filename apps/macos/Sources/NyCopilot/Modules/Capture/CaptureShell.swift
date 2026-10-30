@@ -25,6 +25,7 @@ final class CaptureShell: ModuleShell {
     init(services: CopilotServices) {
         self.services = services
         board.onSave = { [weak self] image in self?.saveWithPanel(image, region: nil) }
+        board.restore()
     }
 
     /// Snipaste's keys: F1 to capture, F3 to pin the clipboard, ⇧F3 to hide or show pins.
@@ -56,9 +57,10 @@ final class CaptureShell: ModuleShell {
 
     func makeSettingsPane() -> SettingsPane? { CapturePane(services: services) }
 
+    /// Pins stay open across launches: where they are now is written down, and they come back.
     func shutdown() {
         session?.close()
-        board.closeAll()
+        board.persist()
     }
 
     @objc private func captureFromMenu() {

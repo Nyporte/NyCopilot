@@ -24,7 +24,11 @@ final class PinWindow: NSPanel {
     private var flippedVertically = false
     private(set) var isClickThrough = false
 
-    init(image: NSImage, frame: NSRect, shadow: Bool) {
+    /// Names the pin's files while it's kept between launches.
+    let id: UUID
+
+    init(image: NSImage, frame: NSRect, shadow: Bool, id: UUID = UUID()) {
+        self.id = id
         original = image
         pinView = PinView(frame: CGRect(origin: .zero, size: frame.size))
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -72,7 +76,7 @@ final class PinWindow: NSPanel {
     }
 
     /// Scale around a fixed point on screen (the pointer), within 10–800%.
-    func setZoom(_ value: CGFloat, around anchor: NSPoint? = nil) {
+    func setZoom(_ value: CGFloat, around anchor: NSPoint? = nil, announce: Bool = true) {
         let clamped = min(max(value, 0.1), 8)
         let base = pointSize
         let size = NSSize(width: max(base.width * clamped, 16), height: max(base.height * clamped, 16))
@@ -84,7 +88,7 @@ final class PinWindow: NSPanel {
         setFrame(NSRect(x: pivot.x - fx * size.width, y: pivot.y - fy * size.height, width: size.width, height: size.height), display: false)
         CATransaction.commit()
         zoom = clamped
-        pinView.flash("\(Int(round(clamped * 100)))%")
+        if announce { pinView.flash("\(Int(round(clamped * 100)))%") }
     }
 
     func setOpacity(_ value: CGFloat) {
@@ -122,6 +126,30 @@ final class PinWindow: NSPanel {
     override func close() {
         super.close()
         onClose?(self)
+    }
+
+    /// How the pin looks and where it is, kept between launches.
+    struct State: Codable {
+        var x, y, zoom, opacity: CGFloat
+        var width, height: CGFloat
+        var quarterTurns: Int
+        var flippedHorizontally, flippedVertically, shadow: Bool
+    }
+
+    var state: State {
+        State(x: frame.minX, y: frame.maxY, zoom: zoom, opacity: alphaValue, width: original.size.width, height: original.size.height,
+              quarterTurns: quarterTurns, flippedHorizontally: flippedHorizontally, flippedVertically: flippedVertically, shadow: hasShadow)
+    }
+
+    /// Back as it was: turned, flipped, zoomed, and with its top-left corner where it was.
+    func apply(_ state: State) {
+        quarterTurns = state.quarterTurns % 4
+        flippedHorizontally = state.flippedHorizontally
+        flippedVertically = state.flippedVertically
+        alphaValue = min(max(state.opacity, 0.1), 1)
+        redraw()
+        setZoom(state.zoom, announce: false)
+        setFrameTopLeftPoint(NSPoint(x: state.x, y: state.y))
     }
 
     // MARK: Menu
@@ -408,13 +436,26 @@ final class PinBoard {
     /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
     private var outsideClicks: Any?
 
+    /// Where open pins are kept between launches: each image as a PNG, and `pins.json` with how
+    /// each looks and where it is.
+    private let folder = Preferences.dataDirectory.appendingPathComponent("Pins", isDirectory: true)
+    private var index: URL { folder.appendingPathComponent("pins.json") }
+
     @discardableResult
     func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) -> PinWindow {
-        let pin = PinWindow(image: image, frame: frame, shadow: shadow)
+        let pin = add(PinWindow(image: image, frame: frame, shadow: shadow))
+        keep(image, as: pin.id)
+        persist()
+        return pin
+    }
+
+    private func add(_ pin: PinWindow) -> PinWindow {
         pin.onSave = { [weak self] image in self?.onSave?(image) }
         pin.onClose = { [weak self] closed in
             self?.pins.removeAll { $0 === closed }
             self?.updateMonitor()
+            if let folder = self?.folder { try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(closed.id).png")) }
+            self?.persist()
         }
         pin.onCloseAll = { [weak self] in self?.closeAll() }
         pin.onFocus = { [weak self] focused in
@@ -425,6 +466,51 @@ final class PinBoard {
         if areHidden { showAll() }
         pin.orderFrontRegardless()
         return pin
+    }
+
+    /// Writes where every pin is and how it looks; called as pins come and go, and on quit.
+    func persist() {
+        let entries = pins.map { Entry(id: $0.id, state: $0.state) }
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? data.write(to: index, options: .atomic)
+    }
+
+    /// The pins open at the last quit, back where they were; images no pin uses are cleared away.
+    func restore() {
+        let entries = (try? Data(contentsOf: index)).flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
+        for entry in entries {
+            let file = folder.appendingPathComponent("\(entry.id).png")
+            guard let image = NSImage(contentsOf: file) else { continue }
+            image.size = NSSize(width: entry.state.width, height: entry.state.height)
+            let pin = add(PinWindow(image: image, frame: NSRect(origin: .zero, size: image.size), shadow: entry.state.shadow, id: entry.id))
+            pin.apply(entry.state)
+            // A display that's gone takes no pins with it.
+            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(pin.frame) }), let screen = NSScreen.main {
+                pin.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX - pin.frame.width / 2, y: screen.visibleFrame.maxY - 40))
+            }
+        }
+        let kept = Set(pins.map { "\($0.id).png" })
+        for file in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where file.hasSuffix(".png") && !kept.contains(file) {
+            try? FileManager.default.removeItem(at: folder.appendingPathComponent(file))
+        }
+        persist()
+    }
+
+    private struct Entry: Codable {
+        let id: UUID
+        let state: PinWindow.State
+    }
+
+    /// The pin's original image, written off the main thread.
+    private func keep(_ image: NSImage, as id: UUID) {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let file = folder.appendingPathComponent("\(id).png"), folder = folder
+        DispatchQueue.global(qos: .utility).async {
+            guard let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else { return }
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try? data.write(to: file, options: .atomic)
+        }
     }
 
     func toggleVisibility() { areHidden ? showAll() : hideAll() }
