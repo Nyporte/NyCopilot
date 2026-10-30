@@ -33,13 +33,13 @@ final class CaptureShell: ModuleShell {
         }
     }
 
-    /// Snipaste's keys: F1 to capture, F3 to pin the clipboard, ⇧F3 to hide or show pins.
+    /// Everything on F1: F1 to capture, ⇧F1 to pin the clipboard, ⌥F1 to hide or show pins (F3 is the inbox's).
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.capture, title: "Capture screen", defaultCombination: .init(keyCode: 122, modifiers: 0),
                handler: { [weak self] in self?.startCapture() }),
-         .init(id: Action.pinClipboard, title: "Pin clipboard", defaultCombination: .init(keyCode: 99, modifiers: 0),
+         .init(id: Action.pinClipboard, title: "Pin clipboard", defaultCombination: .init(keyCode: 122, modifiers: HotKeyCombination.shift),
                handler: { [weak self] in self?.pinClipboard() }),
-         .init(id: Action.togglePins, title: "Hide or show pins", defaultCombination: .init(keyCode: 99, modifiers: HotKeyCombination.shift),
+         .init(id: Action.togglePins, title: "Hide or show pins", defaultCombination: .init(keyCode: 122, modifiers: HotKeyCombination.option),
                handler: { [weak self] in self?.board.toggleVisibility() })]
     }
 
@@ -142,7 +142,7 @@ final class CaptureShell: ModuleShell {
         case .inbox:
             record(image, region: region, screen: screen, path: nil)
             end()
-            services.sendToInbox(nil, image, previousApp?.localizedName ?? "")
+            services.sendToInbox(nil, image, previousApp)
         case .translate:
             end()
             Task { await translateText(in: image, region: region) }

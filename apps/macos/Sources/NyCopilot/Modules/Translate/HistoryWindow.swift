@@ -358,15 +358,18 @@ final class EmptyStateView: NSStackView {
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
+    func show(symbol: String, title: String, message: String) {
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        self.title.stringValue = title
+        self.message.stringValue = message
+    }
+
     func configure(searching: Bool, query: String) {
-        icon.image = NSImage(systemSymbolName: searching ? "magnifyingglass" : "clock.arrow.circlepath", accessibilityDescription: nil)
-        title.stringValue = searching ? "No Results" : "No Translations Yet"
-        message.stringValue = searching ? "Nothing matches “\(query)”." : "Translations you make in any app will appear here."
+        show(symbol: searching ? "magnifyingglass" : "clock.arrow.circlepath", title: searching ? "No Results" : "No Translations Yet",
+             message: searching ? "Nothing matches “\(query)”." : "Translations you make in any app will appear here.")
     }
 
     func configure(error: String) {
-        icon.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
-        title.stringValue = "History Unavailable"
-        message.stringValue = error
+        show(symbol: "exclamationmark.triangle", title: "History Unavailable", message: error)
     }
 }

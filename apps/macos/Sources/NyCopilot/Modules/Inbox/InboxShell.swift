@@ -1,8 +1,11 @@
 import AppKit
 import MacPlatform
 
-/// macOS half of the Inbox module. F10 with text selected anywhere sends it to the inbox; F10
-/// otherwise opens the panel to jot into. Screenshots arrive through `CopilotServices.sendToInbox`.
+/// macOS half of the Inbox module, one surface per job:
+/// - F3 with text selected anywhere keeps the selection — no window, just a confirmation.
+/// - F3 otherwise opens the capture bar to jot a thought and get back to work.
+/// - ⇧F3 (or the menu, or ⌘O in the bar) opens the inbox window to work through notes.
+/// Screenshots arrive through `CopilotServices.sendToInbox`. Every note keeps where it came from.
 @MainActor
 final class InboxShell: ModuleShell {
     let id = "inbox"
@@ -10,50 +13,70 @@ final class InboxShell: ModuleShell {
     let symbolName = "tray"
 
     enum Action {
+        static let capture = "inbox.capture"
         static let open = "inbox.open"
     }
 
     private let services: CopilotServices
     /// Screenshots in notes, as `<uuid>.png` beside the database.
     static let imageFolder = Preferences.dataDirectory.appendingPathComponent("Inbox", isDirectory: true)
-    private lazy var panel = InboxPanel(core: services.core, imageFolder: Self.imageFolder)
+    private let bar = InboxCaptureBar()
+    private var window: InboxWindow?
 
     init(services: CopilotServices) {
         self.services = services
-        services.sendToInbox = { [weak self] text, image, app in self?.send(text: text, image: image, app: app) }
+        services.sendToInbox = { [weak self] text, image, app in
+            Task { await self?.send(text: text, image: image, context: SourceContext.of(app)) }
+        }
+        bar.onSave = { [weak self] text, context in self?.add(["text": text, "source": "typed"], context: context) }
+        bar.onOpenInbox = { [weak self] in self?.openInbox() }
+        removeUnusedImages()
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.open, title: "Open the inbox, or send the selection to it",
-               defaultCombination: .init(keyCode: 109, modifiers: 0), // F10
-               handler: { [weak self] in self?.summon() })]
+        [.init(id: Action.capture, title: "Jot something down, or keep the selection",
+               defaultCombination: .init(keyCode: 99, modifiers: 0), // F3
+               handler: { [weak self] in self?.capture() }),
+         .init(id: Action.open, title: "Open the inbox",
+               defaultCombination: .init(keyCode: 99, modifiers: HotKeyCombination.shift),
+               handler: { [weak self] in self?.openInbox() })]
     }
 
     func menuItems() -> [NSMenuItem] {
-        let count = (try? services.core.call("inbox.count") as? [String: Any])?["count"] as? Int ?? 0
-        return [services.menuItem(count > 0 ? "Inbox (\(count))" : "Inbox", symbol: count > 0 ? "tray.full" : "tray",
-                                  hotKey: Action.open, target: self, action: #selector(openFromMenu))]
+        [services.menuItem("Jot Down…", symbol: "square.and.pencil", hotKey: Action.capture, target: self, action: #selector(captureFromMenu)),
+         services.menuItem(waiting > 0 ? "Inbox (\(waiting))" : "Inbox", symbol: waiting > 0 ? "tray.full" : "tray",
+                           hotKey: Action.open, target: self, action: #selector(openFromMenu))]
     }
 
     func makeSettingsPane() -> SettingsPane? { InboxPane(services: services) }
 
-    func shutdown() { panel.close(returningFocus: false) }
+    func shutdown() {
+        bar.close(returningFocus: false)
+        window?.forgetUndo()
+    }
 
-    @objc private func openFromMenu() { panel.present(returningTo: NSWorkspace.shared.frontmostApplication) }
+    private var waiting: Int { (try? services.core.call("inbox.count") as? [String: Any])?["count"] as? Int ?? 0 }
 
-    /// Selected text goes straight in; with nothing selected, the panel opens.
-    private func summon() {
-        if panel.isVisible { panel.close(); return }
+    @objc private func captureFromMenu() { capture() }
+    @objc private func openFromMenu() { openInbox() }
+
+    private func openInbox() {
+        bar.close(returningFocus: false)
+        if window == nil { window = InboxWindow(core: services.core, imageFolder: Self.imageFolder) }
+        window?.present()
+    }
+
+    /// The selection, kept as it is; with nothing selected, the capture bar.
+    private func capture() {
+        if bar.isVisible { bar.close(); return }
         let app = NSWorkspace.shared.frontmostApplication
-        guard let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier, Accessibility.isTrusted else {
-            panel.present(returningTo: app)
-            return
-        }
+        let foreign = app.flatMap { $0.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : $0 }
         Task {
-            if let text = await Self.selectedText(in: app.processIdentifier) {
-                send(text: text, image: nil, app: app.localizedName ?? "", source: "selection")
+            let context = await SourceContext.of(foreign)
+            if let foreign, Accessibility.isTrusted, let text = await Self.selectedText(in: foreign.processIdentifier) {
+                send(text: text, image: nil, context: context)
             } else {
-                panel.present(returningTo: app)
+                bar.present(context: context, returningTo: foreign, waiting: waiting)
             }
         }
     }
@@ -67,9 +90,9 @@ final class InboxShell: ModuleShell {
         }
     }
 
-    /// A note from elsewhere — a selection, a screenshot — with a short confirmation by the pointer.
-    private func send(text: String?, image: NSImage?, app: String, source: String? = nil) {
-        var params: [String: Any] = ["text": text ?? "", "app": app, "source": source ?? (image == nil ? "selection" : "screenshot")]
+    /// A selection or a screenshot, filed with a short confirmation by the pointer.
+    private func send(text: String?, image: NSImage?, context: SourceContext) {
+        var params: [String: Any] = ["text": text ?? "", "source": image == nil ? "selection" : "screenshot"]
         if let image {
             guard let name = Self.keep(image) else {
                 services.toast.show("Couldn’t save the screenshot to the inbox", style: .warning)
@@ -77,11 +100,20 @@ final class InboxShell: ModuleShell {
             }
             params["image"] = name
         }
+        guard add(params, context: context) else { return }
+        let snippet = text.map { "“\($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))…”" } ?? "Screenshot"
+        services.toast.show("Added to Inbox", detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
+    }
+
+    @discardableResult
+    private func add(_ params: [String: Any], context: SourceContext) -> Bool {
+        let source: [String: Any] = ["app": context.app, "title": context.title, "url": context.url]
         do {
-            _ = try services.core.call("inbox.add", params)
-            services.toast.show("Added to Inbox", detail: text.map { String($0.prefix(60)) }, style: .success)
+            _ = try services.core.call("inbox.add", params.merging(source) { mine, _ in mine })
+            return true
         } catch {
             services.toast.show("Couldn’t add to the inbox", detail: error.localizedDescription, style: .warning)
+            return false
         }
     }
 
@@ -98,9 +130,28 @@ final class InboxShell: ModuleShell {
             return nil
         }
     }
+
+    /// Screenshots no note uses any more — done notes past 30 days, notes deleted before a quit.
+    private func removeUnusedImages() {
+        struct Note: Decodable { let image: String? }
+        var used: Set<String> = []
+        for collection in [CoreCollection.inboxNotes, .inboxDone] {
+            var before: String?
+            repeat {
+                var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
+                if let before { params["before"] = before }
+                guard let page = try? services.core.call("records.list", params, as: CorePage<Note>.self) else { return }
+                used.formUnion(page.records.compactMap(\.data.image))
+                before = page.next
+            } while before != nil
+        }
+        for file in (try? FileManager.default.contentsOfDirectory(atPath: Self.imageFolder.path)) ?? [] where !used.contains(file) {
+            try? FileManager.default.removeItem(at: Self.imageFolder.appendingPathComponent(file))
+        }
+    }
 }
 
-/// Inbox settings: the shortcut, and clearing everything.
+/// Inbox settings: the shortcuts, and clearing everything.
 @MainActor
 final class InboxPane: SettingsPane {
     private let services: CopilotServices
@@ -118,11 +169,11 @@ final class InboxPane: SettingsPane {
         clearButton.target = self
         clearButton.action = #selector(clearAll)
         return [
-            shortcuts.section("Shortcuts", footer: "With text selected in any app, the shortcut sends it to the inbox; otherwise it opens the inbox to jot into. In a screenshot, I sends the capture.",
-                              actions: [InboxShell.Action.open]),
+            shortcuts.section("Shortcuts", footer: "With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture.",
+                              actions: [InboxShell.Action.capture, InboxShell.Action.open]),
             shortcuts.errorLabel,
-            FormSection("Notes", footer: "Notes and their screenshots stay on this Mac.", rows: [
-                FormRow("Remove every note", accessory: clearButton)
+            FormSection("Notes", footer: "Notes and their screenshots stay on this Mac. Done notes are kept for 30 days.", rows: [
+                FormRow("Remove every note, waiting and done", accessory: clearButton)
             ])
         ]
     }
@@ -132,7 +183,7 @@ final class InboxPane: SettingsPane {
     @objc private func clearAll() {
         let alert = NSAlert()
         alert.messageText = "Clear the inbox?"
-        alert.informativeText = "Every note and its screenshot is removed."
+        alert.informativeText = "Every note, waiting and done, and its screenshot is removed."
         alert.addButton(withTitle: "Clear")
         alert.addButton(withTitle: "Cancel")
         alert.buttons.first?.hasDestructiveAction = true
@@ -140,6 +191,7 @@ final class InboxPane: SettingsPane {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxNotes.rawValue])
+            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxDone.rawValue])
             try? FileManager.default.removeItem(at: InboxShell.imageFolder)
         }
     }

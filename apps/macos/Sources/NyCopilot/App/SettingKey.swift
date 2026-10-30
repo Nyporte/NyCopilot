@@ -40,6 +40,7 @@ enum CoreCollection: String {
     case translateHistory = "translate.history"
     case clipboardItems = "clipboard.items"
     case inboxNotes = "inbox.notes"
+    case inboxDone = "inbox.done"
 }
 
 extension NyCore {

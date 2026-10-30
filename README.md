@@ -8,10 +8,10 @@ ships five:
   or read the whole screen in your language (⌥⌘T).
 - **Window Layouts** — snap windows into halves, corners, and thirds by shortcut or by dragging.
 - **Screenshot & Pin** — capture, annotate, copy, save, translate, and pin images on top of
-  everything (F1, F3).
+  everything (F1; ⇧F1 pins the clipboard).
 - **Clipboard** — everything you copy, searchable, pasted back with a keystroke (⌥⌘V).
 - **Inbox** — catch a thought in a second — typed, selected, or a screenshot — and deal with it
-  later (F10).
+  later (F3).
 
 ## How it's built
 
@@ -181,8 +181,8 @@ dragging it to the edge of the screen.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 
-**F3** pins whatever is on the clipboard: an image as is, a `#RRGGBB` color as a swatch, other text as
-a card. **⇧F3** hides or shows all pins. A faint blue border fades in while the pointer is over a pin
+**⇧F1** pins whatever is on the clipboard: an image as is, a `#RRGGBB` color as a swatch, other text as
+a card. **⌥F1** hides or shows all pins. A faint blue border fades in while the pointer is over a pin
 and turns solid when you click it. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
 **1–4** to rotate and flip, **T** to select its text in place (T again copies it all), **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
 close. Right-click for opacity, shadow, click-through, and **Close All Pins**; **Make Pins Clickable**
@@ -207,17 +207,25 @@ windows** (off by default) leaves pins and other NyCopilot windows out of captur
 
 ## Inbox
 
-- **F10** opens the inbox near the pointer, ready to type: **Return** files the note and clears the
-  box for the next one, **Shift+Return** adds a line. Below it, the notes waiting, newest first, with
-  the app you were in and when. **↓** moves into the notes: **Return** (or a double-click) edits one,
-  **⌘C** copies it, **⌫** marks it handled (it goes), **↑** at the top goes back to the box. **Esc** or
-  F10 again puts the inbox away and returns you to where you were.
-- **F10 with text selected** in any app — Chinese, English, anything — sends the selection straight to
-  the inbox, with a short confirmation by the pointer.
-- **In a screenshot**, **I** (or the tray button) sends the capture to the inbox as a note with the
-  image; copying that note copies the image.
-- The menu bar menu shows how many notes are waiting. **Settings → Inbox** changes the shortcut and
-  clears everything.
+One place for things to deal with later, with one way in for each moment:
+
+- **Jot it down — F3** with nothing selected. A bar opens in the upper part of the screen you're on,
+  always in the same spot; type, **Return** saves and puts it away, back to your app (**Shift+Return**
+  adds a line). A tag below the box shows where you are — the app and its window, like "Safari — Q3
+  planning doc" — and the note keeps it. **Esc** puts the bar away and keeps what you typed for next
+  time; **⌘O** opens the inbox.
+- **Keep what you're reading — F3 with text selected** in any app (Chinese, English, anything) files
+  the selection with its source: the app, the window's title, and the page or document address when
+  the app reports one. No window, just "Added to Inbox" by the pointer. **In a screenshot, I** (or the
+  tray button) files the capture the same way.
+- **Work through it — ⇧F3**, the menu bar menu (it shows how many are waiting), or ⌘O in the bar.
+  The inbox window lists notes by day — Today, Yesterday, then dates — with an icon for typed,
+  selected, or screenshot; the selected note shows on the right: its text (edit it in place), the
+  screenshot, where it came from, and when. **Space** marks it done, **Return** edits, **⌘C** copies
+  (the image too), **⌘O** opens its source (the page, or the app), **⌫** deletes, **⌘Z** undoes,
+  **⌘F** searches (text, app, title, or address). Done notes move to the **Done** tab and stay 30
+  days, in case one is needed back (Space there brings it back).
+- **Settings → Inbox** changes the two shortcuts and clears everything.
 
 ## Shortcuts
 
@@ -239,7 +247,7 @@ reasons show up as they happen: the composer says when it's in copy mode because
   settings, translation history, clipboard history (text and the app it came from; it never leaves
   this Mac), and capture history (regions and file paths, not images). Open pins are kept as PNGs in
   `Pins/` beside it and deleted when you close them; inbox notes are in the database and their
-  screenshots in `Inbox/`, deleted when a note is handled. The diagnostics log lives only in memory. Deleting
+  screenshots in `Inbox/`, deleted with their note (done notes after 30 days). The diagnostics log lives only in memory. Deleting
   an item removes its content immediately and leaves a content-free tombstone for future sync.
 - The model's API key, the Google web app's access key, and the Volcengine key are stored only in the
   macOS Keychain (`dev.nycopilot.NyCopilot`) and passed to the core per request; they are never written

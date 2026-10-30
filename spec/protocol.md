@@ -82,8 +82,10 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `capture.recent_regions` | `{limit?=20}` | distinct `[{x, y, w, h}]`, newest first |
 | `clipboard.add` | `{text, app?, bundle_id?}` | `{record}` in `clipboard.items` — an earlier entry with the same text is removed, so it moves to the top — then the retention settings are applied; or `{record: null, skipped}` with `skipped` one of `off`, `ignored_app`, `empty`, `too_large` (over 256 KiB) |
 | `clipboard.prune` | — | `{deleted}`: entries beyond `clipboard.max_items` or older than `clipboard.keep_days` are tombstoned |
-| `inbox.add` | `{text?, image?, app?, source?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png`; `source` is `typed` (default), `selection`, or `screenshot` |
-| `inbox.update` | `{id, text}` | `{record}`: the note's text replaced, its id, creation time, image, app, and source kept |
+| `inbox.add` | `{text?, image?, app?, title?, url?, source?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png`; `app`, `title` (the window's), and `url` (page or document) record where it came from, each one line; `source` is `typed` (default), `selection`, or `screenshot` |
+| `inbox.update` | `{id, text}` | `{record}`: a waiting or done note's text replaced, everything else kept |
+| `inbox.done` | `{id}` | `{record}` moved to `inbox.done` with `created` (its original date) and `done_at`; done notes are tombstoned after 30 days |
+| `inbox.undone` | `{id}` | `{record}` moved back to `inbox.notes` with its original date |
 | `inbox.count` | — | `{count}` of notes waiting |
 
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.

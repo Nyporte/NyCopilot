@@ -35,8 +35,9 @@ final class CopilotServices {
     /// Shows a translation of `text` on a card beside `near` (AX coordinates), for modules that find
     /// text (screenshots); Translate provides it.
     var translateText: (_ text: String, _ near: CGRect?) -> Void = { _, _ in }
-    /// Files a note — text, a screenshot, or both — in the inbox, from the app named; Inbox provides it.
-    var sendToInbox: (_ text: String?, _ image: NSImage?, _ app: String) -> Void = { _, _, _ in }
+    /// Files a note — text, a screenshot, or both — in the inbox, noting the app (and its window) it
+    /// came from; Inbox provides it.
+    var sendToInbox: (_ text: String?, _ image: NSImage?, _ from: NSRunningApplication?) -> Void = { _, _, _ in }
 
     init(core: NyCore, preferences: Preferences, hotKeys: HotKeyCenter) {
         self.core = core
