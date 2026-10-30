@@ -32,6 +32,8 @@ enum SettingKey: String {
     case inboxMarkdownFolder = "inbox.markdown_folder"
     case askSendImages = "ask.send_images"
     case welcomeCompleted = "client.welcome_completed"
+    case modulesOff = "client.modules_off"
+    case keyScheme = "client.key_scheme"
     case migratedNyTranslate = "client.migrated_nytranslate"
     case rectangleImportChecked = "client.windows.rectangle_import_checked"
     case rectangleRepeatChecked = "client.windows.rectangle_repeat_checked"

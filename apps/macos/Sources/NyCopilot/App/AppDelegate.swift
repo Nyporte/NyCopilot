@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         services = CopilotServices(core: core, preferences: preferences, hotKeys: HotKeyCenter(preferences: preferences))
         services.openSettings = { [weak self] pane in self?.showSettings(pane: pane) }
         services.showWelcome = { [weak self] in self?.showWelcome() }
+        services.isModuleOn = { [weak self] id in !(self?.modulesOff.contains(id) ?? false) }
+        services.setModule = { [weak self] id, on in self?.setModule(id, on: on) }
+        services.moduleList = { [weak self] in self?.modules.map { ($0.id, $0.title, $0.symbolName) } ?? [] }
 
         // Only load shells whose platform-neutral half exists in this core build.
         let available = Set((try? core.call("core.info") as? [String: Any])?["modules"] as? [String] ?? [])
@@ -118,7 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(setup)
             menu.addItem(.separator())
         }
-        for module in modules {
+        for module in modules where services.isModuleOn(module.id) {
             module.menuItems().forEach(menu.addItem)
             menu.addItem(.separator())
         }
@@ -150,11 +153,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     static let showShortcutsAction = "app.shortcuts"
 
+    private var modulesOff: Set<String> { Set(services.core.setting(.modulesOff, default: [String]())) }
+
+    /// Off: its shortcuts are cleared and its menu items hidden (Clipboard also stops keeping copies).
+    /// On: its shortcuts come back as they were by default, in the current key scheme.
+    private func setModule(_ id: String, on: Bool) {
+        var off = modulesOff
+        guard off.contains(id) == on, let module = modules.first(where: { $0.id == id }) else { return }
+        if on { off.remove(id) } else { off.insert(id) }
+        try? services.core.setSetting(.modulesOff, off.sorted())
+        let scheme = KeyScheme.current(services).combinations
+        var changes: [String: HotKeyCombination?] = [:]
+        for action in module.hotKeyActions { changes[action.id] = on ? scheme[action.id] ?? action.defaultCombination : nil }
+        _ = services.hotKeys.set(changes)
+        if id == "clipboard" { try? services.core.setSetting(.clipboardEnabled, on) }
+    }
+
     @objc private func showShortcutsFromMenu() { showShortcuts() }
 
     /// Every module's shortcuts as they're set now, then the verbs that work on anything.
     private func showShortcuts() {
-        var groups: [KeySheet.Group] = modules.compactMap { module in
+        var groups: [KeySheet.Group] = modules.filter { services.isModuleOn($0.id) }.compactMap { module in
             var keys = module.hotKeyActions.compactMap { action in
                 services.hotKeys.combination(for: action.id).map { (KeyNames.display($0), action.title) }
             }

@@ -1,21 +1,47 @@
 import AppKit
+import MacPlatform
 
-/// First-run guide: three steps with live status, so setup is obvious and finishes in a minute.
+/// The setup guide, by goal: pick what you want help with (each is a module; the rest stay out of
+/// the way), how one-press shortcuts should work on your keyboard, then the permission and the
+/// optional model. Opens on first launch and from Settings → General.
 @MainActor
 final class WelcomeWindow: NSWindowController, NSWindowDelegate {
+    private struct Goal {
+        let module: String
+        let title: String
+        let detail: String
+        /// The shortcut shown beside it.
+        let action: String?
+        var fixedKeys: String? = nil
+    }
+
+    private static let goals: [Goal] = [
+        Goal(module: "translate", title: "Translate what I write and read",
+             detail: "Write in any language; read selections and the whole screen in yours.", action: TranslateShell.Action.compose),
+        Goal(module: "capture", title: "Capture and mark up the screen",
+             detail: "Screenshots with arrows and text; pin them; capture long pages.", action: CaptureShell.Action.capture),
+        Goal(module: "ask", title: "Ask AI about anything",
+             detail: "Explain, summarize, or rewrite what you select or capture.", action: AskShell.Action.open),
+        Goal(module: "inbox", title: "Catch thoughts for later",
+             detail: "One key to jot a thought or keep a selection; deal with it later.", action: InboxShell.Action.capture),
+        Goal(module: "clipboard", title: "Remember what I copy",
+             detail: "Everything you copy, text and images, ready to paste again.", action: ClipboardShell.Action.open),
+        Goal(module: "windows", title: "Arrange windows",
+             detail: "Halves, thirds, and corners, by shortcut or by dragging.", action: nil, fixedKeys: "⌃⌥ ← →")
+    ]
+
     private let services: CopilotServices
+    private var goalRows: [(goal: Goal, box: NSButton, keys: NSTextField)] = []
+    private let scheme = NSSegmentedControl(labels: KeyScheme.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
     private let accessStep = StepRow(number: 1, title: "Allow Accessibility",
-                                     detail: "Lets NyCopilot read the field you’re typing in and paste results back.")
-    private let modelStep = StepRow(number: 2, title: "Connect a model",
-                                    detail: "Any OpenAI-compatible endpoint — a hosted provider or a local server.")
-    private let tryStep = StepRow(number: 3, title: "Try it",
-                                  detail: "")
+                                     detail: "To read what you select, paste results back, and move windows.")
+    private let modelStep = StepRow(number: 2, title: "Connect a model (optional)", detail: "")
     private var poll: Timer?
     var onFinish: (() -> Void)?
 
     init(services: CopilotServices) {
         self.services = services
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 480),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 640),
                               styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
@@ -26,12 +52,21 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
 
         let icon = NSImageView(image: NSApp.applicationIconImage)
         icon.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([icon.widthAnchor.constraint(equalToConstant: 84), icon.heightAnchor.constraint(equalToConstant: 84)])
-        let title = Design.label("Welcome to NyCopilot", size: 24, weight: .bold)
-        let subtitle = Design.wrapping("Your AI copilot for every app on your Mac, one shortcut away.", size: 13.5)
+        NSLayoutConstraint.activate([icon.widthAnchor.constraint(equalToConstant: 48), icon.heightAnchor.constraint(equalToConstant: 48)])
+        let title = Design.label("Welcome to NyCopilot", size: 22, weight: .bold)
+        let subtitle = Design.wrapping("Pick what you want help with. You can change any of it later in Settings.", size: 13)
         subtitle.alignment = .center
-        let header = Design.vstack([icon, title, subtitle], spacing: 8, alignment: .centerX)
-        header.setCustomSpacing(14, after: icon)
+        let header = Design.vstack([icon, title, subtitle], spacing: 6, alignment: .centerX)
+        header.setCustomSpacing(8, after: icon)
+
+        let goals = FormSection("What should NyCopilot do?", rows: Self.goals.map(makeRow))
+
+        scheme.target = self
+        scheme.action = #selector(schemeChanged)
+        let keyboard = FormSection("Shortcuts", footer: KeyScheme.functionKeysAreStandard
+            ? "Your F-keys send F1, F2…, so F1 and F3 are one press. ⌥⌘/ shows every shortcut any time."
+            : "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time.",
+            rows: [FormRow("One-press keys", subtitle: "Screenshot and Inbox", accessory: scheme)])
 
         accessStep.button.title = "Allow…"
         accessStep.button.target = self
@@ -39,12 +74,11 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         modelStep.button.title = "Set Up…"
         modelStep.button.target = self
         modelStep.button.action = #selector(setUpModel)
-        tryStep.button.isHidden = true
-        let steps = FormSection(rows: [accessStep, modelStep, tryStep])
+        let setup = FormSection("Setup", rows: [accessStep, modelStep])
 
         let done = Design.button("Get Started", target: self, action: #selector(finish), primary: true)
         done.controlSize = .large
-        let root = Design.vstack([header, steps, done], spacing: 28, alignment: .centerX)
+        let root = Design.vstack([header, goals, keyboard, setup, done], spacing: 16, alignment: .centerX)
         root.translatesAutoresizingMaskIntoConstraints = false
         let content = NSVisualEffectView()
         content.material = .windowBackground
@@ -52,47 +86,99 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         content.state = .followsWindowActiveState
         content.addSubview(root)
         NSLayoutConstraint.activate([
-            root.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 36),
-            root.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -36),
-            root.topAnchor.constraint(equalTo: content.topAnchor, constant: 44),
-            root.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -28),
-            steps.widthAnchor.constraint(equalTo: root.widthAnchor),
+            root.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 32),
+            root.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
+            root.topAnchor.constraint(equalTo: content.topAnchor, constant: 30),
+            root.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
+            goals.widthAnchor.constraint(equalTo: root.widthAnchor),
+            keyboard.widthAnchor.constraint(equalTo: root.widthAnchor),
+            setup.widthAnchor.constraint(equalTo: root.widthAnchor),
             subtitle.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor),
-            content.widthAnchor.constraint(equalToConstant: 520)
+            content.widthAnchor.constraint(equalToConstant: 600)
         ])
         window.contentView = content
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
 
+    /// A goal: a checkbox, what it does, and the key that starts it.
+    private func makeRow(_ goal: Goal) -> NSView {
+        let box = NSButton(checkboxWithTitle: "", target: self, action: #selector(goalToggled))
+        let title = Design.label(goal.title, size: 13, weight: .semibold)
+        let detail = Design.label(goal.detail, size: 11.5, color: .secondaryLabelColor)
+        detail.lineBreakMode = .byTruncatingTail
+        detail.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let text = Design.vstack([title, detail], spacing: 2)
+        text.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let keys = Design.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
+        keys.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
+        keys.alignment = .right
+        keys.widthAnchor.constraint(equalToConstant: 76).isActive = true
+        let row = Design.hstack([box, text, Design.spacer(), keys], spacing: 10)
+        row.alignment = .centerY
+        row.edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 14)
+        goalRows.append((goal, box, keys))
+        return row
+    }
+
     func present() {
+        // Only modules this build loaded.
+        let loaded = Set(services.moduleList().map(\.id))
+        for row in goalRows {
+            row.box.superview?.isHidden = !loaded.contains(row.goal.module)
+            row.box.state = services.isModuleOn(row.goal.module) ? .on : .off
+        }
+        let current = services.preferences.hasCompletedWelcome ? KeyScheme.current(services) : KeyScheme.recommended
+        scheme.selectedSegment = KeyScheme.allCases.firstIndex(of: current) ?? 0
         refresh()
         window?.setContentSize(window?.contentView?.fittingSize ?? .zero)
         window?.center()
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
-        // Steps complete in other windows and apps, so re-check while the guide is open.
+        // Permission is granted in System Settings and the model in Settings, so re-check while open.
         poll?.invalidate()
         poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
     }
 
+    private var chosenScheme: KeyScheme { KeyScheme.allCases[max(0, scheme.selectedSegment)] }
+
     private func refresh() {
         accessStep.isComplete = Accessibility.isTrusted
-        modelStep.isComplete = services.preferences.canTranslate
-        let shortcut = services.hotKeys.combination(for: TranslateShell.Action.compose).map(KeyNames.display) ?? "your shortcut"
-        tryStep.detail = "Click in any text field, press \(shortcut), type, and hit Return. The translation replaces your text."
-        tryStep.isComplete = false
+        modelStep.isComplete = services.preferences.provider.isComplete
+        modelStep.detail = SystemTranslation.isAvailable
+            ? "Translation already works through macOS. A model adds Ask AI and screen translation."
+            : "Any OpenAI-compatible endpoint, hosted or local. Translation and Ask AI need it, or Google or Volcengine for translation."
+        let schemeKeys = chosenScheme.combinations
+        for row in goalRows {
+            let combination = row.goal.action.flatMap { schemeKeys[$0] ?? services.hotKeys.combination(for: $0)
+                ?? services.hotKeys.actions.first(where: { action in action.id == row.goal.action })?.defaultCombination }
+            row.keys.stringValue = row.goal.fixedKeys ?? combination.map(KeyNames.display) ?? ""
+            row.keys.alphaValue = row.box.state == .on ? 1 : 0.35
+        }
     }
 
+    @objc private func goalToggled() { refresh() }
+    @objc private func schemeChanged() { refresh() }
     @objc private func allowAccess() { Accessibility.requestAccess() }
     @objc private func setUpModel() { services.openSettings("model") }
 
+    /// Modules on or off as checked, the shortcuts in the chosen scheme.
     @objc private func finish() {
+        for row in goalRows where row.box.superview?.isHidden == false {
+            services.setModule(row.goal.module, row.box.state == .on)
+        }
+        let failures = chosenScheme.apply(services)
         services.preferences.hasCompletedWelcome = true
         window?.close()
+        let help = services.hotKeys.combination(for: AppDelegate.showShortcutsAction).map(KeyNames.display) ?? "⌥⌘/"
+        if failures.isEmpty {
+            services.toast.show("You’re set", detail: "\(help) shows every shortcut; ? shows the keys of whatever you’re in.", style: .success)
+        } else {
+            services.toast.show("Some shortcuts are taken by another app", detail: "Choose others in Settings. \(help) shows them all.", style: .warning)
+        }
     }
 
     func windowWillClose(_ notification: Notification) {

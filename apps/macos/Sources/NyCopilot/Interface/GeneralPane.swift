@@ -13,6 +13,7 @@ final class GeneralPane: SettingsPane {
     private let loginNote = Design.wrapping("", size: 11.5)
     private var poll: Timer?
     private lazy var shortcuts = ShortcutEditor(services: services)
+    private var moduleSwitches: [(id: String, toggle: NSSwitch)] = []
 
     init(services: CopilotServices) {
         self.services = services
@@ -41,8 +42,20 @@ final class GeneralPane: SettingsPane {
         loginNote.isHidden = true
         let login = FormRow("Open at login", subtitle: nil, accessory: loginSwitch)
 
+        moduleSwitches = services.moduleList().map { module in
+            let toggle = NSSwitch()
+            toggle.target = self
+            toggle.action = #selector(toggleModule(_:))
+            toggle.identifier = NSUserInterfaceItemIdentifier(module.id)
+            return (module.id, toggle)
+        }
+        let modules = FormSection("Features", footer: "A feature that’s off keeps its settings; its shortcuts and menu items come back when you turn it on.",
+                                  rows: zip(services.moduleList(), moduleSwitches).map { module, entry in
+                                      FormRow(module.title, accessory: entry.toggle)
+                                  })
         var sections: [NSView] = [
             FormSection("Permissions", rows: [access, recording]),
+            modules,
             FormSection("Startup", rows: [login]),
             shortcuts.section("Shortcuts", footer: "Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys.",
                               actions: [AppDelegate.showShortcutsAction]),
@@ -53,12 +66,13 @@ final class GeneralPane: SettingsPane {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
         sections.append(Design.hstack([Design.label("NyCopilot \(version)", size: 12, color: .tertiaryLabelColor),
                                        Design.spacer(), guide]))
-        sections.insert(loginNote, at: 2)
+        sections.insert(loginNote, at: 3)
         return sections
     }
 
     override func paneWillAppear() {
         shortcuts.refresh()
+        for entry in moduleSwitches { entry.toggle.state = services.isModuleOn(entry.id) ? .on : .off }
         refreshAccess()
         loginSwitch.state = LaunchAtLogin.isEnabled || LaunchAtLogin.needsApproval ? .on : .off
         showLoginNote()
@@ -93,6 +107,11 @@ final class GeneralPane: SettingsPane {
 
     @objc private func requestAccess() { Accessibility.requestAccess() }
     @objc private func requestRecording() { ScreenGrabber.requestPermission() }
+
+    @objc private func toggleModule(_ sender: NSSwitch) {
+        guard let id = sender.identifier?.rawValue else { return }
+        services.setModule(id, sender.state == .on)
+    }
 
     @objc private func copyDiagnostics() {
         NSPasteboard.general.clearContents()

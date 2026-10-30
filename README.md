@@ -2,16 +2,23 @@
 
 NyCopilot is a personal copilot that lives in the menu bar and works inside every app. It is a
 foundation for many modules across several operating systems, with a sync server to come. Today it
-ships five:
+ships six:
 
 - **Translate** — type in any text field and replace it with a translation, translate a selection,
   or read the whole screen in your language (⌥⌘T).
 - **Window Layouts** — snap windows into halves, corners, and thirds by shortcut or by dragging.
 - **Screenshot & Pin** — capture, annotate, copy, save, translate, and pin images on top of
   everything (F1; ⇧F1 pins the clipboard).
-- **Clipboard** — everything you copy, searchable, pasted back with a keystroke (⌥⌘V).
+- **Clipboard** — everything you copy, text and images, searchable, pasted back with a keystroke
+  (⌥⌘V).
 - **Inbox** — catch a thought in a second — typed, selected, or a screenshot — and deal with it
-  later (F3).
+  later: send it to Reminders, Notes, or a Markdown folder, or snooze it (F3).
+- **Ask AI** — explain, summarize, rewrite, or ask about whatever you select or capture (⌥⌘A).
+
+Whatever you're looking at — a screenshot, a pin, a clipboard entry, an inbox note, an answer — takes
+the same keys: **R** translate, **I** keep in the inbox, **A** ask AI, **P** pin (with ⌘ where you
+type). **?** (⌘/ where you type) shows the keys of whatever you're in, and **⌥⌘/** shows every
+shortcut.
 
 ## How it's built
 
@@ -43,18 +50,23 @@ signature, prints a warning, and loses those grants on every rebuild. Choose a c
 
 ## First run
 
-A short guide opens on first launch:
+A setup guide opens on first launch (and from Settings → General → **Show Setup Guide…**):
 
-1. **Allow Accessibility**, which Translate and Window Layouts use to read fields, paste, and move
-   windows.
-2. **Connect a translator.** Settings → Model takes any OpenAI-compatible Chat Completions endpoint,
-   hosted or local (Ollama, LM Studio…), a model ID, and an optional API key; **Test Connection** checks
-   it. Or set up **Google Translate** or **Volcengine** in Settings → Translate (below). Any one is
-   enough; with several, they back each other up.
-3. **Try it.** Press ⌥⌘T in any text field.
+1. **What should NyCopilot do?** Check the features you want — translating, screenshots, Ask AI,
+   the inbox, clipboard history, window layouts — each with the key that starts it. The rest stay out
+   of the way (their shortcuts and menu items go) until you turn them on in Settings → General →
+   Features.
+2. **Shortcuts.** Screenshot and Inbox start with one press: **F1** and **F3**, or **⌥⌘S** and
+   **⌥⌘J**. The guide recommends letters when your keyboard's F-keys control brightness and volume
+   (unless you hold fn), and F-keys when they're standard function keys.
+3. **Setup.** **Allow Accessibility**, which reading selections, pasting, and moving windows need.
+   **Connect a model** is optional: on macOS 14.4 and later, translation works at once through macOS's
+   own translation panel. A model — any OpenAI-compatible Chat Completions endpoint, hosted or local
+   (Ollama, LM Studio…), in Settings → **AI & Engines** — adds Ask AI, screen translation, and
+   translations that follow your instructions; Google Translate or Volcengine can translate too.
 
-Screenshot & Pin asks for **Screen Recording** the first time you capture. Until setup is done, the
-menu bar menu shows **Finish Setting Up…**.
+Screenshot & Pin asks for **Screen Recording** the first time you capture. Until Accessibility is
+allowed, the menu bar menu shows **Finish Setting Up…**.
 
 ## Translate
 
@@ -68,7 +80,7 @@ menu bar menu shows **Finish Setting Up…**.
   back in front, and the translation stays on your clipboard in case the app ignores it. If you
   switched apps or fields meanwhile, NyCopilot doesn't paste; the result goes to your clipboard and
   History with a short note. With Accessibility off, the composer works in **copy mode**.
-- **Engines** (Settings → Translate) lists the translation services in the order they're tried —
+- **Engines** (Settings → AI & Engines) lists the translation services in the order they're tried —
   Google Translate, Volcengine, then the model by default. ▲ ▼ reorder them and each has a switch.
   A translation goes to the first engine that's on and set up; when it fails, or doesn't offer the
   language, the next one takes over and a short note says which failed and why. Only the model
@@ -81,6 +93,9 @@ menu bar menu shows **Finish Setting Up…**.
     console, or an App ID and access token from the old one. Each line is translated separately, so
     line breaks and indentation come back exactly.
   - **Test** in each section translates a sample with the values on screen, before you save.
+  - **Nothing set up?** On macOS 14.4 and later, the composer and selection translation open macOS's
+    own translation panel instead; for text you're writing, its **Replace with Translation** pastes
+    the result back as usual. Screen translation needs one of the engines.
 - **Hold ⌥⌘T** (the translate shortcut — a tap still opens the composer) to translate what's on
   screen. Like Live Text, the screen dims a little and the text on every display glows, a paragraph's
   lines as one shape —
@@ -181,10 +196,13 @@ dragging it to the edge of the screen.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 
+- **More** with the shared keys: **A** asks AI about the capture (as an image when the model takes
+  images, else its text), **P** pins it, and **?** shows every key.
+
 **⇧F1** pins whatever is on the clipboard: an image as is, a `#RRGGBB` color as a swatch, other text as
 a card. **⌥F1** hides or shows all pins. A faint blue border fades in while the pointer is over a pin
 and turns solid when you click it. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
-**1–4** to rotate and flip, **T** to select its text in place (T again copies it all), **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
+**1–4** to rotate and flip, **T** to select its text in place (T again copies it all), **R** to translate its text, **I** to keep it in the inbox, **A** to ask AI about it, **0** for actual size, ⌘C to copy, ⌘S to save, **?** for all its keys, **Esc** or a double-click to
 close. Right-click for opacity, shadow, click-through, and **Close All Pins**; **Make Pins Clickable**
 in the menu bar menu brings click-through pins back. Pins stay open when you quit: they come back
 where they were, as they were, the next time NyCopilot starts.
@@ -195,13 +213,17 @@ windows** (off by default) leaves pins and other NyCopilot windows out of captur
 
 ## Clipboard
 
-- Every piece of text you copy is kept, newest first; copying the same text again moves it to the
-  top. Passwords and anything an app marks private or transient are never kept, nor copies from
-  password managers (1Password, Bitwarden, Passwords, Keychain Access, KeePassXC), nor copied files.
+- Every piece of text and every image you copy is kept, newest first; copying the same thing again
+  moves it to the top. Images show as thumbnails and paste back as images. Passwords and anything an
+  app marks private or transient are never kept, nor copies from password managers (1Password,
+  Bitwarden, Passwords, Keychain Access, KeePassXC), nor copied files.
+- **⌘P** pins an entry: pinned entries stay at the top of the list, for good, and are never pruned —
+  an address, a signature, a snippet you paste every day. ⌘P again unpins it.
 - **⌥⌘V** opens the history near the pointer: type to search, **↑↓** to choose, **Return** (or a
   double-click) pastes into the field you were in, **⌘1–⌘9** pastes one of the first nine, **⌘C**
-  copies without pasting, **⌘⌫** forgets an entry, **Esc** closes. The pasted entry stays on your
-  clipboard.
+  copies without pasting, **⌘R** translates it, **⌘I** keeps it in the inbox, **⌘A** asks AI about it
+  (with the search empty), **⌘⌫** forgets an entry, **⌘/** shows every key, **Esc** closes. The pasted
+  entry stays on your clipboard.
 - **Settings → Clipboard** turns it off, sets how long entries are kept (a day to a year, 30 days by
   default) and how many (500 by default), clears everything, and changes the shortcut.
 
@@ -223,16 +245,41 @@ One place for things to deal with later, with one way in for each moment:
   selected, or screenshot; the selected note shows on the right: its text (edit it in place), the
   screenshot, where it came from, and when. **Space** marks it done, **Return** edits, **⌘C** copies
   (the image too), **⌘O** opens its source (the page, or the app), **⌫** deletes, **⌘Z** undoes,
-  **⌘F** searches (text, app, title, or address). Done notes move to the **Done** tab and stay 30
-  days, in case one is needed back (Space there brings it back).
-- **Settings → Inbox** changes the two shortcuts and clears everything.
+  **⌘F** searches (text, app, title, or address), **R** translates, **A** asks AI, **P** pins it,
+  **?** shows every key. Done notes move to the **Done** tab and stay 30 days, in case one is needed
+  back (Space there brings it back).
+- **Hand it off — S** (or **Send To**) sends the note to **Reminders** (your default list, with the
+  page as its link), **Notes** (screenshot included), or a **Markdown folder** of yours — an
+  Obsidian vault, a notes repository — as `<date> <title>.md` with the source in front matter and the
+  screenshot beside it; **Share…** offers the rest. A sent note is marked done (⌘Z brings it back).
+- **Not now — L** (or **Later**) snoozes it: later today, this evening, tomorrow, this weekend, or
+  next week. Snoozed notes wait in the **Later** tab and come back to the top of the inbox on time,
+  with a note by the pointer; Space in Later brings one back now.
+- **Settings → Inbox** changes the two shortcuts, the Markdown folder, and clears everything.
+
+## Ask AI
+
+- **⌥⌘A** with text selected anywhere opens the Ask panel beside it: **Explain**, **Summarize**,
+  **Rewrite** (⌘1–3), or type a question; **Return** on an empty box explains. Follow up as long as
+  you like. With nothing selected, ask anything.
+- **A** in a screenshot, on a pin, on an inbox note, or **⌘A** in the clipboard list asks about that
+  thing. A screenshot goes to the model as an image (downscaled to 2048 pixels) when **Send
+  screenshots as images** is on in Settings → AI & Engines — the model must accept images — and
+  otherwise as the text read from it on your Mac.
+- On the answer: **⌘C** copies it (or what you selected in it), **⌘I** keeps it in the inbox, **⌘P**
+  pins it, and — for a selection in a field you can type in — **⌘↩** puts it in place of the
+  selection. Answers reply in the language you read in (screen translation's).
+- Ask AI uses the model in Settings → AI & Engines. Nothing is stored.
 
 ## Shortcuts
 
 Every module lists its shortcuts in its own Settings tab. A shortcut needs ⌘, ⌥, or ⌃, or can be a
 function key on its own (F1, F2…). On Apple keyboards the F-keys control brightness and volume unless
 you hold fn or turn on "Use F1, F2, etc. keys as standard function keys" in System Settings →
-Keyboard. **Settings → General** shows the Accessibility and Screen Recording status, an **Open at
+Keyboard — or pick **⌥⌘ letters** in the setup guide (⌥⌘S screenshot, ⌥⌘J inbox, ⌥⌘P pin
+clipboard). **⌥⌘/** (or **Keyboard Shortcuts** in the menu bar menu) shows every shortcut as it's set
+now, and the shared keys. Tips show up a couple of times at the moment they help — the third
+capture, the first pin — and then not again. **Settings → General** shows the Accessibility and Screen Recording status, an **Open at
 login** switch, and **Copy Diagnostics**: what NyCopilot did lately — which fields it found, where it
 pasted, what failed and why — without any of your text, ready to paste into a bug report. The same
 reasons show up as they happen: the composer says when it's in copy mode because Accessibility is off.
@@ -241,11 +288,15 @@ reasons show up as they happen: the composer says when it's in copy mode because
 
 - Text recognition is macOS Live Text (VisionKit) and runs entirely on your Mac; nothing is uploaded.
 - Text is sent only when you press Return in Translate, and only to the services you configured
-  (the first engine that succeeds, in your order). There
-  is no telemetry. Screenshots never leave your Mac.
+  (the first engine that succeeds, in your order); macOS's translation panel translates on your Mac.
+  Ask AI sends what you ask about — and a screenshot only when you press A on it, as an image only
+  while that setting is on — to your model. There is no telemetry. Otherwise screenshots never leave
+  your Mac.
+- Sending a note to Reminders or Notes asks macOS for access the first time; Markdown notes are
+  written only to the folder you chose.
 - Data lives in `~/Library/Application Support/NyCopilot/nycopilot.db` (folder 0700, file 0600):
-  settings, translation history, clipboard history (text and the app it came from; it never leaves
-  this Mac), and capture history (regions and file paths, not images). Open pins are kept as PNGs in
+  settings, translation history, clipboard history (text and the app it came from; copied images as
+  PNGs in `Clipboard/`, deleted with their entry; it never leaves this Mac), and capture history (regions and file paths, not images). Open pins are kept as PNGs in
   `Pins/` beside it and deleted when you close them; inbox notes are in the database and their
   screenshots in `Inbox/`, deleted with their note (done notes after 30 days). The diagnostics log lives only in memory. Deleting
   an item removes its content immediately and leaves a content-free tombstone for future sync.
@@ -267,7 +318,7 @@ item the first time it's needed, which may show a one-time Keychain prompt.
 ```
 crates/ny-core      records, settings, events, module registry, cancellation
 crates/ny-llm       provider settings and Chat Completions client (`llm` module)
-crates/ny-modules   module logic: translate, windows, capture
+crates/ny-modules   module logic: translate, windows, capture, clipboard, inbox, ask
 crates/ny-ffi       C ABI (`include/ny_core.h`)
 apps/macos          Swift package: NyCopilot app (App, System, Interface, Modules/<module>),
                     MacPlatform helpers, tests, icon source

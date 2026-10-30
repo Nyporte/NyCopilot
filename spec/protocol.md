@@ -80,13 +80,18 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system |
 | `capture.record` | `{region, display?, width, height, path?}` | `{record}` in `capture.history` |
 | `capture.recent_regions` | `{limit?=20}` | distinct `[{x, y, w, h}]`, newest first |
-| `clipboard.add` | `{text, app?, bundle_id?}` | `{record}` in `clipboard.items` — an earlier entry with the same text is removed, so it moves to the top — then the retention settings are applied; or `{record: null, skipped}` with `skipped` one of `off`, `ignored_app`, `empty`, `too_large` (over 256 KiB) |
+| `clipboard.add` | `{text, app?, bundle_id?}` or `{image, digest, width, height, app?, bundle_id?}` | `{record}` in `clipboard.items` — an earlier entry with the same text (or an image with the same `digest`) is removed, so it moves to the top — then the retention settings are applied; or `{record: null, skipped}` with `skipped` one of `off`, `ignored_app`, `empty`, `too_large` (over 256 KiB), `pinned` (already pinned). `image` is a client-kept file named `<uuid>.png` |
+| `clipboard.pin` | `{id}` | `{record}` moved to `clipboard.pinned` (at most 100), which is never pruned |
+| `clipboard.unpin` | `{id}` | `{record}` moved back to the top of `clipboard.items` |
 | `clipboard.prune` | — | `{deleted}`: entries beyond `clipboard.max_items` or older than `clipboard.keep_days` are tombstoned |
 | `inbox.add` | `{text?, image?, app?, title?, url?, source?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png`; `app`, `title` (the window's), and `url` (page or document) record where it came from, each one line; `source` is `typed` (default), `selection`, or `screenshot` |
 | `inbox.update` | `{id, text}` | `{record}`: a waiting or done note's text replaced, everything else kept |
 | `inbox.done` | `{id}` | `{record}` moved to `inbox.done` with `created` (its original date) and `done_at`; done notes are tombstoned after 30 days |
 | `inbox.undone` | `{id}` | `{record}` moved back to `inbox.notes` with its original date |
+| `inbox.snooze` | `{id, until}` | `{record}`: a waiting note moved to `inbox.snoozed` with `until` (ms, in the future) and `created` |
+| `inbox.wake` | `{id?}` | `{woken: [record]}`: the snoozed note `id`, or every one whose `until` has passed, back on top of `inbox.notes` (`created` keeps its first date) |
 | `inbox.count` | — | `{count}` of notes waiting |
+| `ask.run` | `{action, text?, image?, question?, language?, turns?, api_key?, request_id?}` | `{text}`: the model's answer. `action` is `explain`, `summarize`, `rewrite`, or `ask` (needs a `question`); `image` is a base64 PNG (up to 12 MiB), sent as an image only while `ask.send_images` is on, else `text` (its recognized text) stands in; `language` is the reply language; `turns` are earlier `{role: user\|assistant, content}` follow-ups (the last 20 are kept), with `question` the new one. Cancellable |
 
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
@@ -106,8 +111,9 @@ points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` 
 `{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
 object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the system font, `text_size` 6–144, `bold`,
 `italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), `capture.hide_own_windows` (synced, `false`), `clipboard.enabled` (device, `true`), `clipboard.keep_days`
-(synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), and `clipboard.ignored_apps` (synced,
-bundle identifiers; password managers by default).
+(synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), `clipboard.ignored_apps` (synced,
+bundle identifiers; password managers by default), `inbox.markdown_folder` (device, `""`: an absolute folder path
+notes are sent to as Markdown), and `ask.send_images` (synced, `true`).
 
 ## Events
 

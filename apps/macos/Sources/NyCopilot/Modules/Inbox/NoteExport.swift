@@ -103,12 +103,10 @@ enum NoteExport {
             html += "<div><br></div><div><i>From \(link)</i></div>"
         }
         let script = "tell application \"Notes\" to make new note with properties {body:\"\(appleScriptString(html))\"}"
-        let failure: String? = await Task.detached(priority: .userInitiated) {
-            var error: NSDictionary?
-            NSAppleScript(source: script)?.executeAndReturnError(&error)
-            return error.map { ($0[NSAppleScript.errorMessage] as? String) ?? "error \($0[NSAppleScript.errorNumber] ?? "")" }
-        }.value
-        if let failure { throw Failure.notesFailed(failure) }
+        // NSAppleScript belongs on the main thread; Notes answers within a moment.
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error { throw Failure.notesFailed((error[NSAppleScript.errorMessage] as? String) ?? "error \(error[NSAppleScript.errorNumber] ?? "")") }
     }
 
     private static func escape(_ text: String) -> String {

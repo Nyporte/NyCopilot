@@ -56,6 +56,11 @@ final class CopilotServices {
     let hotKeys: HotKeyCenter
     let toast = Toast()
     var openSettings: (_ paneID: String?) -> Void = { _ in }
+    /// Modules can be turned off (their shortcuts and menu items go) from the setup guide or General.
+    var isModuleOn: (_ id: String) -> Bool = { _ in true }
+    var setModule: (_ id: String, _ on: Bool) -> Void = { _, _ in }
+    /// The loaded modules' ids and titles, in menu order.
+    var moduleList: () -> [(id: String, title: String, symbol: String)] = { [] }
     var showWelcome: () -> Void = {}
     /// Shows a translation of `text` on a card beside `near` (AX coordinates), for modules that find
     /// text (screenshots); Translate provides it.
