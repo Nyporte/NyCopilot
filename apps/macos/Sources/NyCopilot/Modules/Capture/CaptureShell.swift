@@ -132,6 +132,9 @@ final class CaptureShell: ModuleShell {
         switch action {
         case .scroll:
             break // Handled by the session's onScroll.
+        case .translate:
+            end()
+            Task { await translateText(in: image, region: region) }
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -157,6 +160,18 @@ final class CaptureShell: ModuleShell {
             record(image, region: region, screen: screen, path: nil)
             end()
         }
+    }
+
+    /// The capture's text, paragraph by paragraph, translated on a card beside the region — read from
+    /// the finished image, so whatever a mosaic hides stays hidden.
+    private func translateText(in image: NSImage, region: CGRect) async {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let paragraphs = try? await ScreenTranslator.paragraphs(in: cgImage, scale: CGFloat(cgImage.width) / image.size.width),
+              !paragraphs.isEmpty else {
+            services.toast.show("No text to translate here", style: .info, near: CaptureSession.appKitRect(region))
+            return
+        }
+        services.translateText(paragraphs.joined(separator: "\n\n"), region)
     }
 
     /// The region stays live; whatever is scrolled under it is stitched into one tall image, which

@@ -32,6 +32,9 @@ final class CopilotServices {
     let toast = Toast()
     var openSettings: (_ paneID: String?) -> Void = { _ in }
     var showWelcome: () -> Void = {}
+    /// Shows a translation of `text` on a card beside `near` (AX coordinates), for modules that find
+    /// text (screenshots); Translate provides it.
+    var translateText: (_ text: String, _ near: CGRect?) -> Void = { _, _ in }
 
     init(core: NyCore, preferences: Preferences, hotKeys: HotKeyCenter) {
         self.core = core

@@ -160,6 +160,18 @@ final class ScreenTranslator {
     /// same size, on the same background. Only a line long enough to have wrapped carries on to the
     /// next — short labels stacked in a sidebar or a menu stay apart, and a paragraph's short last line
     /// ends it — and a bullet or number starts a new one.
+    /// The text in an image, paragraph by paragraph, read the way the screen is: for translating a
+    /// screenshot. `scale` is the image's pixels per point.
+    static func paragraphs(in image: CGImage, scale: CGFloat) async throws -> [String] {
+        let lines = try await ScreenText.lines(in: image, scale: scale)
+        return paragraphs(entries(lines, from: PixelSampler(image, scale: scale, origin: .zero)), language: nil).map(\.text)
+    }
+
+    /// Lines with what grouping them takes: the background around each and its font size.
+    private static func entries(_ lines: [ScreenText.Line], from pixels: PixelSampler) -> [Entry] {
+        lines.map { Entry(line: $0, background: pixels.background(around: $0.rect), fontSize: ScreenText.fontSize(of: $0)) }
+    }
+
     static func paragraphs(_ entries: [Entry], language code: String?) -> [Paragraph] {
         var groups: [[Entry]] = []
         for entry in entries.sorted(by: { $0.line.rect.minY < $1.line.rect.minY }) {
@@ -261,12 +273,11 @@ final class ScreenTranslator {
             bar.reading = displays.contains { $0 !== display && $0.reading }
             return
         }
-        let pixels = PixelSampler(crop, scale: scale, origin: band.origin)
         // Every line is highlighted, whatever its language — only blocks that need it get translated.
-        let found = lines.map { ScreenText.Line(text: $0.text, rect: $0.rect.offsetBy(dx: band.minX, dy: band.minY)) }
+        let placed = lines.map { ScreenText.Line(text: $0.text, rect: $0.rect.offsetBy(dx: band.minX, dy: band.minY)) }
             // Lines where the screen changed meanwhile wait for the next read.
             .filter { line in !display.changedDuringRead.contains { $0.intersects(line.rect) } }
-            .map { Entry(line: $0, background: pixels.background(around: $0.rect), fontSize: ScreenText.fontSize(of: $0)) }
+        let found = Self.entries(placed, from: PixelSampler(crop, scale: scale, origin: band.origin))
         display.entries.removeAll { band.intersects($0.line.rect) }
         display.entries += found
         update(display)

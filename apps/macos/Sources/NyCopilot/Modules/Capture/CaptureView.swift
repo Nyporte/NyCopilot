@@ -2,7 +2,7 @@ import AppKit
 import VisionKit
 
 /// What the user chose to do with a capture.
-enum CaptureAction { case copy, save, quickSave, pin, scroll }
+enum CaptureAction { case copy, save, quickSave, pin, scroll, translate }
 
 /// The interactive layer of one display during a capture: dims the frozen screen, highlights the
 /// window under the pointer, lets you drag or adjust a selection, shows a magnifier, and draws
@@ -693,6 +693,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
                 case "c" where showsMagnifier: copyColor()
                 case "t" where selection != nil: beginReadingText()
                 case "s" where selection != nil: finish(.scroll)
+                case "r" where selection != nil: finish(.translate)
                 case ",": stepRecent(by: 1)
                 case ".": stepRecent(by: -1)
                 case "1", "2", "3", "4", "5", "6", "7", "8":

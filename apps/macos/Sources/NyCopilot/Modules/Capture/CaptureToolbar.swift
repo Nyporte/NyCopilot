@@ -69,6 +69,9 @@ final class CaptureToolbar: NSView {
         textButton.action = #selector(showText)
         scrollButton.target = self
         scrollButton.action = #selector(scrollCapture)
+        let translate = Self.icon("character.bubble", "Translate the text (R)")
+        translate.target = self
+        translate.action = #selector(translateText)
         let save = Self.icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)")
         save.target = self
         save.action = #selector(save(_:))
@@ -79,7 +82,7 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, scrollButton, save, pin, cancel, copy], spacing: 2)
+        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, translate, scrollButton, save, pin, cancel, copy], spacing: 2)
         options.isHidden = true
 
         let column = Design.vstack([mainRow, options], spacing: 6, alignment: .leading)
@@ -266,6 +269,7 @@ final class CaptureToolbar: NSView {
     @objc private func undo() { onUndo?() }
     @objc private func redo() { onRedo?() }
     @objc private func pin(_ sender: Any?) { onAction?(.pin) }
+    @objc private func translateText() { onAction?(.translate) }
     @objc private func save(_ sender: Any?) {
         onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save)
     }

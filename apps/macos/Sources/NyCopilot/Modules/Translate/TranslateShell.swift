@@ -34,6 +34,7 @@ final class TranslateShell: ModuleShell {
         composer.onCancel = { [weak self] in self?.returnToSource() }
         composer.onClose = { [weak self] in self?.cancelOperation() }
         composer.onCycleLanguage = { [weak self] step in self?.cycleLanguage(step) }
+        services.translateText = { [weak self] text, near in self?.selection.show(text, near: near) }
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
