@@ -30,8 +30,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
     /// it, out to the window (innermost first); scrolling picks a larger or smaller one.
     private var hoverCandidates: [Outline] = []
     private var hoverLevel = 0
-    /// The depth scrolling chose, kept as the pointer moves: elsewhere the outline goes to the part
-    /// at that depth, or, where there's none so deep, the nearest one containing the pointer.
+    /// The level being outlined: set by the first outline, changed only by scrolling. As the pointer
+    /// moves, the outline goes to the part at this depth, or, where there's none so deep, the nearest
+    /// one containing the pointer — it never wanders to another level on its own.
     private var pinned: Int?
     /// An outline much larger than the current one waits for the pointer to stay put, so crossing
     /// the gap between two buttons doesn't flash the bar they sit in.
@@ -408,6 +409,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
             .map { Outline(rect: $0.rect.offsetBy(dx: -origin.x, dy: -origin.y), depth: $0.depth) }
         guard path != hoverCandidates || pendingGrowth != nil else { return }
         let level = Self.level(in: path, pinned: pinned)
+        // The first part outlined sets the level from then on.
+        if pinned == nil, path.count > 1 { pinned = path[level].depth }
         let next = path[level].rect
         if let shown = hoverWindow, shown != next, Self.area(next) > Self.area(shown) * 2.5, !NSEvent.modifierFlags.contains(.option) {
             // Growing a lot: only once the pointer has stayed on it a moment.
@@ -438,8 +441,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     private static func area(_ rect: CGRect) -> CGFloat { max(rect.width * rect.height, 1) }
 
-    /// Which part to outline (`candidates` run innermost first). With ⌥, the window. After
-    /// scrolling, the part at the chosen depth, or the nearest one out from it. Otherwise the
+    /// Which part to outline (`candidates` run innermost first). With ⌥, the window. At a chosen
+    /// level, the part at that depth or the nearest one out from it. With none chosen yet, the
     /// smallest part big enough to be a real control.
     static func level(in candidates: [Outline], pinned: Int?) -> Int {
         if NSEvent.modifierFlags.contains(.option) { return candidates.count - 1 }

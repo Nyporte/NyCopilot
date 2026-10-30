@@ -56,6 +56,16 @@ enum RegionBuilder {
         kAXRowRole, kAXComboBoxRole, "AXLink", kAXMenuButtonRole, kAXImageRole
     ]
 
+    /// Apps already given a moment to build their accessibility tree (maps of two displays may ask at once).
+    nonisolated(unsafe) private static var waitedFor: Set<pid_t> = []
+    private static let waitLock = NSLock()
+
+    private static func firstWait(for pid: pid_t) -> Bool {
+        waitLock.lock()
+        defer { waitLock.unlock() }
+        return waitedFor.insert(pid).inserted
+    }
+
     /// Parts read per window and time spent, so one heavy web page doesn't hold up the capture.
     static let nodeLimit = 2500
     static let timeLimit: TimeInterval = 0.5
@@ -63,10 +73,12 @@ enum RegionBuilder {
     static func tree(for window: FrozenScreen.Window, pixels: GreyPixels?) -> RegionTree {
         let started = Date()
         let root = RegionTree.Node(rect: window.rect, depth: 0)
-        guard AXIsProcessTrusted(), window.pid > 0, let element = windowElement(for: window) else { return RegionTree(nodes: [root]) }
+        // Menu bar items and other small windows are one part already.
+        guard AXIsProcessTrusted(), window.pid > 0, min(window.rect.width, window.rect.height) >= 60,
+              let element = windowElement(for: window) else { return RegionTree(nodes: [root]) }
         var layers = read(from: element, in: window.rect)
-        // An Electron app asked just now builds its tree a moment later.
-        if layers.count < 3 {
+        // An Electron app asked just now builds its tree a moment later; worth one wait per app.
+        if layers.count < 3, min(window.rect.width, window.rect.height) >= 200, firstWait(for: window.pid) {
             Thread.sleep(forTimeInterval: 0.25)
             layers = read(from: element, in: window.rect)
         }
@@ -183,7 +195,10 @@ final class RegionMap {
 
     init(windows: [FrozenScreen.Window]) {
         self.windows = windows
-        order = Array(windows.indices)
+        // A window entirely behind one in front of it can't be pointed at; it stays a single part.
+        let hidden = windows.indices.filter { index in windows[..<index].contains { $0.rect.insetBy(dx: -2, dy: -2).contains(windows[index].rect) } }
+        for index in hidden { trees[index] = RegionTree(nodes: [RegionTree.Node(rect: windows[index].rect, depth: 0)]) }
+        order = windows.indices.filter { !hidden.contains($0) }
     }
 
     func tree(for index: Int) -> RegionTree? { trees[index] }

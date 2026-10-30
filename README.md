@@ -148,10 +148,10 @@ dragging it to the edge of the screen.
   or similar) — snaps each side onto the edge actually drawn, border included, merges near-identical
   ones, and nests what's left into a fixed tree: window → panes → cards and bars → controls. Hovering
   looks the pointer up in that tree, so the same spot always gives the same outline and parts side by
-  side sit at the same level; dots by the size show the levels under the pointer. **Scroll** up for
-  the part containing it, down for a smaller one; the level you scroll to stays as you move — other
-  cards, other rows — and where there's nothing that deep, the nearest part containing the pointer is
-  outlined. Hold **⌥** for the whole window. There's one outline, gliding from part to part, and it
+  side sit at the same level; dots by the size show the levels under the pointer. The first outline
+  sets a level, and only scrolling changes it: **scroll** up for the part containing it, down for a
+  smaller one. As you move, the outline stays at that level — other cards, other rows — and where
+  there's nothing that deep, the nearest part containing the pointer is outlined. Hold **⌥** for the whole window. There's one outline, gliding from part to part, and it
   grows to a much larger part only once the pointer rests there, so crossing the gap between two
   buttons doesn't flash the bar they sit in. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
