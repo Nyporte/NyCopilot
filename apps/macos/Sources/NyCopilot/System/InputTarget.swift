@@ -114,10 +114,9 @@ final class InputTarget: @unchecked Sendable {
     }
 
     /// Activate and verify the field; no keystroke is sent unless the app is back in front with the
-    /// same field (when it has one) focused. Returns whether the paste went to a verified field.
+    /// same field (when it has one) focused.
     @MainActor
-    @discardableResult
-    func insert(_ text: String, prepareForPaste: () async -> Void) async throws -> Bool {
+    func insert(_ text: String, prepareForPaste: () async -> Void) async throws {
         try await InputFocusHandoff.restore(
             foreground: {
                 switch NSWorkspace.shared.frontmostApplication?.processIdentifier {
@@ -146,7 +145,6 @@ final class InputTarget: @unchecked Sendable {
 
         // Always use native paste so web editors receive their normal input and paste events.
         try await paste(text)
-        return isVerified
     }
 
     /// Restore the captured window and field, not whichever control happens to be focused.

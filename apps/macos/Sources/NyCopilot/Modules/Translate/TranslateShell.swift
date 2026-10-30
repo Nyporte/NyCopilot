@@ -190,10 +190,7 @@ final class TranslateShell: ModuleShell {
             return
         }
         do {
-            let verified = try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
-            if !verified {
-                services.toast.show("Pasted", detail: "It’s on your clipboard too, in case the app didn’t take it.", style: .success, near: anchor)
-            }
+            try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
         } catch is CancellationError {
         } catch TemporaryPasteboard.Failure.restoreFailed {
             services.toast.show("Pasted", detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)
