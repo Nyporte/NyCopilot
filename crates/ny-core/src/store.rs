@@ -203,6 +203,26 @@ impl Store {
         Ok(changed)
     }
 
+    /// Replace a live record's data and search text; its id and creation time stay. Returns the
+    /// updated record, or `None` if there is none (or it was deleted).
+    pub fn update(&mut self, id: &str, data: Value, search: &str) -> Result<Option<Record>> {
+        let tx = self.conn.transaction()?;
+        let rev = Self::next_rev(&tx)?;
+        let changed = tx.execute(
+            "UPDATE records SET data = ?2, search = ?3, updated_at = ?4, origin = ?5, rev = ?6 WHERE id = ?1 AND deleted = 0",
+            params![id, data.to_string(), search, now_millis(), self.device, rev],
+        )?;
+        if changed == 0 { return Ok(None); }
+        tx.commit()?;
+        self.get(id)
+    }
+
+    /// How many live records `collection` holds.
+    pub fn count(&self, collection: &str) -> Result<usize> {
+        let count: i64 = self.conn.query_row("SELECT COUNT(*) FROM records WHERE collection = ?1 AND deleted = 0", [collection], |r| r.get(0))?;
+        Ok(count as usize)
+    }
+
     /// Tombstone every record in `collection` beyond the newest `keep`, and any created before
     /// `before` (milliseconds); for collections with a retention policy. Returns how many went.
     pub fn prune(&mut self, collection: &str, keep: usize, before: i64) -> Result<usize> {

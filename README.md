@@ -2,7 +2,7 @@
 
 NyCopilot is a personal copilot that lives in the menu bar and works inside every app. It is a
 foundation for many modules across several operating systems, with a sync server to come. Today it
-ships four:
+ships five:
 
 - **Translate** — type in any text field and replace it with a translation, translate a selection,
   or read the whole screen in your language (⌥⌘T).
@@ -10,6 +10,8 @@ ships four:
 - **Screenshot & Pin** — capture, annotate, copy, save, translate, and pin images on top of
   everything (F1, F3).
 - **Clipboard** — everything you copy, searchable, pasted back with a keystroke (⌥⌘V).
+- **Inbox** — catch a thought in a second — typed, selected, or a screenshot — and deal with it
+  later (F10).
 
 ## How it's built
 
@@ -203,6 +205,20 @@ windows** (off by default) leaves pins and other NyCopilot windows out of captur
 - **Settings → Clipboard** turns it off, sets how long entries are kept (a day to a year, 30 days by
   default) and how many (500 by default), clears everything, and changes the shortcut.
 
+## Inbox
+
+- **F10** opens the inbox near the pointer, ready to type: **Return** files the note and clears the
+  box for the next one, **Shift+Return** adds a line. Below it, the notes waiting, newest first, with
+  the app you were in and when. **↓** moves into the notes: **Return** (or a double-click) edits one,
+  **⌘C** copies it, **⌫** marks it handled (it goes), **↑** at the top goes back to the box. **Esc** or
+  F10 again puts the inbox away and returns you to where you were.
+- **F10 with text selected** in any app — Chinese, English, anything — sends the selection straight to
+  the inbox, with a short confirmation by the pointer.
+- **In a screenshot**, **I** (or the tray button) sends the capture to the inbox as a note with the
+  image; copying that note copies the image.
+- The menu bar menu shows how many notes are waiting. **Settings → Inbox** changes the shortcut and
+  clears everything.
+
 ## Shortcuts
 
 Every module lists its shortcuts in its own Settings tab. A shortcut needs ⌘, ⌥, or ⌃, or can be a
@@ -222,7 +238,8 @@ reasons show up as they happen: the composer says when it's in copy mode because
 - Data lives in `~/Library/Application Support/NyCopilot/nycopilot.db` (folder 0700, file 0600):
   settings, translation history, clipboard history (text and the app it came from; it never leaves
   this Mac), and capture history (regions and file paths, not images). Open pins are kept as PNGs in
-  `Pins/` beside it and deleted when you close them. The diagnostics log lives only in memory. Deleting
+  `Pins/` beside it and deleted when you close them; inbox notes are in the database and their
+  screenshots in `Inbox/`, deleted when a note is handled. The diagnostics log lives only in memory. Deleting
   an item removes its content immediately and leaves a content-free tombstone for future sync.
 - The model's API key, the Google web app's access key, and the Volcengine key are stored only in the
   macOS Keychain (`dev.nycopilot.NyCopilot`) and passed to the core per request; they are never written

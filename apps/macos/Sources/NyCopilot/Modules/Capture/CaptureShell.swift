@@ -139,6 +139,10 @@ final class CaptureShell: ModuleShell {
         switch action {
         case .scroll:
             break // Handled by the session's onScroll.
+        case .inbox:
+            record(image, region: region, screen: screen, path: nil)
+            end()
+            services.sendToInbox(nil, image, previousApp?.localizedName ?? "")
         case .translate:
             end()
             Task { await translateText(in: image, region: region) }

@@ -238,6 +238,26 @@ impl Core {
         Ok(record)
     }
 
+    /// Replace the data of a record in `collection` (which the calling module owns) and notify listeners.
+    pub fn update_record(&self, collection: &str, id: &str, data: Value, search: &str) -> Result<crate::Record> {
+        self.owned_collection(collection)?;
+        let mut store = self.store()?;
+        match store.get(id)? {
+            Some(existing) if existing.collection == collection => {}
+            _ => return Err(NyError::not_found("That item no longer exists.")),
+        }
+        let record = store.update(id, data, search)?.ok_or_else(|| NyError::not_found("That item no longer exists."))?;
+        drop(store);
+        self.emit(json!({ "type": "records.changed", "collection": collection, "id": id, "change": "updated" }));
+        Ok(record)
+    }
+
+    /// How many live records a collection the calling module owns holds.
+    pub fn count_records(&self, collection: &str) -> Result<usize> {
+        self.owned_collection(collection)?;
+        self.store()?.count(collection)
+    }
+
     /// Apply a collection's retention policy (see `Store::prune`) and notify listeners.
     pub fn prune_records(&self, collection: &str, keep: usize, before: i64) -> Result<usize> {
         self.owned_collection(collection)?;

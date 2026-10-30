@@ -39,6 +39,7 @@ enum SettingKey: String {
 enum CoreCollection: String {
     case translateHistory = "translate.history"
     case clipboardItems = "clipboard.items"
+    case inboxNotes = "inbox.notes"
 }
 
 extension NyCore {
