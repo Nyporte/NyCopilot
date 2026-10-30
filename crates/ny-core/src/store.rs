@@ -203,6 +203,21 @@ impl Store {
         Ok(changed)
     }
 
+    /// Tombstone every record in `collection` beyond the newest `keep`, and any created before
+    /// `before` (milliseconds); for collections with a retention policy. Returns how many went.
+    pub fn prune(&mut self, collection: &str, keep: usize, before: i64) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let rev = Self::next_rev(&tx)?;
+        let changed = tx.execute(
+            "UPDATE records SET deleted = 1, data = 'null', search = '', updated_at = ?3, origin = ?4, rev = ?5
+             WHERE collection = ?1 AND deleted = 0 AND (created_at < ?2 OR id NOT IN (
+                 SELECT id FROM records WHERE collection = ?1 AND deleted = 0 ORDER BY id DESC LIMIT ?6))",
+            params![collection, before, now_millis(), self.device, rev, keep as i64],
+        )?;
+        if changed > 0 { tx.commit()?; }
+        Ok(changed)
+    }
+
     /// Every record (including tombstones) changed after `rev`, oldest change first.
     pub fn changes_since(&self, rev: i64, limit: usize) -> Result<Vec<Record>> {
         let mut statement = self.conn.prepare(&format!("SELECT {COLUMNS} FROM records WHERE rev > ?1 ORDER BY rev LIMIT ?2"))?;

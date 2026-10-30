@@ -26,6 +26,9 @@ enum SettingKey: String {
     case captureStyle = "capture.style"
     case pinShadow = "capture.pin_shadow"
     case hideOwnWindows = "capture.hide_own_windows"
+    case clipboardEnabled = "clipboard.enabled"
+    case clipboardKeepDays = "clipboard.keep_days"
+    case clipboardMaxItems = "clipboard.max_items"
     case welcomeCompleted = "client.welcome_completed"
     case migratedNyTranslate = "client.migrated_nytranslate"
     case rectangleImportChecked = "client.windows.rectangle_import_checked"
@@ -35,6 +38,7 @@ enum SettingKey: String {
 /// Record collections the macOS client lists or clears.
 enum CoreCollection: String {
     case translateHistory = "translate.history"
+    case clipboardItems = "clipboard.items"
 }
 
 extension NyCore {

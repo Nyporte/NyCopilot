@@ -5,6 +5,15 @@ import AppKit
 public enum TemporaryPasteboard {
     public static let maximumSnapshotBytes = 8 * 1024 * 1024
 
+    /// Recent clipboard generations NyCopilot produced itself — temporary text, a copy it asked for,
+    /// the restored original — which a clipboard history must not take for the user's own copies.
+    public private(set) static var ownChanges: [Int] = []
+
+    private static func markOwn(_ board: NSPasteboard) {
+        ownChanges.append(board.changeCount)
+        if ownChanges.count > 16 { ownChanges.removeFirst(ownChanges.count - 16) }
+    }
+
     /// Restore all original representations on success or failure, without overwriting a newer copy.
     public static func withText(
         _ text: String,
@@ -20,11 +29,13 @@ public enum TemporaryPasteboard {
         board.clearContents()
         let written = board.setString(text, forType: .string)
         let temporaryChange = board.changeCount
+        markOwn(board)
 
         // Only this operation's own clipboard generation may be replaced with the saved contents.
         func restore() throws {
             guard board.changeCount == temporaryChange else { return }
             board.clearContents()
+            defer { markOwn(board) }
             if !saved.isEmpty, !board.writeObjects(saved) { throw Failure.restoreFailed }
         }
 
@@ -55,10 +66,12 @@ public enum TemporaryPasteboard {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         guard board.changeCount != initialChange else { return nil }
+        markOwn(board)
         // Copied files (a Finder selection) carry their names as text; those aren't a text selection.
         let text = board.types?.contains(.fileURL) == true ? nil : board.string(forType: .string)
         board.clearContents()
         if !saved.isEmpty { board.writeObjects(saved) }
+        markOwn(board)
         return text
     }
 

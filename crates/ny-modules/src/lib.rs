@@ -11,6 +11,7 @@ use std::sync::Arc;
 use ny_core::Module;
 
 pub mod capture;
+pub mod clipboard;
 pub mod google;
 pub mod translate;
 pub mod volcengine;
@@ -18,7 +19,8 @@ pub mod windows;
 
 /// Every module this build ships, in menu order. The `llm` module comes first because others use it.
 pub fn all() -> Vec<Arc<dyn Module>> {
-    vec![Arc::new(ny_llm::LlmModule), Arc::new(translate::TranslateModule), Arc::new(windows::WindowsModule), Arc::new(capture::CaptureModule)]
+    vec![Arc::new(ny_llm::LlmModule), Arc::new(translate::TranslateModule), Arc::new(windows::WindowsModule), Arc::new(capture::CaptureModule),
+         Arc::new(clipboard::ClipboardModule)]
 }
 
 /// A loopback stand-in for the HTTP services modules call: each connection gets the next canned

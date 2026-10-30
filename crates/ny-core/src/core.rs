@@ -238,6 +238,14 @@ impl Core {
         Ok(record)
     }
 
+    /// Apply a collection's retention policy (see `Store::prune`) and notify listeners.
+    pub fn prune_records(&self, collection: &str, keep: usize, before: i64) -> Result<usize> {
+        self.owned_collection(collection)?;
+        let count = self.store()?.prune(collection, keep, before)?;
+        if count > 0 { self.emit(json!({ "type": "records.changed", "collection": collection, "change": "pruned" })); }
+        Ok(count)
+    }
+
     pub fn emit(&self, event: Value) { (self.events)(event); }
 
     fn owned_collection(&self, collection: &str) -> Result<()> {

@@ -111,6 +111,8 @@ final class TemporaryPasteboardTests: XCTestCase {
         }
         XCTAssertEqual(copied, "Selected words")
         XCTAssertEqual(board.string(forType: .string), "Original")
+        // Both the induced copy and the restore are NyCopilot's own, not the user's.
+        XCTAssertTrue(TemporaryPasteboard.ownChanges.contains(board.changeCount))
         let before = board.changeCount
         let nothing = await TemporaryPasteboard.copying(on: board, timeout: 0.05) {}
         XCTAssertNil(nothing)
