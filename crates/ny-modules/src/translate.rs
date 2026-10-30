@@ -199,9 +199,9 @@ pub fn translate_text(core: &Core, text: &str, language: &str, keys: &Keys) -> R
     }
     match failures.len() {
         0 if lacks_language => Err(NyError::new("unsupported_language", format!(
-            "None of your translation services offers “{language}”. Choose a standard language, or connect a model in Settings → Model."))),
+            "None of your translation services offers “{language}”. Choose a standard language, or connect a model in Settings → AI & Engines."))),
         0 => Err(NyError::new("provider_not_configured",
-            "Set up a translation service first: Google Translate or Volcengine in Settings → Translate, or a model in Settings → Model.")),
+            "Set up a translation service first: Google Translate, Volcengine, or a model in Settings → AI & Engines.")),
         1 => Err(failures.remove(0).1),
         _ => {
             let message = reasons(&failures);

@@ -52,8 +52,8 @@ final class ScreenTranslator {
             return
         }
         guard services.preferences.canTranslate else {
-            services.toast.show("Set up a translation service first", detail: "Settings → Translate or Settings → Model.", style: .warning)
-            services.openSettings("translate")
+            services.toast.show("Set up a translation service first", detail: "Screen translation needs one: Settings → AI & Engines.", style: .warning)
+            services.openSettings("model")
             return
         }
         choose(services.core.readingLanguage, remember: false)

@@ -222,6 +222,11 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         resizeToContent()
     }
 
+    /// Editable again without a result: the text went to macOS's translation panel instead.
+    func stopLoading() { setIdle() }
+
+    var frame: NSRect? { window?.frame }
+
     /// Keep the source for a retry (Return); an optional action fixes the cause (e.g. open Settings).
     func showError(_ message: String, action: (title: String, handler: () -> Void)? = nil) {
         setIdle()

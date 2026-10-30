@@ -163,6 +163,14 @@ final class TranslateShell: ModuleShell {
                 result = try await core.perform("translate.run", params.merging(keys) { _, key in key }, as: RunResult.self)
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
+                // Nothing set up yet: macOS translates it, and its Replace hands the result back.
+                if (error as? NyCore.Failure)?.code == "provider_not_configured", SystemTranslation.isAvailable {
+                    composer.stopLoading()
+                    SystemTranslation.present(text, near: composer.frame ?? .zero) { [weak self] translated in
+                        Task { await self?.deliver(translated, id: id) }
+                    }
+                    return
+                }
                 showFailure(error)
                 return
             }
@@ -182,7 +190,7 @@ final class TranslateShell: ModuleShell {
         case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error":
             composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
                 self?.composer.cancel()
-                self?.services.openSettings("translate")
+                self?.services.openSettings("model")
             }))
         case "invalid_setting":
             composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in

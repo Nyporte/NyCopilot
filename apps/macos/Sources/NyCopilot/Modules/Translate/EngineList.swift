@@ -1,6 +1,6 @@
 import AppKit
 
-/// Settings → Translate → Engines: the translation services in the order they're tried, each with a
+/// Settings → AI & Engines → Translation engines: the translation services in the order they're tried, each with a
 /// switch and a one-line status. ▲ ▼ change the order; the next ready service takes over when one fails.
 @MainActor
 final class EngineList: NSStackView {
@@ -26,7 +26,7 @@ final class EngineList: NSStackView {
                 KeychainStore.hasKey(.volcengine) ? "Ready" : "Add a key below"
             },
             Engine(id: "model", name: "Model", enabled: .modelEnabled) {
-                services.preferences.provider.isComplete ? "Ready — \(services.preferences.provider.model)" : "Connect one in Settings → Model"
+                services.preferences.provider.isComplete ? "Ready — \(services.preferences.provider.model)" : "Connect one above"
             }
         ]
         super.init(frame: .zero)
@@ -58,8 +58,10 @@ final class EngineList: NSStackView {
             let status = enabled ? engine.status() : "Off"
             return FormRow("\(index + 1).  \(engine.name)", subtitle: status, accessory: Design.hstack([up, down, toggle], spacing: 4))
         }
-        let section = FormSection("Engines",
-            footer: "Each translation goes to the first ready engine. If it fails, or doesn’t offer the language, the next one takes over and a short note says so. Only the model follows the instructions below.",
+        let fallback = SystemTranslation.isAvailable
+            ? " With none ready, macOS’s own translation panel translates what you write or select, on this Mac." : ""
+        let section = FormSection("Translation Engines",
+            footer: "Each translation goes to the first ready engine. If it fails, or doesn’t offer the language, the next one takes over and a short note says so. Only the model follows Translate’s instructions." + fallback,
             rows: rows)
         addArrangedSubview(section)
         section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true

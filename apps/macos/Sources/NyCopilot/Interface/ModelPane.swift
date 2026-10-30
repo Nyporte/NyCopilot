@@ -1,6 +1,7 @@
 import AppKit
 
-/// The shared model provider: endpoint, model, key, and a one-click connection test.
+/// Everything AI in one place: the model (used by Ask AI and translation) with a connection test,
+/// the translation engines in the order they're tried and their setup, and Ask AI's options.
 @MainActor
 final class ModelPane: SettingsPane, NSTextFieldDelegate {
     private let services: CopilotServices
@@ -14,10 +15,15 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
     private var hasSavedKey = false
     private var removingKey = false
     private var test: Task<Void, Never>?
+    private lazy var engines = EngineList(services: services)
+    private lazy var google = ServiceSection(.google, services: services)
+    private lazy var volcengine = ServiceSection(.volcengine, services: services)
+    private let imagesSwitch = NSSwitch()
+    private lazy var shortcuts = ShortcutEditor(services: services)
 
     init(services: CopilotServices) {
         self.services = services
-        super.init(id: "model", title: "Model", symbol: "cpu")
+        super.init(id: "model", title: "AI & Engines", symbol: "sparkles")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
@@ -44,15 +50,22 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         saveButton.target = self
         saveButton.action = #selector(save)
 
-        let connection = FormSection("Connection",
-            footer: "Works with any OpenAI-compatible Chat Completions endpoint — hosted providers or local servers such as Ollama and LM Studio. The API key is optional and stored only in your Keychain.",
+        let connection = FormSection("Model",
+            footer: "Ask AI and translation use it. Works with any OpenAI-compatible Chat Completions endpoint — hosted providers or local servers such as Ollama and LM Studio. The API key is optional and stored only in your Keychain.",
             rows: [
                 FormRow("Endpoint URL", accessory: endpoint),
                 FormRow("Model ID", accessory: model),
                 FormRow("API key", accessory: Design.hstack([removeKey, key], spacing: 6))
             ])
         let bar = Design.hstack([status, Design.spacer(), testButton, saveButton], spacing: 8)
-        return [connection, bar]
+        for section in [google, volcengine] { section.onSave = { [weak self] in self?.engines.refresh() } }
+        imagesSwitch.target = self
+        imagesSwitch.action = #selector(toggleImages)
+        let ask = FormSection("Ask AI", footer: "Select text anywhere and press the shortcut to explain, summarize, rewrite, or ask about it; in a screenshot, a pin, or the inbox, press A.", rows: [
+            FormRow("Send screenshots as images", subtitle: "The model must accept images. Off sends only the text read from them, on this Mac.", accessory: imagesSwitch)
+        ])
+        return [connection, bar, engines] + google.makeViews() + volcengine.makeViews()
+            + [ask, shortcuts.section("Ask AI Shortcut", actions: [AskShell.Action.open]), shortcuts.errorLabel]
     }
 
     override func paneWillAppear() {
@@ -63,10 +76,13 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         hasSavedKey = KeychainStore.hasKey()
         removingKey = false
         refreshKeyField()
-        status.show(provider.isComplete ? nil : services.preferences.canTranslate
-                    ? "Optional while another translation engine is set up: the model takes over when it fails or a language needs the model."
-                    : "Add an endpoint and model to start using NyCopilot.", style: .info)
+        status.show(provider.isComplete ? nil : "Add an endpoint and model to use Ask AI. Translation can use the engines below instead.", style: .info)
         updateButtons()
+        engines.refresh()
+        google.refresh()
+        volcengine.refresh()
+        imagesSwitch.state = services.core.setting(.askSendImages, default: true) ? .on : .off
+        shortcuts.refresh()
     }
 
     func controlTextDidChange(_ notification: Notification) { updateButtons() }
@@ -116,6 +132,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         refreshKeyField()
         status.show("Saved.", style: .success)
         updateButtons()
+        engines.refresh()
     }
 
     /// Sends one tiny request with the values on screen, so a setup can be checked before saving.
@@ -146,4 +163,6 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         }
         updateButtons()
     }
+
+    @objc private func toggleImages() { try? services.core.setSetting(.askSendImages, imagesSwitch.state == .on) }
 }

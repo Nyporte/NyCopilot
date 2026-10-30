@@ -93,7 +93,7 @@ pub fn decode_response(data: &[u8], source: &str) -> Result<String> {
     match (reply.code, reply.translated) {
         (200, Some(text)) if !text.trim().is_empty() => Ok(unescape(text, source)),
         (200, _) => Err(NyError::new("empty_response", "Google Translate returned an empty translation.")),
-        (401, _) => Err(NyError::new("invalid_key", "The web app rejected the access key. Check it in Settings → Translate.")),
+        (401, _) => Err(NyError::new("invalid_key", "The web app rejected the access key. Check it in Settings → AI & Engines.")),
         (_, _) => Err(NyError::new("google_error", format!("Google Translate failed: {detail}"))),
     }
 }

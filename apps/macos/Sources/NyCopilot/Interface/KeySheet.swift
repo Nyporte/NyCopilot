@@ -81,7 +81,8 @@ final class KeySheet {
             else { right.append(group); rightCount += group.keys.count + 2 }
         }
         let views = [left, right].filter { !$0.isEmpty }.map { column -> NSView in
-            Design.vstack(column.map(groupView), spacing: 14)
+            // The shorter column ends with space, rather than stretching its rows.
+            Design.vstack(column.map(groupView) + [Design.spacer()], spacing: 14)
         }
         let row = Design.hstack(views, spacing: 32)
         row.alignment = .top
@@ -98,6 +99,9 @@ final class KeySheet {
         grid.rowSpacing = 5
         grid.columnSpacing = 14
         grid.column(at: 0).xPlacement = .trailing
+        // Every group's keys line up in one column.
+        grid.column(at: 0).width = 84
+        grid.setContentHuggingPriority(.required, for: .vertical)
         return Design.vstack([title, grid], spacing: 7)
     }
 }

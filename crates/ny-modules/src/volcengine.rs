@@ -103,7 +103,7 @@ pub fn translate(app_id: &str, key: &str, text: &str, target: &str) -> Result<St
 /// Send a request with the credentials in headers; the status and body, whatever the status.
 fn post(endpoint: &str, app_id: &str, key: &str, body: &[u8]) -> Result<(u16, Vec<u8>)> {
     if key.trim().is_empty() {
-        return Err(NyError::new("invalid_key", "Add a Volcengine API key in Settings → Translate."));
+        return Err(NyError::new("invalid_key", "Add a Volcengine API key in Settings → AI & Engines."));
     }
     if key.chars().any(char::is_control) || app_id.chars().any(char::is_control) {
         return Err(NyError::new("invalid_key", "The key can’t contain line breaks or control characters."));
@@ -144,7 +144,7 @@ fn decode_list(data: &[u8]) -> Result<Vec<String>> {
         SUCCESS => Ok(reply.data.map(|d| d.translation_list.into_iter().map(|i| i.translation).collect()).unwrap_or_default()),
         // A wrong key is reported as a generic 55000000 with the header named in the message.
         _ if ["api-key", "access-key", "app-key"].iter().any(|header| detail.to_lowercase().contains(header)) =>
-            Err(NyError::new("invalid_key", format!("Volcengine rejected the credentials ({detail}). Check the key — and the App ID, for old-console credentials — in Settings → Translate."))),
+            Err(NyError::new("invalid_key", format!("Volcengine rejected the credentials ({detail}). Check the key — and the App ID, for old-console credentials — in Settings → AI & Engines."))),
         45_000_130 => Err(NyError::new("input_too_large", "Too long for Volcengine: each line can be at most about 1,024 tokens.")),
         45_000_001 => Err(NyError::new("volcengine_error", format!("Volcengine rejected the request: {detail}"))),
         55_000_001 => Err(NyError::new("volcengine_error", "Volcengine had an internal problem. Try again shortly.")),

@@ -329,15 +329,17 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
 
     /// The answers grow the panel downward from where it opened, then scroll.
     private func fit() {
-        guard let layout = transcript.layoutManager, let container = transcript.textContainer else { return }
+        guard let layout = transcript.layoutManager, let container = transcript.textContainer, let content = panel.contentView else { return }
+        // The text wraps at the scroll view's width, which is only known once the panel is laid out.
+        content.layoutSubtreeIfNeeded()
+        transcript.setFrameSize(NSSize(width: Self.width - 32, height: transcript.frame.height))
         layout.ensureLayout(for: container)
         let used = transcript.string.isEmpty ? 0 : layout.usedRect(for: container).height + 6
         transcriptHeight.constant = min(Self.maxTranscript, ceil(used))
         transcriptScroll.isHidden = used == 0
-        guard let content = panel.contentView else { return }
         content.layoutSubtreeIfNeeded()
         let height = content.fittingSize.height
-        let top = panel.isVisible ? panel.frame.maxY : panel.frame.minY + panel.frame.height
+        let top = panel.frame.maxY
         panel.setFrame(NSRect(x: panel.frame.minX, y: top - height, width: Self.width, height: height), display: true)
     }
 

@@ -82,6 +82,12 @@ final class SelectionTranslator {
             card.show(result.text)
         } catch {
             guard !Task.isCancelled, card.isVisible else { return }
+            if (error as? NyCore.Failure)?.code == "provider_not_configured", SystemTranslation.isAvailable {
+                let frame = card.frame
+                dismiss()
+                SystemTranslation.present(text, near: frame)
+                return
+            }
             Diagnostics.note("translate", "selection failed: \(error.localizedDescription)")
             card.show(failure: error.localizedDescription)
         }

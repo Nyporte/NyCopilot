@@ -52,7 +52,8 @@ final class AskShell: ModuleShell {
         [services.menuItem("Ask AI…", symbol: "sparkles", hotKey: Action.open, target: self, action: #selector(openFromMenu))]
     }
 
-    func makeSettingsPane() -> SettingsPane? { AskPane(services: services) }
+    /// Its options live in AI & Engines, with the model it uses.
+    func makeSettingsPane() -> SettingsPane? { nil }
 
     func shutdown() { panel.close() }
 
@@ -144,38 +145,4 @@ final class AskShell: ModuleShell {
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         return NSRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
     }
-}
-
-/// Ask AI settings: the shortcut, and whether screenshots go to the model as images.
-@MainActor
-final class AskPane: SettingsPane {
-    private let services: CopilotServices
-    private let imagesSwitch = NSSwitch()
-    private lazy var shortcuts = ShortcutEditor(services: services)
-
-    init(services: CopilotServices) {
-        self.services = services
-        super.init(id: "ask", title: "Ask AI", symbol: "sparkles")
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init(services:)") }
-
-    override func makeSections() -> [NSView] {
-        imagesSwitch.target = self
-        imagesSwitch.action = #selector(toggleImages)
-        return [
-            FormSection("Asking", footer: "Ask AI uses the model in Settings → Model. Select text anywhere and press the shortcut to explain, summarize, rewrite, or ask about it; in a screenshot, a pin, or the inbox, press A.", rows: [
-                FormRow("Send screenshots as images", subtitle: "The model must accept images. Off sends only the text read from them, on this Mac.", accessory: imagesSwitch)
-            ]),
-            shortcuts.section("Shortcuts", footer: nil, actions: [AskShell.Action.open]),
-            shortcuts.errorLabel
-        ]
-    }
-
-    override func paneWillAppear() {
-        imagesSwitch.state = services.core.setting(.askSendImages, default: true) ? .on : .off
-        shortcuts.refresh()
-    }
-
-    @objc private func toggleImages() { try? services.core.setSetting(.askSendImages, imagesSwitch.state == .on) }
 }
