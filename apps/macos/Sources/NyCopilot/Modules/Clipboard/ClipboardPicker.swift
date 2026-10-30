@@ -13,7 +13,8 @@ struct ClipboardEntry: Decodable {
 
 /// The clipboard history as a small floating list near the pointer, pinned entries first: type to
 /// search, ↑↓ to choose, Return (or a double-click) to paste, ⌘1–⌘9 to paste one of the first nine,
-/// ⌘C to copy without pasting, ⌘P to pin or unpin, ⌘⌫ to forget an entry, Esc to close.
+/// ⌘C to copy without pasting, ⌘P to pin or unpin, ⌘R / ⌘I / ⌘A to translate it, keep it in the
+/// inbox, or ask about it, ⌘⌫ to forget an entry, Esc to close.
 @MainActor
 final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSSearchFieldDelegate {
     private typealias Item = CoreRecord<ClipboardEntry>
@@ -22,6 +23,8 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     var onPick: ((ClipboardEntry, InputTarget?) -> Void)?
     /// The entry onto the clipboard without pasting.
     var onCopy: ((ClipboardEntry) -> Void)?
+    /// ⌘R, ⌘I, ⌘A: translate it, keep it in the inbox, or ask about it; the app it was opened over.
+    var onVerb: ((Verb, ClipboardEntry, NSRunningApplication?) -> Void)?
 
     private let core: NyCore
     private let images: ImageFolder
@@ -75,7 +78,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
 
-        let hint = Design.label("↩ paste   ⌘1–9 pick   ⌘C copy   ⌘P pin   ⌘⌫ forget   esc close", size: 10.5, color: .tertiaryLabelColor)
+        let hint = Design.label("↩ paste   ⌘C copy   ⌘P pin   ⌘R translate   ⌘I inbox   ⌘A ask", size: 10.5, color: .tertiaryLabelColor)
         for view in [search, scroll, hint, empty] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             material.addSubview(view)
@@ -175,6 +178,14 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
                 NSSound.beep()
                 empty.stringValue = error.localizedDescription
             }
+            return true
+        case "r", "i", "a":
+            // ⌘A selects the search text while there is some.
+            if key == "a", !search.stringValue.isEmpty { return false }
+            guard items.indices.contains(row) else { return true }
+            let entry = items[row].data, app = source
+            close()
+            onVerb?(key == "r" ? .translate : key == "i" ? .inbox : .ask, entry, app)
             return true
         case "\u{8}", "\u{7F}":
             guard items.indices.contains(row) else { return true }

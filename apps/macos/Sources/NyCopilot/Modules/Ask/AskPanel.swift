@@ -17,7 +17,7 @@ struct AskMaterial {
 
 /// The Ask AI panel: what it's about at the top, three actions (Explain, Summarize, Rewrite), the
 /// answers, and a box for a question or a follow-up. ↩ asks (or, empty, explains), ⌘1–3 run an action
-/// afresh, ⌘C copies the answer (or what's selected in it), ⌘I keeps it in the inbox, ⌘↩ puts a
+/// afresh, ⌘C copies the answer (or what's selected in it), ⌘I keeps it in the inbox, ⌘P pins it, ⌘↩ puts a
 /// rewrite in place of the selection, Esc or a click elsewhere closes it.
 @MainActor
 final class AskPanel: NSObject, NSTextFieldDelegate {
@@ -31,6 +31,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     var onAsk: ((_ action: String, _ question: String, _ turns: [[String: String]]) async throws -> String)?
     var onCancel: (() -> Void)?
     var onKeep: ((String) -> Void)?
+    var onPin: ((String) -> Void)?
     var onReplace: ((String) -> Void)?
 
     private let panel = AskWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
@@ -267,7 +268,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         var parts = [material.isEmpty ? "↩ ask" : turns.isEmpty ? "↩ ask or explain" : "↩ follow up"]
         if !material.isEmpty { parts.append("⌘1–3 actions") }
         if lastAnswer != nil {
-            parts += ["⌘C copy", "⌘I inbox"]
+            parts += ["⌘C copy", "⌘I inbox", "⌘P pin"]
             if material.replaceable != nil { parts.append("⌘↩ replace selection") }
         }
         parts.append("esc close")
@@ -294,6 +295,10 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         case "i":
             guard let lastAnswer else { return true }
             onKeep?(lastAnswer)
+            return true
+        case "p":
+            guard let lastAnswer else { return true }
+            onPin?(lastAnswer)
             return true
         case "\r":
             guard let lastAnswer, material.replaceable != nil else { return false }

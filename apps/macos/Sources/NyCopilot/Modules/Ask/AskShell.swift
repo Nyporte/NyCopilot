@@ -39,6 +39,7 @@ final class AskShell: ModuleShell {
             services.sendToInbox(answer, nil, material.app)
         }
         panel.onReplace = { [weak self] answer in self?.replace(with: answer) }
+        panel.onPin = { [weak services] answer in services?.pinOnScreen(answer, nil) }
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {

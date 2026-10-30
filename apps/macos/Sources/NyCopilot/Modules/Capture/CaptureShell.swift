@@ -25,6 +25,8 @@ final class CaptureShell: ModuleShell {
     init(services: CopilotServices) {
         self.services = services
         board.onSave = { [weak self] image in self?.saveWithPanel(image, region: nil) }
+        board.onVerb = { [weak services] verb, pin in services?.act(verb, text: nil, image: pin.displayedImage, near: pin.frame) }
+        services.pinOnScreen = { [weak self] text, image in self?.pin(text: text, image: image) }
         board.restore()
         // The display lookup is the slowest part of starting a capture; have it ready.
         ScreenGrabber.warmUp()
@@ -145,7 +147,11 @@ final class CaptureShell: ModuleShell {
             services.sendToInbox(nil, image, previousApp)
         case .translate:
             end()
-            Task { await translateText(in: image, region: region) }
+            services.act(.translate, text: nil, image: image, near: CaptureSession.appKitRect(region))
+        case .ask:
+            record(image, region: region, screen: screen, path: nil)
+            end()
+            services.act(.ask, text: nil, image: image, from: previousApp, near: CaptureSession.appKitRect(region))
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -171,18 +177,6 @@ final class CaptureShell: ModuleShell {
             record(image, region: region, screen: screen, path: nil)
             end()
         }
-    }
-
-    /// The capture's text, paragraph by paragraph, translated on a card beside the region — read from
-    /// the finished image, so whatever a mosaic hides stays hidden.
-    private func translateText(in image: NSImage, region: CGRect) async {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let paragraphs = try? await ScreenTranslator.paragraphs(in: cgImage, scale: CGFloat(cgImage.width) / image.size.width),
-              !paragraphs.isEmpty else {
-            services.toast.show("No text to translate here", style: .info, near: CaptureSession.appKitRect(region))
-            return
-        }
-        services.translateText(paragraphs.joined(separator: "\n\n"), region)
     }
 
     /// The region stays live; whatever is scrolled under it is stitched into one tall image, which
@@ -285,19 +279,29 @@ final class CaptureShell: ModuleShell {
     /// An image pins as is; a #RRGGBB color pins as a swatch; other text pins as a rendered card.
     func pinClipboard() {
         let board = NSPasteboard.general
-        let image: NSImage
         if let picture = NSImage(pasteboard: board), picture.isValid {
-            image = picture
-        } else if let text = board.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
-            image = NSColor(hex: text).map { Self.swatch($0, label: text.uppercased()) } ?? Self.card(text)
+            pin(text: nil, image: picture)
+        } else if let text = board.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            pin(text: text, image: nil)
         } else {
             services.toast.show("Nothing to pin", detail: "Copy an image, some text, or a color first.", style: .info)
+        }
+    }
+
+    /// An image as it is, a `#RRGGBB` color as a swatch, other text as a card — centered on the pointer.
+    private func pin(text: String?, image: NSImage?) {
+        let picture: NSImage
+        if let image {
+            picture = image
+        } else if let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            picture = NSColor(hex: text).map { Self.swatch($0, label: text.uppercased()) } ?? Self.card(text)
+        } else {
             return
         }
         let mouse = NSEvent.mouseLocation
-        let frame = NSRect(x: mouse.x - image.size.width / 2, y: mouse.y - image.size.height / 2,
-                           width: image.size.width, height: image.size.height)
-        self.board.pin(image, at: frame, shadow: services.core.setting(.pinShadow, default: true))
+        let frame = NSRect(x: mouse.x - picture.size.width / 2, y: mouse.y - picture.size.height / 2,
+                           width: picture.size.width, height: picture.size.height)
+        self.board.pin(picture, at: frame, shadow: services.core.setting(.pinShadow, default: true))
     }
 
     private static func card(_ text: String) -> NSImage {

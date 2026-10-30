@@ -78,7 +78,10 @@ final class InboxShell: ModuleShell {
 
     private func openInbox() {
         bar.close(returningFocus: false)
-        if window == nil { window = InboxWindow(core: services.core, images: Self.images, toast: services.toast) }
+        if window == nil {
+            window = InboxWindow(core: services.core, images: Self.images, toast: services.toast)
+            window?.onVerb = { [weak services] verb, text, image in services?.act(verb, text: text, image: image) }
+        }
         window?.present()
     }
 

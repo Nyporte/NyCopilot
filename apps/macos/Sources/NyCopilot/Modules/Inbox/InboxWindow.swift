@@ -3,8 +3,8 @@ import AppKit
 /// The inbox as a window, for working through notes: the list on the left, grouped by day, and
 /// the selected note on the right — its text (edited in place), its screenshot, where it came from.
 /// Inbox, Later (snoozed), and Done switch at the top, with a search. Keys on the list: Space done
-/// (or back), S send to Reminders, Notes, or Markdown, L snooze, ↩ edit, ⌘C copy, ⌘O open the
-/// source, ⌫ delete, ⌘Z undo, ⌘F search.
+/// (or back), S send to Reminders, Notes, or Markdown, L snooze, R translate, A ask AI, P pin,
+/// ↩ edit, ⌘C copy, ⌘O open the source, ⌫ delete, ⌘Z undo, ⌘F search.
 @MainActor
 final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTextViewDelegate {
     struct Note: Decodable {
@@ -25,6 +25,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     private let core: NyCore
     private let images: ImageFolder
     private let toast: Toast
+    /// R, A, P on a note: translate it, ask about it, pin it to the screen.
+    var onVerb: ((Verb, String, NSImage?) -> Void)?
     private let tabs = NSSegmentedControl(labels: ["Inbox", "Later", "Done"], trackingMode: .selectOne, target: nil, action: nil)
     private let search = NSSearchField()
     private let table = InboxTable()
@@ -175,7 +177,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             button.toolTip = tip
         }
         let actions = Design.hstack([doneButton, sendButton, laterButton, copyButton, openButton, Design.spacer(), deleteButton], spacing: 8)
-        let hint = Design.label("Space done   S send   L later   ↩ edit   ⌘C copy   ⌘O source   ⌫ delete   ⌘Z undo", size: 11, color: .tertiaryLabelColor)
+        let hint = Design.label("Space done   S send   L later   R translate   A ask   P pin   ↩ edit   ⌫ delete   ⌘Z undo", size: 11, color: .tertiaryLabelColor)
         hint.lineBreakMode = .byTruncatingTail
         hint.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
         hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -368,6 +370,9 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         switch key {
         case .space: toggleDoneSelected()
         case .character("s") where tab == .inbox: showSendMenu()
+        case .character("r"): verb(.translate)
+        case .character("a"): verb(.ask)
+        case .character("p"): verb(.pin)
         case .character("l") where tab == .inbox: showLaterMenu()
         case .returnKey: editSelected()
         case .delete: deleteSelected()
@@ -402,6 +407,12 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         }
         reload()
         selectNear(row)
+    }
+
+    private func verb(_ verb: Verb) {
+        guard let item = selectedItem else { return }
+        saveNow()
+        onVerb?(verb, editor.string, item.data.image.flatMap(images.image))
     }
 
     // MARK: Sending and snoozing

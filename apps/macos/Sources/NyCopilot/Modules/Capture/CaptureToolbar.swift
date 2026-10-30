@@ -62,7 +62,7 @@ final class CaptureToolbar: NSView {
         redoButton.target = self
         redoButton.action = #selector(redo)
         redoButton.isEnabled = false
-        let pin = Self.icon("pin", "Pin to screen (⌘T)")
+        let pin = Self.icon("pin", "Pin to screen (P or ⌘T)")
         pin.target = self
         pin.action = #selector(pin(_:))
         textButton.target = self
@@ -75,6 +75,9 @@ final class CaptureToolbar: NSView {
         let inbox = Self.icon("tray.and.arrow.down", "Send to Inbox (I)")
         inbox.target = self
         inbox.action = #selector(sendToInbox)
+        let ask = Self.icon("sparkles", "Ask AI about it (A)")
+        ask.target = self
+        ask.action = #selector(askAI)
         let save = Self.icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)")
         save.target = self
         save.action = #selector(save(_:))
@@ -85,7 +88,7 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, translate, scrollButton, inbox, save, pin, cancel, copy], spacing: 2)
+        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, translate, ask, scrollButton, inbox, save, pin, cancel, copy], spacing: 2)
         options.isHidden = true
 
         let column = Design.vstack([mainRow, options], spacing: 6, alignment: .leading)
@@ -274,6 +277,7 @@ final class CaptureToolbar: NSView {
     @objc private func pin(_ sender: Any?) { onAction?(.pin) }
     @objc private func translateText() { onAction?(.translate) }
     @objc private func sendToInbox() { onAction?(.inbox) }
+    @objc private func askAI() { onAction?(.ask) }
     @objc private func save(_ sender: Any?) {
         onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save)
     }

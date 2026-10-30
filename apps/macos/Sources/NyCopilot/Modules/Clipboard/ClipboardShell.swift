@@ -43,6 +43,9 @@ final class ClipboardShell: ModuleShell {
         watcher?.tolerance = 0.2
         picker.onPick = { [weak self] entry, target in self?.paste(entry, into: target) }
         picker.onCopy = { [weak self] entry in self?.put(entry) }
+        picker.onVerb = { [weak services] verb, entry, app in
+            services?.act(verb, text: entry.text, image: entry.image.flatMap(Self.images.image), from: app)
+        }
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {

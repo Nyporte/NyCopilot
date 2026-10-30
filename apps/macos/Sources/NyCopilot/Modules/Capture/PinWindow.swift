@@ -7,6 +7,8 @@ import VisionKit
 @MainActor
 final class PinWindow: NSPanel {
     var onSave: ((NSImage) -> Void)?
+    /// R, I, A, or P on the pin: translate its text, keep it in the inbox, ask about it, pin a copy.
+    var onVerb: ((Verb, PinWindow) -> Void)?
     var onClose: ((PinWindow) -> Void)?
     var onCloseAll: (() -> Void)?
     /// Clicked: the board unfocuses every other pin.
@@ -414,6 +416,9 @@ private final class PinView: NSView {
         case ("s", true): pin.onSave?(pin.displayedImage)
         case ("w", true): pin.close()
         case ("t", false): pin.toggleReadingText()
+        case ("r", false): pin.onVerb?(.translate, pin)
+        case ("i", false): pin.onVerb?(.inbox, pin)
+        case ("a", false): pin.onVerb?(.ask, pin)
         case ("0", _): pin.setZoom(1)
         case ("1", false): pin.rotate(clockwise: false)
         case ("2", false): pin.rotate(clockwise: true)
@@ -431,6 +436,7 @@ private final class PinView: NSView {
 @MainActor
 final class PinBoard {
     var onSave: ((NSImage) -> Void)?
+    var onVerb: ((Verb, PinWindow) -> Void)?
     private(set) var pins: [PinWindow] = []
     private(set) var areHidden = false
     /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
@@ -451,6 +457,7 @@ final class PinBoard {
 
     private func add(_ pin: PinWindow) -> PinWindow {
         pin.onSave = { [weak self] image in self?.onSave?(image) }
+        pin.onVerb = { [weak self] verb, pin in self?.onVerb?(verb, pin) }
         pin.onClose = { [weak self] closed in
             self?.pins.removeAll { $0 === closed }
             self?.updateMonitor()
