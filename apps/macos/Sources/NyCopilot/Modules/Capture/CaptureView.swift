@@ -29,6 +29,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private var analysis: (rect: CGRect, task: Task<ImageAnalysis, Error>)?
     private var pendingAnalysis: DispatchWorkItem?
     private var textOverlay: ImageAnalysisOverlayView?
+    private var copyWhenRead = false
     private let textBar = CaptureTextBar()
     /// Which format C copies; Shift switches between HEX and RGB.
     private var copiesHex = true
@@ -93,7 +94,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         toolbar.onRedo = { [weak self] in self?.redo() }
         toolbar.onAction = { [weak self] action in self?.finish(action) }
         toolbar.onCancel = { [weak self] in self?.onCancel?() }
-        toolbar.onText = { [weak self] in self?.toggleReadingText() }
+        toolbar.onText = { [weak self] in self?.beginReadingText() }
         addSubview(toolbar)
         textBar.isHidden = true
         textBar.onCopyAll = { [weak self] in self?.copyAllText() }
@@ -590,9 +591,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var isReadingText: Bool { textOverlay != nil }
 
     /// T: the selection becomes Live Text — every word selectable right where it is on screen.
-    func toggleReadingText() {
-        if isReadingText { endReadingText(); return }
-        guard let selection, let task = textAnalysis() else { return }
+    /// T again copies all of it.
+    func beginReadingText() {
+        guard !isReadingText, let selection, let task = textAnalysis() else { return }
         if textEditor != nil { commitText() }
         tool = nil
         let overlay = LiveText.overlay(frame: selection)
@@ -607,11 +608,13 @@ final class CaptureView: NSView, NSTextViewDelegate {
             LiveText.show(analysis, on: overlay)
             textBar.show(lines: analysis.map(LiveText.lineCount) ?? 0)
             place(textBar)
+            if copyWhenRead { copyAllText() }
         }
         needsDisplay = true
     }
 
     private func endReadingText() {
+        copyWhenRead = false
         textOverlay?.removeFromSuperview()
         textOverlay = nil
         textBar.isHidden = true
@@ -629,9 +632,13 @@ final class CaptureView: NSView, NSTextViewDelegate {
         textBar.flash("Copied")
     }
 
-    /// Return or Copy All: every line, then the capture closes.
+    /// T twice — the left hand never moves — or Return, or Copy All: every line, then the capture
+    /// closes. A double tap faster than recognition copies as soon as the text is read.
     private func copyAllText() {
-        guard let transcript = textOverlay?.analysis?.transcript, !transcript.isEmpty else { return }
+        guard let overlay = textOverlay else { return }
+        guard let analysis = overlay.analysis else { copyWhenRead = true; return }
+        let transcript = analysis.transcript
+        guard !transcript.isEmpty else { textBar.flash("No text to copy"); return }
         LiveText.copy(transcript)
         onTextCopied?(transcript.split(whereSeparator: \.isNewline).count)
     }
@@ -641,8 +648,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags, key) {
-        case (53, _, _), (_, [], "t"): endReadingText()
-        case (36, _, _), (76, _, _): copyAllText()
+        case (53, _, _): endReadingText()
+        case (_, [], "t"), (36, _, _), (76, _, _): copyAllText()
         case (_, [.command], "c"): copySelectedText()
         default: break
         }
@@ -683,7 +690,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             } else if flags.isEmpty {
                 switch key {
                 case "c" where showsMagnifier: copyColor()
-                case "t" where selection != nil: toggleReadingText()
+                case "t" where selection != nil: beginReadingText()
                 case ",": stepRecent(by: 1)
                 case ".": stepRecent(by: -1)
                 case "1", "2", "3", "4", "5", "6", "7", "8":

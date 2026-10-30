@@ -125,7 +125,7 @@ dragging it to the edge of the screen.
   **Esc** discards. Options are remembered; ⌘Z and ⇧⌘Z undo and redo.
 - **Select text in place** with **T** (or the text button). The selection turns into macOS Live
   Text: every word glows where it is on screen, and you drag across it to select, as in Preview. **⌘C**
-  copies what you selected; **Copy All** (**Return**) copies everything and closes the capture; **Esc**
+  copies what you selected; **T** again (**Copy All**, or Return) copies everything and closes the capture; **Esc**
   goes back to the toolbar. Recognition starts on its own as soon as you settle on a selection, on
   your Mac and offline, so T is instant; the button lights up when there's text. It reads the screen
   as it was, so your annotations don't get in the way.
@@ -135,7 +135,7 @@ dragging it to the edge of the screen.
 **F3** pins whatever is on the clipboard: an image as is, a `#RRGGBB` color as a swatch, other text as
 a card. **⇧F3** hides or shows all pins. A faint blue border fades in while the pointer is over a pin
 and turns solid when you click it. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
-**1–4** to rotate and flip, **T** to select its text in place (Return copies it all), **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
+**1–4** to rotate and flip, **T** to select its text in place (T again copies it all), **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
 close. Right-click for opacity, shadow, click-through, and **Close All Pins**; **Make Pins Clickable**
 in the menu bar menu brings click-through pins back.
 

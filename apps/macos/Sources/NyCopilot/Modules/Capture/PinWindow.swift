@@ -97,7 +97,7 @@ final class PinWindow: NSPanel {
         pinView.flash("Opacity \(Int(round(alphaValue * 100)))%")
     }
 
-    /// T: the pin's text becomes selectable where it is (Live Text); T or Esc again goes back.
+    /// T: the pin's text becomes selectable where it is (Live Text); T again copies all of it, Esc goes back.
     func toggleReadingText() { pinView.toggleReadingText(rendered) }
 
     func rotate(clockwise: Bool) {
@@ -276,6 +276,7 @@ private final class PinView: NSView {
     // MARK: Live Text
 
     private var textOverlay: ImageAnalysisOverlayView?
+    private var copyWhenRead = false
     var isReadingText: Bool { textOverlay != nil }
 
     func toggleReadingText(_ image: CGImage?) {
@@ -291,7 +292,8 @@ private final class PinView: NSView {
             guard let self, textOverlay === overlay else { return }
             LiveText.show(analysis, on: overlay)
             if analysis.map(LiveText.lineCount) ?? 0 > 0 {
-                hint = "Drag to select · ⌘C copy · ↩ copy all · Esc done"
+                hint = "Drag to select · ⌘C copy · T copy all · Esc done"
+                if copyWhenRead { copyAllText() }
             } else {
                 endReadingText()
                 flash("No text found")
@@ -303,8 +305,19 @@ private final class PinView: NSView {
         guard let overlay = textOverlay else { return }
         overlay.removeFromSuperview()
         textOverlay = nil
+        copyWhenRead = false
         hint = nil
         window?.makeFirstResponder(self)
+    }
+
+    /// T twice or Return: every line, then back to the plain pin. A double tap faster than
+    /// recognition copies as soon as the text is read.
+    private func copyAllText() {
+        guard let analysis = textOverlay?.analysis else { copyWhenRead = true; return }
+        guard !analysis.transcript.isEmpty else { return }
+        LiveText.copy(analysis.transcript)
+        endReadingText()
+        flash("Copied all text")
     }
 
     /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
@@ -312,11 +325,8 @@ private final class PinView: NSView {
         guard let overlay = textOverlay else { return false }
         let command = event.modifierFlags.contains(.command)
         switch (event.keyCode, event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
-        case (53, _, _), (_, "t", false): endReadingText()
-        case (36, _, _), (76, _, _):
-            guard let transcript = overlay.analysis?.transcript, !transcript.isEmpty else { break }
-            LiveText.copy(transcript)
-            flash("Copied all text")
+        case (53, _, _): endReadingText()
+        case (_, "t", false), (36, _, _), (76, _, _): copyAllText()
         case (_, "c", true):
             let text = LiveText.textToCopy(from: overlay)
             guard !text.isEmpty else { break }

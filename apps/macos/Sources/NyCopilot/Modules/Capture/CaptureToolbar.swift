@@ -322,7 +322,7 @@ extension CaptureToolbar: NSMenuDelegate {
     }
 }
 
-/// Replaces the toolbar while the selection is Live Text: a hint, Copy All (Return), and Done (Esc).
+/// Replaces the toolbar while the selection is Live Text: a hint, Copy All (T again), and Done (Esc).
 @MainActor
 final class CaptureTextBar: NSView {
     var onCopyAll: (() -> Void)?
@@ -330,7 +330,7 @@ final class CaptureTextBar: NSView {
 
     private let spinner = NSProgressIndicator()
     private let hint = Design.label("", size: 12, weight: .medium, color: .white)
-    private let copyAll = NSButton(title: "Copy All  ↩", target: nil, action: nil)
+    private let copyAll = NSButton(title: "Copy All  T", target: nil, action: nil)
     private let done = NSButton(title: "Done  esc", target: nil, action: nil)
     private var restoreHint: DispatchWorkItem?
     private var lines = 0
