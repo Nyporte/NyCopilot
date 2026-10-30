@@ -60,8 +60,8 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
             ]),
             shortcuts.section("Shortcuts", footer: """
                 In a capture: drag or click a window to select · arrows nudge, ⇧ arrows resize · 1–8 pick a tool · \
-                ⌘Z undo · T show text · Return copy · ⌘T pin · ⌘S save · C copy the color under the pointer · , and . recall recent regions · Esc cancel.
-                On a pin: drag to move · scroll to zoom · ⌥ scroll for opacity · 1–4 rotate and flip · T show text · ⌘C copy · Esc or double-click to close.
+                ⌘Z undo · T select text in place · Return copy · ⌘T pin · ⌘S save · C copy the color under the pointer · , and . recall recent regions · Esc cancel.
+                On a pin: drag to move · scroll to zoom · ⌥ scroll for opacity · 1–4 rotate and flip · T select text · ⌘C copy · Esc or double-click to close.
                 """, actions: [CaptureShell.Action.capture, CaptureShell.Action.pinClipboard, CaptureShell.Action.togglePins]),
             shortcuts.errorLabel
         ]

@@ -123,18 +123,19 @@ dragging it to the edge of the screen.
   for rectangles, outline or filled for rectangles and ellipses, and font, size, **bold**, *italic*,
   underline, and strikethrough for text. Text: **Return** places it, **Shift+Return** adds a line,
   **Esc** discards. Options are remembered; ⌘Z and ⇧⌘Z undo and redo.
-- **Read text** with **T** (or the text button). Recognition starts on its own as soon as you settle
-  on a selection, using macOS's built-in Vision framework, on your Mac and offline; the button lights
-  up when there's text. **T** opens it in a window beside the selection, where you can select any
-  part, fix a misread character, or **Copy All**. It reads the screen as it was, so your annotations
-  don't get in the way. Esc closes the window.
+- **Select text in place** with **T** (or the text button). The selection turns into macOS Live
+  Text: every word glows where it is on screen, and you drag across it to select, as in Preview. **⌘C**
+  copies what you selected; **Copy All** (**Return**) copies everything and closes the capture; **Esc**
+  goes back to the toolbar. Recognition starts on its own as soon as you settle on a selection, on
+  your Mac and offline, so T is instant; the button lights up when there's text. It reads the screen
+  as it was, so your annotations don't get in the way.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 
 **F3** pins whatever is on the clipboard: an image as is, a `#RRGGBB` color as a swatch, other text as
 a card. **⇧F3** hides or shows all pins. A faint blue border fades in while the pointer is over a pin
 and turns solid when you click it. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
-**1–4** to rotate and flip, **T** to read its text, **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
+**1–4** to rotate and flip, **T** to select its text in place (Return copies it all), **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
 close. Right-click for opacity, shadow, click-through, and **Close All Pins**; **Make Pins Clickable**
 in the menu bar menu brings click-through pins back.
 
@@ -151,7 +152,7 @@ Keyboard. **Settings → General** shows the Accessibility status and an **Open 
 
 ## Privacy and data
 
-- Text recognition runs entirely on your Mac through macOS's Vision framework; nothing is uploaded.
+- Text recognition is macOS Live Text (VisionKit) and runs entirely on your Mac; nothing is uploaded.
 - Text is sent only when you press Return in Translate, and only to the services you configured
   (the first engine that succeeds, in your order). There
   is no telemetry. Screenshots never leave your Mac.

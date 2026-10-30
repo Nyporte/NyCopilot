@@ -5,8 +5,9 @@ import AppKit
 @MainActor
 final class CaptureSession {
     /// The chosen action with the rendered image and the selection in global top-left coordinates.
-    /// For `.text`, the recognition already under way for the selection.
-    var onFinish: ((CaptureAction, NSImage, CGRect, NSScreen, Task<String, Error>?) -> Void)?
+    var onFinish: ((CaptureAction, NSImage, CGRect, NSScreen) -> Void)?
+    /// Live Text's Copy All put this many lines on the clipboard.
+    var onTextCopied: ((Int, CGRect, NSScreen) -> Void)?
     var onCancel: (() -> Void)?
 
     private var windows: [CaptureWindow] = []
@@ -33,9 +34,13 @@ final class CaptureSession {
             view.onFinish = { [weak self, weak view] action in
                 guard let self, let view, let image = view.renderedImage(), let selection = view.selection else { return }
                 let global = selection.offsetBy(dx: origin.x, dy: origin.y)
-                let text = action == .text ? view.recognizedText() : nil
                 close()
-                onFinish?(action, image, global, screen.screen, text)
+                onFinish?(action, image, global, screen.screen)
+            }
+            view.onTextCopied = { [weak self, weak view] lines in
+                guard let self, let selection = view?.selection else { return }
+                close()
+                onTextCopied?(lines, selection.offsetBy(dx: origin.x, dy: origin.y), screen.screen)
             }
             view.onCancel = { [weak self] in
                 self?.close()

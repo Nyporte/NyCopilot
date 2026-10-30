@@ -1,7 +1,8 @@
 import AppKit
+import VisionKit
 
 /// What the user chose to do with a capture.
-enum CaptureAction { case copy, save, quickSave, pin, text }
+enum CaptureAction { case copy, save, quickSave, pin }
 
 /// The interactive layer of one display during a capture: dims the frozen screen, highlights the
 /// window under the pointer, lets you drag or adjust a selection, shows a magnifier, and draws
@@ -12,6 +13,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var onCancel: (() -> Void)?
     /// Another display's view took the selection; this one just stays dimmed.
     var onSelectionStarted: (() -> Void)?
+    /// Copy All in Live Text: the text is on the clipboard; the capture can close.
+    var onTextCopied: ((Int) -> Void)?
 
     let frozen: FrozenScreen
     private(set) var selection: CGRect?
@@ -23,10 +26,10 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private var current: Annotation?
     private var textEditor: TextAnnotationEditor?
     private var recentIndex = -1
-    /// Text in the selection, read in the background once the selection settles, so it's ready
-    /// the moment it's asked for.
-    private var recognition: (rect: CGRect, task: Task<String, Error>)?
-    private var pendingRecognition: DispatchWorkItem?
+    private var analysis: (rect: CGRect, task: Task<ImageAnalysis, Error>)?
+    private var pendingAnalysis: DispatchWorkItem?
+    private var textOverlay: ImageAnalysisOverlayView?
+    private let textBar = CaptureTextBar()
     /// Which format C copies; Shift switches between HEX and RGB.
     private var copiesHex = true
     /// "Copied …" shown briefly in the magnifier after C.
@@ -90,7 +93,12 @@ final class CaptureView: NSView, NSTextViewDelegate {
         toolbar.onRedo = { [weak self] in self?.redo() }
         toolbar.onAction = { [weak self] action in self?.finish(action) }
         toolbar.onCancel = { [weak self] in self?.onCancel?() }
+        toolbar.onText = { [weak self] in self?.toggleReadingText() }
         addSubview(toolbar)
+        textBar.isHidden = true
+        textBar.onCopyAll = { [weak self] in self?.copyAllText() }
+        textBar.onDone = { [weak self] in self?.endReadingText() }
+        addSubview(textBar)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(frozen:…)") }
@@ -118,7 +126,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             for annotation in annotations { annotation.draw(pixelated: pixelated, imageFrame: bounds) }
             current?.draw(pixelated: pixelated, imageFrame: bounds)
             NSGraphicsContext.restoreGraphicsState()
-            drawFrame(selection, handles: tool == nil)
+            drawFrame(selection, handles: tool == nil && !isReadingText)
             drawSizeLabel(for: selection)
             if let textEditor { drawEditorFrame(textEditor.frame) }
         } else if let hoverWindow, !isPassive {
@@ -283,7 +291,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if textEditor != nil { commitText(); if tool == .text { return } }
-        if isPassive { return }
+        // Reading text: the overlay takes clicks on the selection; nothing else changes it.
+        if isPassive || isReadingText { return }
         if event.clickCount == 2, let selection, selection.contains(point), tool == nil {
             finish(.copy)
             return
@@ -369,7 +378,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        if textEditor != nil { cancelText() }
+        if isReadingText { endReadingText() }
+        else if textEditor != nil { cancelText() }
         else if tool != nil { tool = nil }
         else if selection != nil, annotations.isEmpty { clearSelection() }
         else { onCancel?() }
@@ -443,16 +453,22 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     // MARK: Toolbar
 
-    /// Below the selection, right-aligned; above it when there is no room; inside as a last resort.
     private func placeToolbar() {
-        guard let selection, selection.width >= 4, selection.height >= 4 else { toolbar.isHidden = true; return }
+        guard let selection, selection.width >= 4, selection.height >= 4, !isReadingText else { toolbar.isHidden = true; return }
         toolbar.isHidden = false
-        let size = toolbar.fittingSize
+        place(toolbar)
+    }
+
+    /// Below the selection, right-aligned; above it when there is no room; inside as a last resort.
+    private func place(_ bar: NSView) {
+        guard let selection else { return }
+        bar.isHidden = false
+        let size = bar.fittingSize
         var origin = CGPoint(x: selection.maxX - size.width, y: selection.maxY + 8)
         if origin.y + size.height > bounds.maxY - 8 { origin.y = selection.minY - size.height - 8 }
         if origin.y < 8 { origin.y = selection.maxY - size.height - 8 }
         origin.x = min(max(origin.x, 8), bounds.maxX - size.width - 8)
-        toolbar.frame = CGRect(origin: origin, size: size)
+        bar.frame = CGRect(origin: origin, size: size)
     }
 
     // MARK: Text
@@ -543,31 +559,93 @@ final class CaptureView: NSView, NSTextViewDelegate {
         onFinish?(action)
     }
 
-    // MARK: Text recognition
+    // MARK: Live Text
 
     /// Arrow keys and drags settle many times a second; read the text once things are still.
     private func selectionSettled() {
-        pendingRecognition?.cancel()
-        let work = DispatchWorkItem { [weak self] in _ = self?.recognizedText() }
-        pendingRecognition = work
+        pendingAnalysis?.cancel()
+        let work = DispatchWorkItem { [weak self] in _ = self?.textAnalysis() }
+        pendingAnalysis = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
     }
 
-    /// The text in the current selection, from the screen as it was — annotations don't get in the way.
-    func recognizedText() -> Task<String, Error>? {
+    /// The text in the current selection, read from the screen as it was, so annotations don't get in
+    /// the way. Started in the background as soon as the selection settles, so T is instant.
+    private func textAnalysis() -> Task<ImageAnalysis, Error>? {
         guard let selection else { return nil }
-        if let recognition, recognition.rect == selection { return recognition.task }
+        if let analysis, analysis.rect == selection { return analysis.task }
         guard let image = CaptureRenderer.render(frozen, selection: selection, annotations: [], pixelated: nil)?
             .cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
-        let task = Task { try await TextRecognizer.text(in: image) }
-        recognition = (selection, task)
+        let task = Task { try await LiveText.analyze(image) }
+        analysis = (selection, task)
         toolbar.recognizedLines = nil
         Task { [weak self] in
-            let lines = (try? await task.value).map { $0.isEmpty ? 0 : $0.split(separator: "\n").count } ?? 0
-            guard let self, recognition?.rect == selection else { return }
+            let lines = (try? await task.value).map(LiveText.lineCount) ?? 0
+            guard let self, analysis?.rect == selection else { return }
             toolbar.recognizedLines = lines
         }
         return task
+    }
+
+    var isReadingText: Bool { textOverlay != nil }
+
+    /// T: the selection becomes Live Text — every word selectable right where it is on screen.
+    func toggleReadingText() {
+        if isReadingText { endReadingText(); return }
+        guard let selection, let task = textAnalysis() else { return }
+        if textEditor != nil { commitText() }
+        tool = nil
+        let overlay = LiveText.overlay(frame: selection)
+        addSubview(overlay, positioned: .below, relativeTo: toolbar)
+        textOverlay = overlay
+        toolbar.isHidden = true
+        textBar.showReading()
+        place(textBar)
+        Task { [weak self] in
+            let analysis = try? await task.value
+            guard let self, textOverlay === overlay else { return }
+            LiveText.show(analysis, on: overlay)
+            textBar.show(lines: analysis.map(LiveText.lineCount) ?? 0)
+            place(textBar)
+        }
+        needsDisplay = true
+    }
+
+    private func endReadingText() {
+        textOverlay?.removeFromSuperview()
+        textOverlay = nil
+        textBar.isHidden = true
+        placeToolbar()
+        window?.makeFirstResponder(self)
+        needsDisplay = true
+    }
+
+    /// ⌘C: the selected words, staying in Live Text.
+    private func copySelectedText() {
+        guard let overlay = textOverlay, overlay.analysis != nil else { return }
+        let text = LiveText.textToCopy(from: overlay)
+        guard !text.isEmpty else { return }
+        LiveText.copy(text)
+        textBar.flash("Copied")
+    }
+
+    /// Return or Copy All: every line, then the capture closes.
+    private func copyAllText() {
+        guard let transcript = textOverlay?.analysis?.transcript, !transcript.isEmpty else { return }
+        LiveText.copy(transcript)
+        onTextCopied?(transcript.split(whereSeparator: \.isNewline).count)
+    }
+
+    /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
+    private func readingTextKeyDown(_ event: NSEvent) {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        switch (event.keyCode, flags, key) {
+        case (53, _, _), (_, [], "t"): endReadingText()
+        case (36, _, _), (76, _, _): copyAllText()
+        case (_, [.command], "c"): copySelectedText()
+        default: break
+        }
     }
 
     /// The finished image: selection plus annotations at full resolution.
@@ -579,6 +657,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     // MARK: Keyboard
 
     override func keyDown(with event: NSEvent) {
+        if isReadingText { readingTextKeyDown(event); return }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags) {
@@ -604,7 +683,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             } else if flags.isEmpty {
                 switch key {
                 case "c" where showsMagnifier: copyColor()
-                case "t" where selection != nil: finish(.text)
+                case "t" where selection != nil: toggleReadingText()
                 case ",": stepRecent(by: 1)
                 case ".": stepRecent(by: -1)
                 case "1", "2", "3", "4", "5", "6", "7", "8":

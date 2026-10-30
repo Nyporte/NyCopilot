@@ -1,14 +1,14 @@
 import AppKit
+import VisionKit
 
 /// An image floating above every window. Drag to move, scroll to zoom, ⌥-scroll to fade, 1–4 to rotate
-/// and flip, T to show its text, ⌘C to copy, ⌘S to save, Esc or a double-click to close. Right-click for
+/// and flip, T to select its text in place, ⌘C to copy, ⌘S to save, Esc or a double-click to close. Right-click for
 /// everything else.
 @MainActor
 final class PinWindow: NSPanel {
     var onSave: ((NSImage) -> Void)?
     var onClose: ((PinWindow) -> Void)?
     var onCloseAll: (() -> Void)?
-    var onRecognizeText: ((PinWindow) -> Void)?
     /// Clicked: the board unfocuses every other pin.
     var onFocus: ((PinWindow) -> Void)?
 
@@ -97,13 +97,18 @@ final class PinWindow: NSPanel {
         pinView.flash("Opacity \(Int(round(alphaValue * 100)))%")
     }
 
+    /// T: the pin's text becomes selectable where it is (Live Text); T or Esc again goes back.
+    func toggleReadingText() { pinView.toggleReadingText(rendered) }
+
     func rotate(clockwise: Bool) {
+        pinView.endReadingText()
         quarterTurns = (quarterTurns + (clockwise ? 1 : 3)) % 4
         redraw()
         setZoom(zoom)
     }
 
     func flip(horizontally: Bool) {
+        pinView.endReadingText()
         if horizontally { flippedHorizontally.toggle() } else { flippedVertically.toggle() }
         redraw()
     }
@@ -136,7 +141,7 @@ final class PinWindow: NSPanel {
         }
         add("Copy", #selector(copyFromMenu), key: "c")
         add("Save…", #selector(saveFromMenu), key: "s")
-        add("Recognize Text", #selector(recognizeFromMenu), key: "t")
+        add("Select Text", #selector(selectTextFromMenu), key: "t", state: pinView.isReadingText)
         menu.addItem(.separator())
         add("Actual Size", #selector(actualSize), key: "0")
         let opacity = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
@@ -168,7 +173,7 @@ final class PinWindow: NSPanel {
 
     @objc private func copyFromMenu() { copyImage() }
     @objc private func saveFromMenu() { onSave?(displayedImage) }
-    @objc private func recognizeFromMenu() { onRecognizeText?(self) }
+    @objc private func selectTextFromMenu() { toggleReadingText() }
     @objc private func actualSize() { setZoom(1) }
     @objc private func pickOpacity(_ sender: NSMenuItem) { setOpacity(CGFloat(sender.tag) / 100) }
     @objc private func rotateLeft() { rotate(clockwise: false) }
@@ -244,16 +249,82 @@ private final class PinView: NSView {
         imageLayer.contents = image
     }
 
-    /// A short-lived label for zoom, opacity, and copy feedback.
+    /// A short-lived label for zoom, opacity, and copy feedback; afterwards the hint, if any, returns.
     func flash(_ text: String) {
         badge.stringValue = "  \(text)  "
         hideBadge?.cancel()
         badge.alphaValue = 1
         let work = DispatchWorkItem { [weak self] in
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.3; self?.badge.animator().alphaValue = 0 }
+            guard let self else { return }
+            if let hint { badge.stringValue = "  \(hint)  "; return }
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.3; self.badge.animator().alphaValue = 0 }
         }
         hideBadge = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
+    }
+
+    /// Stays on the badge while set.
+    private var hint: String? {
+        didSet {
+            guard let hint else { badge.alphaValue = 0; return }
+            hideBadge?.cancel()
+            badge.stringValue = "  \(hint)  "
+            badge.alphaValue = 1
+        }
+    }
+
+    // MARK: Live Text
+
+    private var textOverlay: ImageAnalysisOverlayView?
+    var isReadingText: Bool { textOverlay != nil }
+
+    func toggleReadingText(_ image: CGImage?) {
+        if isReadingText { endReadingText(); return }
+        guard let image else { return }
+        let overlay = LiveText.overlay(frame: bounds)
+        overlay.autoresizingMask = [.width, .height]
+        addSubview(overlay, positioned: .below, relativeTo: badge)
+        textOverlay = overlay
+        hint = "Reading text…"
+        Task { [weak self] in
+            let analysis = try? await LiveText.analyze(image)
+            guard let self, textOverlay === overlay else { return }
+            LiveText.show(analysis, on: overlay)
+            if analysis.map(LiveText.lineCount) ?? 0 > 0 {
+                hint = "Drag to select · ⌘C copy · ↩ copy all · Esc done"
+            } else {
+                endReadingText()
+                flash("No text found")
+            }
+        }
+    }
+
+    func endReadingText() {
+        guard let overlay = textOverlay else { return }
+        overlay.removeFromSuperview()
+        textOverlay = nil
+        hint = nil
+        window?.makeFirstResponder(self)
+    }
+
+    /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
+    private func readingTextKeyDown(_ event: NSEvent) -> Bool {
+        guard let overlay = textOverlay else { return false }
+        let command = event.modifierFlags.contains(.command)
+        switch (event.keyCode, event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
+        case (53, _, _), (_, "t", false): endReadingText()
+        case (36, _, _), (76, _, _):
+            guard let transcript = overlay.analysis?.transcript, !transcript.isEmpty else { break }
+            LiveText.copy(transcript)
+            flash("Copied all text")
+        case (_, "c", true):
+            let text = LiveText.textToCopy(from: overlay)
+            guard !text.isEmpty else { break }
+            LiveText.copy(text)
+            flash("Copied")
+        default: return false
+        }
+        return true
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -290,12 +361,13 @@ private final class PinView: NSView {
 
     override func keyDown(with event: NSEvent) {
         guard let pin else { return }
+        if readingTextKeyDown(event) { return }
         let command = event.modifierFlags.contains(.command)
         switch (event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
         case ("c", true): pin.copyImage()
         case ("s", true): pin.onSave?(pin.displayedImage)
         case ("w", true): pin.close()
-        case ("t", false): pin.onRecognizeText?(pin)
+        case ("t", false): pin.toggleReadingText()
         case ("0", _): pin.setZoom(1)
         case ("1", false): pin.rotate(clockwise: false)
         case ("2", false): pin.rotate(clockwise: true)
@@ -313,8 +385,6 @@ private final class PinView: NSView {
 @MainActor
 final class PinBoard {
     var onSave: ((NSImage) -> Void)?
-    /// A pin's image as shown, and its frame, to place the text beside it.
-    var onRecognizeText: ((NSImage, NSRect) -> Void)?
     private(set) var pins: [PinWindow] = []
     private(set) var areHidden = false
     /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
@@ -328,7 +398,6 @@ final class PinBoard {
             self?.updateMonitor()
         }
         pin.onCloseAll = { [weak self] in self?.closeAll() }
-        pin.onRecognizeText = { [weak self] pin in self?.onRecognizeText?(pin.displayedImage, pin.frame) }
         pin.onFocus = { [weak self] focused in
             for other in self?.pins ?? [] where other !== focused { other.isFocused = false }
         }

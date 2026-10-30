@@ -13,6 +13,8 @@ final class CaptureToolbar: NSView {
     var onRedo: (() -> Void)?
     var onAction: ((CaptureAction) -> Void)?
     var onCancel: (() -> Void)?
+    /// T: read the text in the selection, in place.
+    var onText: (() -> Void)?
 
     var selectedTool: AnnotationTool? { didSet { if selectedTool != oldValue { rebuildOptions() }; refreshTools() } }
     var selectedColor: NSColor = .systemRed { didSet { refreshSwatches() } }
@@ -265,7 +267,7 @@ final class CaptureToolbar: NSView {
         onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save)
     }
     @objc private func copy(_ sender: Any?) { onAction?(.copy) }
-    @objc private func showText() { onAction?(.text) }
+    @objc private func showText() { onText?() }
 
     /// Accent when the selection has text, dimmed when it has none.
     private func refreshTextButton() {
@@ -278,7 +280,7 @@ final class CaptureToolbar: NSView {
             textButton.toolTip = "No text found here (T)"
         case let lines?:
             textButton.contentTintColor = .controlAccentColor
-            textButton.toolTip = "Show \(lines) line\(lines == 1 ? "" : "s") of text (T)"
+            textButton.toolTip = "Select the \(lines) line\(lines == 1 ? "" : "s") of text in place (T)"
         }
     }
     @objc private func cancelTapped() { onCancel?() }
@@ -318,6 +320,89 @@ extension CaptureToolbar: NSMenuDelegate {
         }
         if let button = fontButton, let item = menu.items.first(where: { $0.title == current }) { button.select(item) }
     }
+}
+
+/// Replaces the toolbar while the selection is Live Text: a hint, Copy All (Return), and Done (Esc).
+@MainActor
+final class CaptureTextBar: NSView {
+    var onCopyAll: (() -> Void)?
+    var onDone: (() -> Void)?
+
+    private let spinner = NSProgressIndicator()
+    private let hint = Design.label("", size: 12, weight: .medium, color: .white)
+    private let copyAll = NSButton(title: "Copy All  ↩", target: nil, action: nil)
+    private let done = NSButton(title: "Done  esc", target: nil, action: nil)
+    private var restoreHint: DispatchWorkItem?
+    private var lines = 0
+
+    init() {
+        super.init(frame: .zero)
+        appearance = NSAppearance(named: .darkAqua)
+        let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 10)
+        material.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(material)
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        for (button, action) in [(copyAll, #selector(copyAllTapped)), (done, #selector(doneTapped))] {
+            button.bezelStyle = .rounded
+            button.controlSize = .small
+            button.target = self
+            button.action = action
+        }
+        copyAll.keyEquivalent = ""
+        copyAll.bezelColor = .controlAccentColor
+        let icon = Design.symbol("text.viewfinder", size: 13, color: .controlAccentColor)
+        let row = Design.hstack([icon, spinner, hint, Design.spacer(), done, copyAll], spacing: 8)
+        row.translatesAutoresizingMaskIntoConstraints = false
+        material.addSubview(row)
+        NSLayoutConstraint.activate([
+            material.leadingAnchor.constraint(equalTo: leadingAnchor),
+            material.trailingAnchor.constraint(equalTo: trailingAnchor),
+            material.topAnchor.constraint(equalTo: topAnchor),
+            material.bottomAnchor.constraint(equalTo: bottomAnchor),
+            row.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 10),
+            row.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -8),
+            row.topAnchor.constraint(equalTo: material.topAnchor, constant: 6),
+            row.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -6)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init()") }
+
+    override var isFlipped: Bool { true }
+
+    func showReading() {
+        spinner.startAnimation(nil)
+        hint.stringValue = "Reading text…"
+        copyAll.isEnabled = false
+    }
+
+    func show(lines: Int) {
+        self.lines = lines
+        spinner.stopAnimation(nil)
+        copyAll.isEnabled = lines > 0
+        hint.stringValue = baseHint
+    }
+
+    /// A short confirmation in place of the hint.
+    func flash(_ text: String) {
+        hint.stringValue = text
+        restoreHint?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            hint.stringValue = baseHint
+        }
+        restoreHint = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+    }
+
+    private var baseHint: String {
+        lines > 0 ? "Drag across the text to select it · ⌘C copies" : "No text found here"
+    }
+
+    @objc private func copyAllTapped() { onCopyAll?() }
+    @objc private func doneTapped() { onDone?() }
 }
 
 /// A round color chip; the selected one wears a white ring.
