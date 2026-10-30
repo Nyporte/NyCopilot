@@ -53,12 +53,13 @@ final class InputTarget: @unchecked Sendable {
             if let element { AXUIElementSetMessagingTimeout(element, 0.5) }
             let role = element.flatMap { attribute($0, kAXRoleAttribute) as? String }
             guard element.flatMap({ attribute($0, kAXSubroleAttribute) as? String }) != kAXSecureTextFieldSubrole else {
+                Diagnostics.note("paste", "\(appName): password field, left alone")
                 throw Failure.secureField
             }
             let window = element.flatMap { elementAttribute($0, kAXWindowAttribute) }
             if let window { AXUIElementSetMessagingTimeout(window, 0.5) }
             guard let element, let original = readable(element) else {
-                log.notice("captured \(appName, privacy: .public) unverified, role=\(role ?? "none", privacy: .public)")
+                Diagnostics.note("paste", "\(appName): field can’t be read (role \(role ?? "none")); will paste once the app is back")
                 return InputTarget(pid: pid, element: element, window: window, original: nil, frame: nil, caret: nil)
             }
             // AX uses screen coordinates with a top-left origin; conversion happens in the UI.
@@ -68,10 +69,8 @@ final class InputTarget: @unchecked Sendable {
                 && readAXValue(element, name: kAXSizeAttribute, type: .cgSize, into: &size)
             let frame = hasFrame ? CGRect(origin: position, size: size) : nil
             let caret = locateCaret(element, app: app, range: original.range, text: original.value as NSString, frame: frame, appName: appName)
-            log.notice("""
-                captured \(appName, privacy: .public) role=\(role ?? "?", privacy: .public) \
-                frame=\(String(describing: frame), privacy: .public) caret=\(String(describing: caret), privacy: .public)
-                """)
+            Diagnostics.note("paste", "\(appName): found \(role ?? "?")\(caret == nil ? ", no caret position" : "")"
+                             + (frame == nil ? ", no frame" : ""))
             return InputTarget(pid: pid, element: element, window: window, original: original, frame: frame, caret: caret)
         }.value
     }

@@ -26,6 +26,8 @@ final class Toast {
 
     /// `near` is in AppKit screen coordinates; without it the toast appears under the pointer.
     func show(_ title: String, detail: String? = nil, style: Style = .info, near anchor: NSRect? = nil) {
+        // Every warning the user sees is kept for the diagnostics report.
+        if style == .warning { Diagnostics.note("notice", [title, detail].compactMap { $0 }.joined(separator: " — ")) }
         dismiss(animated: false)
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.float(at: .statusBar, shadow: true, clickThrough: true, behavior: .transient)

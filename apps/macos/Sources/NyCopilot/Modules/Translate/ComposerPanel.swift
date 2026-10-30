@@ -165,7 +165,8 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         scroll.scrollerStyle = .overlay
         editor.string = ""
         editor.undoManager?.removeAllActions()
-        editor.placeholder = mode == .paste ? "Type to translate…" : "Type to translate and copy…"
+        // Copy mode happens only without Accessibility; say so rather than leave it a mystery.
+        editor.placeholder = mode == .paste ? "Type to translate…" : "Type to translate and copy — Accessibility is off"
         setLanguage(language, animated: false)
         setIdle()
         hideError()

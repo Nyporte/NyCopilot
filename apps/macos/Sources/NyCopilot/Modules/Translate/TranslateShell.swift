@@ -154,6 +154,7 @@ final class TranslateShell: ModuleShell {
 
     private func showFailure(_ error: Error) {
         let code = (error as? NyCore.Failure)?.code
+        Diagnostics.note("translate", "failed: \(code ?? "unknown") — \(error.localizedDescription)")
         switch code {
         case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error":
             composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
@@ -180,6 +181,7 @@ final class TranslateShell: ModuleShell {
     private func deliver(_ text: String, id: UUID) async {
         let anchor = Self.anchor(for: target).map(Self.appKitRect)
         guard let target else {
+            Diagnostics.note("paste", "copied instead: Accessibility is off")
             composer.hideForInsertion()
             copy(text)
             returnToSource()
@@ -191,10 +193,12 @@ final class TranslateShell: ModuleShell {
         }
         do {
             try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
+            Diagnostics.note("paste", target.isVerified ? "pasted" : "pasted unverified (also on the clipboard)")
         } catch is CancellationError {
         } catch TemporaryPasteboard.Failure.restoreFailed {
             services.toast.show("Pasted", detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)
         } catch {
+            Diagnostics.note("paste", "didn’t paste: \(error.localizedDescription)")
             copy(text)
             services.toast.show("Couldn’t paste into the field", detail: "The translation is on your clipboard and in History.",
                                 style: .warning, near: anchor)

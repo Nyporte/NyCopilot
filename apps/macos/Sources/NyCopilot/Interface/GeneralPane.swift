@@ -6,6 +6,9 @@ final class GeneralPane: SettingsPane {
     private let services: CopilotServices
     private let accessBadge = StatusBadge()
     private let accessButton = Design.button("Open System Settings…", target: nil, action: nil)
+    private let recordingBadge = StatusBadge()
+    private let recordingButton = Design.button("Open System Settings…", target: nil, action: nil)
+    private let diagnosticsButton = Design.button("Copy Diagnostics", target: nil, action: nil)
     private let loginSwitch = NSSwitch()
     private let loginNote = Design.wrapping("", size: 11.5)
     private var poll: Timer?
@@ -23,14 +26,24 @@ final class GeneralPane: SettingsPane {
         let access = FormRow("Accessibility", subtitle: "Lets NyCopilot read and paste into text fields, and move other apps’ windows.",
                              accessory: Design.hstack([accessBadge, accessButton], spacing: 12))
 
+        recordingButton.target = self
+        recordingButton.action = #selector(requestRecording)
+        let recording = FormRow("Screen Recording", subtitle: "Lets NyCopilot take screenshots and translate what’s on screen.",
+                                accessory: Design.hstack([recordingBadge, recordingButton], spacing: 12))
+        diagnosticsButton.target = self
+        diagnosticsButton.action = #selector(copyDiagnostics)
+        let diagnostics = FormRow("Diagnostics", subtitle: "What NyCopilot did lately — fields it found, pastes, errors — without any of your text. Paste it into a bug report.",
+                                  accessory: diagnosticsButton)
+
         loginSwitch.target = self
         loginSwitch.action = #selector(toggleLogin)
         loginNote.isHidden = true
         let login = FormRow("Open at login", subtitle: nil, accessory: loginSwitch)
 
         var sections: [NSView] = [
-            FormSection("Permissions", rows: [access]),
+            FormSection("Permissions", rows: [access, recording]),
             FormSection("Startup", rows: [login]),
+            FormSection("Troubleshooting", rows: [diagnostics]),
         ]
         let guide = Design.button("Show Setup Guide…", target: self, action: #selector(showGuide))
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
@@ -63,6 +76,9 @@ final class GeneralPane: SettingsPane {
         let trusted = Accessibility.isTrusted
         accessBadge.set(trusted ? "Allowed" : "Not allowed", color: trusted ? .systemGreen : .systemOrange)
         accessButton.isHidden = trusted
+        let recording = ScreenGrabber.hasPermission
+        recordingBadge.set(recording ? "Allowed" : "Not allowed", color: recording ? .systemGreen : .systemOrange)
+        recordingButton.isHidden = recording
     }
 
     private func showLoginNote() {
@@ -71,6 +87,14 @@ final class GeneralPane: SettingsPane {
     }
 
     @objc private func requestAccess() { Accessibility.requestAccess() }
+    @objc private func requestRecording() { ScreenGrabber.requestPermission() }
+
+    @objc private func copyDiagnostics() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Diagnostics.report(), forType: .string)
+        diagnosticsButton.title = "Copied"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.diagnosticsButton.title = "Copy Diagnostics" }
+    }
     @objc private func showGuide() { services.showWelcome() }
 
     @objc private func toggleLogin() {
