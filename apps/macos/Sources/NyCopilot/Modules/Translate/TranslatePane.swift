@@ -62,7 +62,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
                         footer: "Sent to the model with each translation it makes; the other engines don’t take instructions. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
                         rows: [makeEditor()]),
             instructionsBar,
-            shortcuts.section("Shortcuts", footer: "Click a shortcut and press a new combination. Press Delete to turn it off. Hold the translate shortcut to translate everything on screen in place; Esc ends it.",
+            shortcuts.section("Shortcuts", footer: "Click a shortcut and press a new combination. Press Delete to turn it off. Hold the translate shortcut to highlight the text on screen, then point at a block to read its translation; Esc ends it.",
                               actions: [TranslateShell.Action.compose, TranslateShell.Action.history]),
             shortcuts.errorLabel,
             FormSection("History",
