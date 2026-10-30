@@ -26,6 +26,11 @@ final class CaptureShell: ModuleShell {
         self.services = services
         board.onSave = { [weak self] image in self?.saveWithPanel(image, region: nil) }
         board.restore()
+        // The display lookup is the slowest part of starting a capture; have it ready.
+        ScreenGrabber.warmUp()
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { ScreenGrabber.warmUp() }
+        }
     }
 
     /// Snipaste's keys: F1 to capture, F3 to pin the clipboard, ⇧F3 to hide or show pins.

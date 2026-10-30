@@ -20,7 +20,16 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private(set) var selection: CGRect?
     private(set) var annotations: [Annotation] = []
     private var redoStack: [Annotation] = []
-    private var hoverWindow: CGRect?
+    /// What a click would take: the element under the pointer and each container up to its window,
+    /// smallest first; scrolling picks a larger or smaller one.
+    private var hoverCandidates: [CGRect] = []
+    private var hoverLevel = 0
+    private var hoverPID: pid_t = 0
+    private var scrollCredit: CGFloat = 0
+    private var hoverWindow: CGRect? {
+        get { hoverCandidates.indices.contains(hoverLevel) ? hoverCandidates[hoverLevel] : nil }
+        set { hoverCandidates = newValue.map { [$0] } ?? []; hoverLevel = 0 }
+    }
     private var pointer: CGPoint?
     private var drag: Drag = .none
     private var current: Annotation?
@@ -132,6 +141,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             if let textEditor { drawEditorFrame(textEditor.frame) }
         } else if let hoverWindow, !isPassive {
             drawFrame(hoverWindow, handles: false)
+            drawSizeLabel(for: hoverWindow, note: hoverCandidates.count > 1 ? "scroll ↕ to resize" : nil)
         }
         if showsMagnifier, let pointer { drawMagnifier(at: pointer) }
     }
@@ -161,8 +171,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
         }
     }
 
-    private func drawSizeLabel(for rect: CGRect) {
-        let text = "\(Int(rect.width * frozen.scale)) × \(Int(rect.height * frozen.scale))" as NSString
+    private func drawSizeLabel(for rect: CGRect, note: String? = nil) {
+        let dimensions = "\(Int(rect.width * frozen.scale)) × \(Int(rect.height * frozen.scale))"
+        let text = (note.map { "\(dimensions)  ·  \($0)" } ?? dimensions) as NSString
         let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
                                                           .foregroundColor: NSColor.white]
         let size = text.size(withAttributes: attributes)
@@ -279,8 +290,45 @@ final class CaptureView: NSView, NSTextViewDelegate {
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         pointer = point
-        if selection == nil, !isPassive { hoverWindow = frozen.windows.first { $0.contains(point) } }
+        if selection == nil, !isPassive { hover(at: point) }
         updateCursor(at: point)
+        needsDisplay = true
+    }
+
+    /// The window under the pointer at once, then the element within it once the app answers.
+    private func hover(at point: CGPoint) {
+        guard let window = frozen.windows.first(where: { $0.rect.contains(point) }) else { hoverWindow = nil; return }
+        // Moving within what's outlined keeps it until the app says otherwise; a new window shows at once.
+        if hoverPID != window.pid || !(hoverCandidates.last.map { $0 == window.rect } ?? false) || !(hoverWindow?.contains(point) ?? false) {
+            hoverWindow = window.rect
+        }
+        hoverPID = window.pid
+        let origin = CaptureSession.globalOrigin(of: frozen.screen)
+        let global = FrozenScreen.Window(rect: window.rect.offsetBy(dx: origin.x, dy: origin.y), pid: window.pid)
+        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global) { [weak self] rects in
+            guard let self, selection == nil, !isPassive, let pointer, window.rect.contains(pointer) else { return }
+            let local = rects.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }.filter { $0.contains(pointer) || $0 == window.rect }
+            guard !local.isEmpty else { return }
+            // Keep the size chosen by scrolling when it's still on offer; else the smallest real control.
+            let shown = hoverWindow
+            hoverCandidates = local
+            hoverLevel = shown.flatMap { previous in local.firstIndex { $0 == previous } }
+                ?? local.firstIndex { $0.width >= 20 && $0.height >= 14 } ?? local.count - 1
+            needsDisplay = true
+        }
+    }
+
+    /// Scrolling while nothing is selected: up for the containing element, down for a smaller one.
+    override func scrollWheel(with event: NSEvent) {
+        guard selection == nil, !isPassive, hoverCandidates.count > 1 else { super.scrollWheel(with: event); return }
+        let delta = event.scrollingDeltaY * (event.isDirectionInvertedFromDevice ? -1 : 1)
+        scrollCredit += event.hasPreciseScrollingDeltas ? delta : delta * 10
+        while abs(scrollCredit) >= 10 {
+            let step = scrollCredit > 0 ? 1 : -1
+            hoverLevel = min(max(hoverLevel + step, 0), hoverCandidates.count - 1)
+            scrollCredit -= CGFloat(step) * 10
+        }
+        if event.phase == .ended || event.momentumPhase == .ended { scrollCredit = 0 }
         needsDisplay = true
     }
 

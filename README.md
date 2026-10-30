@@ -140,7 +140,10 @@ dragging it to the edge of the screen.
 
 **F1** freezes your screens for capturing:
 
-- **Select** by dragging, or hover a window, menu, or the Dock and click to take it exactly. Drag the
+- **Select** by dragging, or hover and click to take something exactly: a button, a field, a sidebar,
+  a toolbar, a window, a menu bar item, or the Dock. The part under the pointer is outlined (read
+  through Accessibility); **scroll** up for what contains it — up to the whole window — or down for
+  something smaller. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size
