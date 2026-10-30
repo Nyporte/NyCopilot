@@ -81,10 +81,12 @@ final class InboxShell: ModuleShell {
         }
     }
 
-    /// The selection, through Accessibility when the app describes it, or else by asking it to copy.
+    /// The selection as the app would copy it — line breaks and list items intact (web content
+    /// reports its selection to Accessibility run together) — with the clipboard put back. Whether
+    /// anything is selected is asked first, so nothing selected opens the bar at once.
     private static func selectedText(in pid: pid_t) async -> String? {
         switch await InputTarget.selection(pid: pid) {
-        case .text(let text, _): return text
+        case .text(let text, _): return await InputTarget.copiedSelection(pid: pid) ?? text
         case .nothing: return nil
         case .unknown: return await InputTarget.copiedSelection(pid: pid)
         }

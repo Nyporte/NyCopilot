@@ -157,6 +157,11 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         detail.setCustomSpacing(16, after: timeLabel)
         detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 14, right: 18)
         for view in [editorScroll, actions] as [NSView] { view.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -36).isActive = true }
+        // A long address is cut in the middle (the whole of it shows on hover), never past the pane.
+        for label in [sourceLabel, timeLabel] {
+            label.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         editorScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
         editorScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80).isActive = true
 
@@ -276,9 +281,11 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             preview.image = nil
             preview.isHidden = true
         }
-        let place = [item.data.app, item.data.title].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
-        let address = item.data.url.flatMap { $0.isEmpty ? nil : $0 }
+        let app = item.data.app ?? "", title = item.data.title ?? ""
+        let place = [app, title == app ? "" : title].filter { !$0.isEmpty }.joined(separator: " — ")
+        let address = item.data.url.flatMap { SourceContext.isMeaningful(address: $0) ? $0 : nil }
         sourceLabel.stringValue = [place.isEmpty ? nil : place, address].compactMap { $0 }.joined(separator: "  ·  ")
+        sourceLabel.toolTip = sourceLabel.stringValue
         sourceLabel.isHidden = sourceLabel.stringValue.isEmpty
         let created = Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000)
         var when = "Added \(Self.day(of: created).lowercasedIfRelative) at \(clock.string(from: created))"
@@ -375,7 +382,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     /// The page or document it came from; else the app, if it's running.
     @objc private func openSelectedSource() {
         guard let item = selectedItem else { return }
-        if let address = item.data.url, let url = URL(string: address), !address.isEmpty {
+        if let address = item.data.url, SourceContext.isMeaningful(address: address), let url = URL(string: address) {
             NSWorkspace.shared.open(url)
         } else if let app = runningApp(named: item.data.app) {
             app.activate(options: [])

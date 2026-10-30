@@ -36,7 +36,15 @@ final class InboxCaptureBar {
         input.allowsUndo = true
         input.drawsBackground = false
         input.textContainerInset = NSSize(width: 0, height: 2)
+        // A text view in a scroll view has to be told to fill its width and grow downward; left at
+        // its zero-size frame, it never lays out what's typed.
+        input.minSize = .zero
+        input.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        input.isVerticallyResizable = true
+        input.isHorizontallyResizable = false
+        input.autoresizingMask = [.width]
         input.textContainer?.widthTracksTextView = true
+        input.textContainer?.lineFragmentPadding = 0
         input.placeholder = "Jot something down"
         input.onSubmit = { [weak self] in self?.save() }
         input.onCancel = { [weak self] in self?.close() }
@@ -53,6 +61,7 @@ final class InboxCaptureBar {
             view.translatesAutoresizingMaskIntoConstraints = false
             material.addSubview(view)
         }
+        input.frame = NSRect(x: 0, y: 0, width: Self.width - 16 - 16 - 10 - 14, height: Self.lineHeight + 6)
         inputHeight = scroll.heightAnchor.constraint(equalToConstant: Self.lineHeight + 6)
         NSLayoutConstraint.activate([
             icon.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 16),
@@ -146,7 +155,7 @@ final class JotView: NSTextView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard string.isEmpty, !placeholder.isEmpty else { return }
-        (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width + 5, y: textContainerInset.height),
+        (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width + (textContainer?.lineFragmentPadding ?? 0), y: textContainerInset.height),
                                        withAttributes: [.font: font ?? .systemFont(ofSize: 16), .foregroundColor: NSColor.placeholderTextColor])
     }
 }

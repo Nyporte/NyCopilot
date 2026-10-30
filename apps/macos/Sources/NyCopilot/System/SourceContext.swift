@@ -21,7 +21,9 @@ struct SourceContext: Sendable {
             AXUIElementSetMessagingTimeout(element, 0.2)
             guard let window = Self.element(element, kAXFocusedWindowAttribute) else { return context }
             AXUIElementSetMessagingTimeout(window, 0.2)
-            context.title = Self.string(window, kAXTitleAttribute) ?? ""
+            let title = Self.string(window, kAXTitleAttribute) ?? ""
+            // A window titled with just the app's name says nothing more.
+            context.title = title == name ? "" : title
             context.url = Self.address(window, kAXDocumentAttribute) ?? Self.webAddress(in: window) ?? ""
             return context
         }.value
@@ -48,8 +50,16 @@ struct SourceContext: Sendable {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success, let value else { return nil }
         let text = (value as? URL)?.absoluteString ?? (value as? String)
-        guard let text, let scheme = URL(string: text)?.scheme?.lowercased(), ["http", "https", "file"].contains(scheme) else { return nil }
+        guard let text, isMeaningful(address: text) else { return nil }
         return text
+    }
+
+    /// A web page, or a file of yours — not a file inside an app's own bundle (an Electron app
+    /// reports its interface's index.html as its "document").
+    static func isMeaningful(address: String) -> Bool {
+        guard let url = URL(string: address), let scheme = url.scheme?.lowercased() else { return false }
+        if scheme == "http" || scheme == "https" { return true }
+        return scheme == "file" && !url.path.contains(".app/Contents/")
     }
 
     private static func string(_ element: AXUIElement, _ name: String) -> String? {
