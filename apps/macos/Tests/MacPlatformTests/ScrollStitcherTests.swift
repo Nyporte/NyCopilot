@@ -1,6 +1,9 @@
 import XCTest
 @testable import MacPlatform
 
+infix operator |>: AdditionPrecedence
+private func |> <A, B>(value: A, transform: (A) -> B) -> B { transform(value) }
+
 final class ScrollStitcherTests: XCTestCase {
     /// A long page of "text": rows of dark word-like blocks at random places on white.
     private struct Page {
@@ -155,6 +158,90 @@ final class ScrollStitcherTests: XCTestCase {
         XCTAssertEqual(thumbnail.height, 8900 / 8, accuracy: 3)
     }
 
+    /// Closer to a real window: a toolbar, a sparse web page (words with glyph-like strokes, wide blank
+    /// gaps between paragraphs, the odd image), and a chat composer whose caret blinks.
+    private struct Window {
+        let width: Int, toolbar = 70, composer = 90, area: Int
+        let page: [UInt8], chrome: Page
+
+        init(width: Int, area: Int, pageHeight: Int) {
+            self.width = width
+            self.area = area
+            chrome = Page(width: width, height: 70 + 90, seed: 11)
+            var pixels = [UInt8](repeating: 255, count: width * pageHeight * 4)
+            var random: UInt64 = 21
+            func next() -> Int { random = random &* 6364136223846793005 &+ 1442695040888963407; return Int(random >> 33) }
+            func box(_ y: Int, _ height: Int, _ x: Int, _ w: Int, _ shade: UInt8, glyphs: Bool = false) {
+                let seed = next()
+                for row in y..<min(y + height, pageHeight) { for column in x..<min(x + w, width) {
+                    // Glyphs: strokes that differ from row to row, like the inside of letters.
+                    let ink = !glyphs || ((column * 7 + (row - y) * 13 + seed) % 11 < 5)
+                    let value = ink ? shade : 235
+                    let p = (row * width + column) * 4; pixels[p] = value; pixels[p + 1] = value; pixels[p + 2] = value } }
+            }
+            var y = 120
+            while y < pageHeight - 200 {
+                if next() % 7 == 0 { box(y, 140 + next() % 120, 20, width - 40, UInt8(60 + next() % 120)); y += 300; continue }
+                for _ in 0..<(2 + next() % 5) {
+                    var x = 20
+                    let lineWidth = width - 40 - (next() % 3 == 0 ? next() % (width / 2) : 0)
+                    while x < lineWidth { let word = 10 + next() % 40; box(y, 16, x, min(word, lineWidth - x), UInt8(30 + next() % 50), glyphs: true); x += word + 9 }
+                    y += 30
+                }
+                y += 40 + next() % 90
+            }
+            page = pixels
+        }
+
+        /// `header`: the site's header slid in at the top of the page (it shows when scrolling up).
+        /// Always present: a hover highlight under the pointer and a video-like ad (new noise every
+        /// frame), both outside the selection.
+        func frame(at offset: Int, caret: Bool, header: Bool = false, tick: Int = 0) -> PixelFrame {
+            let content = area - toolbar - composer
+            var bottom = chrome.rows(toolbar..<(toolbar + composer))
+            if caret { for row in 30..<56 { for column in 40..<43 { let p = (row * width + column) * 4; bottom[p] = 0; bottom[p + 1] = 0; bottom[p + 2] = 0 } } }
+            var middle = Array(page[(offset * width * 4)..<((offset + content) * width * 4)])
+            func paint(_ rows: Range<Int>, _ color: (Int, Int) -> (UInt8, UInt8, UInt8)) {
+                for row in rows { for column in 0..<width {
+                    let p = (row * width + column) * 4, c = color(row, column); middle[p] = c.0; middle[p + 1] = c.1; middle[p + 2] = c.2 } }
+            }
+            if header { paint(0..<60) { _, column in column % 40 < 30 ? (40, 40, 48) : (220, 220, 230) } }
+            // Hover: a tint over whatever row sits under the pointer.
+            paint(610..<640) { row, column in let p = (row * width + column) * 4; return (UInt8(min(255, Int(middle[p]) + 0)), middle[p + 1], UInt8(min(255, Int(middle[p + 2]) / 2 + 128))) }
+            // An ad that animates every frame.
+            paint(640..<700) { row, column in
+                var z = UInt64(row * 1_000_003 + column * 7919 + tick * 104_729) &* 0x9E37_79B9_7F4A_7C15
+                z ^= z >> 29
+                return UInt8(truncatingIfNeeded: z) |> { ($0, $0 &+ 80, 255 &- $0) }
+            }
+            return PixelFrame(width: width, height: area, pixels: chrome.rows(0..<toolbar) + middle + bottom)
+        }
+
+        func expected(_ selection: Range<Int>, from first: Int, to last: Int) -> [UInt8] {
+            Array(page[((first + selection.lowerBound - toolbar) * width * 4)..<((last + selection.upperBound - toolbar) * width * 4)])
+        }
+    }
+
+    func testRealisticWindowWithFlicksBothWays() {
+        let window = Window(width: 320, area: 900, pageHeight: 9000)
+        let selection = 400..<520
+        let stitcher = ScrollStitcher(selection: selection)
+        // A trackpad: a two-pixel nudge, a flick that speeds up and coasts to a stop, then back up, then on.
+        var offsets = [1500, 1500, 1502]
+        for step in [4, 10, 24, 50, 90, 140, 190, 230, 230, 200, 160, 120, 80, 50, 30, 14, 6, 2] { offsets.append(offsets.last! + step) }
+        for step in [-8, -40, -120, -220, -260, -200, -90, -20] { offsets.append(offsets.last! + step) }
+        for step in [10, 60, 160, 240, 240, 240, 180, 90, 20] { offsets.append(offsets.last! + step) }
+        var outcomes: [ScrollStitcher.Outcome] = []
+        for (index, offset) in offsets.enumerated() {
+            let scrollingUp = index > 0 && offset < offsets[index - 1]
+            outcomes.append(stitcher.add(window.frame(at: offset, caret: index % 2 == 0, header: scrollingUp, tick: index)))
+        }
+        XCTAssertFalse(outcomes.contains(.lost), "\(outcomes)")
+        let first = offsets.min()!, last = offsets.max()!
+        XCTAssertEqual(stitcher.height, last - first + selection.count)
+        XCTAssertTrue(pixels(stitcher.makeImage()) == window.expected(selection, from: first, to: last), "stitched pixels differ")
+    }
+
     func testMatchingIsFast() {
         let big = Page(width: 1600, height: 6000, seed: 3)
         func bigFrame(_ offset: Int) -> PixelFrame { PixelFrame(width: 1600, height: 1400, pixels: big.rows(offset..<(offset + 1400))) }
@@ -164,6 +251,7 @@ final class ScrollStitcherTests: XCTestCase {
         XCTAssertEqual(stitcher.add(bigFrame(180)), .added(180))
         let elapsed = Date().timeIntervalSince(started)
         print(String(format: "1600×1400 frame matched in %.1f ms", elapsed * 1000))
-        XCTAssertLessThan(elapsed, 0.5)
+        // Optimized, a frame at 60 fps has about 16 ms; unoptimized test builds run far slower.
+        XCTAssertLessThan(elapsed, _isDebugAssertConfiguration() ? 5 : 0.012)
     }
 }

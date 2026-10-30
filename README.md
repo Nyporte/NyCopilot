@@ -134,8 +134,11 @@ dragging it to the edge of the screen.
   beside it shows the whole image so far, shrinking to fit as it grows. Behind the scenes NyCopilot
   watches the entire scroll area around the selection (found through Accessibility, or else the
   window), so even a fast scroll is placed exactly and rows that rushed past the selection are read
-  from elsewhere in the area; only your selection ends up in the image. If a scroll is ever too big
-  to fill, scrolling back a little fills the gap. Toolbars and sticky headers appear once. Its keys
+  from elsewhere in the area; only your selection ends up in the image. Things in that area that
+  change on their own — a blinking caret, a hover highlight, video, a header sliding in — don't throw
+  it off: a frame is placed where most of the content agrees, and "nothing moved" competes on equal
+  terms. If a scroll is ever too big to fill, scrolling back a little fills the gap. Toolbars and
+  sticky headers appear once. Its keys
   work wherever the focus is: **Return** (copy), **⌘S**, **⇧⌘S**, **⌘T** (pinned to fit the screen),
   or **Esc** to cancel. Up to 30,000 pixels tall; NyCopilot's own windows are never in the picture.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
