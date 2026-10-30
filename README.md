@@ -140,14 +140,17 @@ dragging it to the edge of the screen.
 
 **F1** freezes your screens for capturing:
 
-- **Select** by dragging, or hover and click to take something exactly: a button, a field, a sidebar,
-  a toolbar, a window, a menu bar item, or the Dock. The part under the pointer is outlined (read
-  through Accessibility); **scroll** up for what contains it — up to the whole window — or down for
-  something smaller. The size you scroll to stays as you move: elsewhere the outline goes to the
-  part nearest that size (another toolbar, another sidebar), leaning toward the one containing it.
-  There's one outline, and it glides from part to part; it stays put until the app says what's
-  under the pointer, and grows to a much larger part only once the pointer rests there, so crossing
-  the gap between two buttons doesn't flash the bar they sit in. Drag the
+- **Select** by dragging, or hover and click to take something exactly: a button, a card, a sidebar,
+  a list, a toolbar, a window, a menu bar item, or the Dock. Apps build their interface out of many
+  nested layers, most of them invisible; NyCopilot checks each against the frozen screen and offers
+  only the levels you can see — a layer counts when its edges are drawn (or it's an image, list,
+  table, web page, or similar) — with each side snapped onto the edge actually drawn, border
+  included, and near-identical layers merged. Typically that's three or four levels, from a control
+  out to the window; dots by the size show how many and which one is outlined. **Scroll** up for the
+  next one out, down for the next one in; hold **⌥** for the whole window. The size you scroll to
+  stays as you move (the outline goes to the level nearest it), there's one outline that glides
+  from part to part, and it grows to a much larger part only once the pointer rests there, so
+  crossing the gap between two buttons doesn't flash the bar they sit in. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size

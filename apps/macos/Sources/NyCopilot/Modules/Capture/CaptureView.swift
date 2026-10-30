@@ -31,6 +31,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     /// the gap between two buttons doesn't flash the bar they sit in.
     private var pendingGrowth: (candidates: [ElementFinder.Candidate], level: Int, work: DispatchWorkItem)?
     private static let growthDelay: TimeInterval = 0.15
+    /// The frozen display in grey, for matching outlines to what's drawn; ready a moment after opening.
+    private var greyPixels: GreyPixels?
     private var scrollCredit: CGFloat = 0
     private var hoverWindow: CGRect? {
         get { hoverCandidates.indices.contains(hoverLevel) ? hoverCandidates[hoverLevel].rect : nil }
@@ -94,6 +96,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
         self.onStyleChange = onStyleChange
         toolbar = CaptureToolbar(palette: palette)
         super.init(frame: CGRect(origin: .zero, size: frozen.screen.frame.size))
+        let image = frozen.image, scale = frozen.scale, origin = CaptureSession.globalOrigin(of: frozen.screen)
+        Task { [weak self] in
+            let pixels = await Task.detached(priority: .userInitiated) { GreyPixels(image, scale: scale, origin: origin) }.value
+            self?.greyPixels = pixels
+        }
         toolbar.isHidden = true
         toolbar.selectedColor = color
         toolbar.selectedStroke = stroke
@@ -159,7 +166,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
             if let textEditor { drawEditorFrame(textEditor.frame) }
         } else if let outlined, let hoverWindow {
             drawFrame(outlined, handles: false)
-            drawSizeLabel(for: outlined, measuring: hoverWindow, note: hoverCandidates.count > 1 ? "scroll ↕ to resize" : nil)
+            // One dot per level, the outlined one filled: how far in or out scrolling can go.
+            let dots = hoverCandidates.indices.map { $0 == hoverLevel ? "●" : "○" }.joined()
+            drawSizeLabel(for: outlined, measuring: hoverWindow, note: hoverCandidates.count > 1 ? "\(dots)  scroll ↕  ⌥ window" : nil)
         }
         if showsMagnifier, let pointer { drawMagnifier(at: pointer) }
     }
@@ -383,7 +392,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         }
         let origin = CaptureSession.globalOrigin(of: frozen.screen)
         let global = FrozenScreen.Window(rect: window.rect.offsetBy(dx: origin.x, dy: origin.y), pid: window.pid)
-        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global) { [weak self] found in
+        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global, pixels: greyPixels) { [weak self] found in
             guard let self, selection == nil, !isPassive, let pointer, window.rect.contains(pointer) else { return }
             let local = found.map { ElementFinder.Candidate(rect: $0.rect.offsetBy(dx: -origin.x, dy: -origin.y), depth: $0.depth) }
                 .filter { $0.rect.contains(pointer) || $0.depth == 0 }
@@ -391,7 +400,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             let shown = hoverWindow
             let level = Self.level(in: local, pinned: pinned, shown: shown)
             let next = local[level].rect
-            if let shown, Self.area(next) > Self.area(shown) * 2.5 {
+            if let shown, Self.area(next) > Self.area(shown) * 2.5, !NSEvent.modifierFlags.contains(.option) {
                 // Growing a lot: only once the pointer has stayed on it a moment.
                 if let pending = pendingGrowth, pending.candidates[pending.level].rect == next {
                     pendingGrowth = (local, level, pending.work)
@@ -425,6 +434,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     /// Which candidate to outline. After scrolling: the one nearest the chosen size. Otherwise what's
     /// outlined already, if it's still there, or the innermost element big enough to be a real control.
     static func level(in candidates: [ElementFinder.Candidate], pinned: (area: CGFloat, depth: Int)?, shown: CGRect?) -> Int {
+        // ⌥ held: the whole window, the most common thing to capture.
+        if NSEvent.modifierFlags.contains(.option) { return candidates.count - 1 }
         if let pinned {
             // Apps nest invisible groups unevenly, so the same kind of part can sit at different depths;
             // size is the steadier guide. Ratios count alike either way (twice as big, half as big),
@@ -960,6 +971,13 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// Pressing Shift (on its own) switches the color format C copies.
     override func flagsChanged(with event: NSEvent) {
+        // ⌥ takes the outline to the window while held, and back when let go.
+        if selection == nil, !isPassive, hoverCandidates.count > 1 {
+            pendingGrowth?.work.cancel()
+            pendingGrowth = nil
+            hoverLevel = Self.level(in: hoverCandidates, pinned: pinned, shown: nil)
+            needsDisplay = true
+        }
         let shiftDown = event.modifierFlags.contains(.shift)
         if shiftDown, !shiftWasDown, showsMagnifier {
             copiesHex.toggle()
