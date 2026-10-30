@@ -80,6 +80,8 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system |
 | `capture.record` | `{region, display?, width, height, path?}` | `{record}` in `capture.history` |
 | `capture.recent_regions` | `{limit?=20}` | distinct `[{x, y, w, h}]`, newest first |
+| `clipboard.add` | `{text, app?, bundle_id?}` | `{record}` in `clipboard.items` — an earlier entry with the same text is removed, so it moves to the top — then the retention settings are applied; or `{record: null, skipped}` with `skipped` one of `off`, `ignored_app`, `empty`, `too_large` (over 256 KiB) |
+| `clipboard.prune` | — | `{deleted}`: entries beyond `clipboard.max_items` or older than `clipboard.keep_days` are tombstoned |
 
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
@@ -98,7 +100,9 @@ points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` 
 `capture.format` (synced, `"png"` or `"jpg"`), `capture.file_name` (synced, pattern with `{date}`,
 `{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
 object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the system font, `text_size` 6–144, `bold`,
-`italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), and `capture.hide_own_windows` (synced, `false`).
+`italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), `capture.hide_own_windows` (synced, `false`), `clipboard.enabled` (device, `true`), `clipboard.keep_days`
+(synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), and `clipboard.ignored_apps` (synced,
+bundle identifiers; password managers by default).
 
 ## Events
 

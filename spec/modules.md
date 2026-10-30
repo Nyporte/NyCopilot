@@ -24,21 +24,19 @@ can't provide them doesn't load the module.
 | Module | Core (Rust) | macOS shell | Status |
 | --- | --- | --- | --- |
 | `llm` — Model | Provider settings, Chat Completions client, connection test | Model pane in Settings, Keychain | Shipped |
-| `translate` — Translate | ordered translation engines (Google Translate via an Apps Script web app, Volcengine, the model) with fallback, editable instructions, favorite languages and Tab cycling, badge codes and native names, whitespace trimming, history collection, legacy import | Composer at the text cursor, screen translation (hold the shortcut: Vision OCR highlights every line Live Text–style, a translation card on hover in a language picked from the capsule, live change tracking, click-through overlay), capture and paste, History window, Translate pane (language list, engines, Google and Volcengine setup, instructions, shortcuts) | Shipped |
+| `translate` — Translate | ordered translation engines (Google Translate via an Apps Script web app, Volcengine, the model) with fallback, editable instructions, favorite languages and Tab cycling, badge codes and native names, whitespace trimming, history collection, legacy import | Composer at the text cursor, selection translation on a card (tap the shortcut with text selected outside a text field), screen translation (hold the shortcut: Vision OCR highlights every line Live Text–style, a translation card on hover in a language picked from the capsule, live change tracking, click-through overlay), capture and paste, History window, Translate pane (language list, engines, Google and Volcengine setup, instructions, shortcuts) | Shipped |
 | `windows` — Window Layouts | Layout geometry (halves, corners, thirds, maximize, center, resize), gaps, size cycling, display moves, drag snap areas | Shortcuts, Accessibility window moves, restore memory, drag monitor and preview, Windows pane | Shipped |
-| `capture` — Screenshot & Pin | Output settings (folder, format, file name pattern), annotation style, pin shadow, capture history and recent regions, safe file names | Screen freeze per display, window detection, selection and magnifier, eight annotation tools, copy/save/pin, in-place text selection with macOS Live Text (captures and pins), scrolling capture (streams the scroll area around the selection, stitches the selection in document coordinates in both directions, fixed header/footer detection), pins (zoom, opacity, rotate, flip, click-through), pin clipboard, Screenshot pane | Shipped |
+| `clipboard` — Clipboard history | `clipboard.items`: one entry per distinct text (moved to the top when copied again), excluded apps (password managers by default), retention by days and count through `Core::prune_records` | Pasteboard watcher (skips concealed, transient, and generated content, copied files, and NyCopilot's own temporary writes), picker near the pointer (search, ↩ / ⌘1–9 paste back into the captured field, ⌘C, ⌘⌫), Clipboard pane | Shipped |
+| `capture` — Screenshot & Pin | Output settings (folder, format, file name pattern), annotation style, pin shadow, capture history and recent regions, safe file names | Screen freeze per display, window detection, selection and magnifier, eight annotation tools, copy/save/pin, in-place text selection with macOS Live Text (captures and pins), translating a capture's text (R) on Translate's card, scrolling capture (streams the scroll area around the selection, stitches the selection in document coordinates in both directions, fixed header/footer detection), pins (zoom, opacity, rotate, flip, click-through; kept across launches as PNGs plus `Pins/pins.json`), pin clipboard, Screenshot pane | Shipped |
 
 ## Planned
 
 | Module | Core owns | Client owns | Capabilities |
 | --- | --- | --- | --- |
-| `clipboard` — Clipboard history | `clipboard.items` collection, dedup, search, pins, retention policy, sensitive-content rules | Watching the pasteboard, picker panel, paste-back | `clipboard.watch`, `text.insert`, `hotkey` |
 | `chat` — Quick chat & agent | Conversations collection, agent loop, tool registry, streaming | Chat panel, rendering, tool permissions UI | `window.overlay`, `hotkey`, `network` |
 | `kanban` — Boards | Boards, columns, and cards as records; ordering; sync-friendly edits | Board UI | — (runs anywhere, including the server) |
 
-Translate will also grow "translate selection" and "translate screenshot" commands that reuse
-`text.capture` and the `capture` module rather than adding new platform code. Screenshot & Pin can
-later add OCR through `llm` and keep pinned images as records so they survive restarts and sync.
+Pinned images are kept by the macOS client today; keeping them as core records would let them sync.
 
 ## Adding a module
 

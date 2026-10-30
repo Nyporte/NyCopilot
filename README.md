@@ -2,11 +2,14 @@
 
 NyCopilot is a personal copilot that lives in the menu bar and works inside every app. It is a
 foundation for many modules across several operating systems, with a sync server to come. Today it
-ships three:
+ships four:
 
-- **Translate** — type in any text field and replace it with a translation (⌥⌘T).
+- **Translate** — type in any text field and replace it with a translation, translate a selection,
+  or read the whole screen in your language (⌥⌘T).
 - **Window Layouts** — snap windows into halves, corners, and thirds by shortcut or by dragging.
-- **Screenshot & Pin** — capture, annotate, copy, save, and pin images on top of everything (F1, F3).
+- **Screenshot & Pin** — capture, annotate, copy, save, translate, and pin images on top of
+  everything (F1, F3).
+- **Clipboard** — everything you copy, searchable, pasted back with a keystroke (⌥⌘V).
 
 ## How it's built
 
@@ -86,11 +89,18 @@ menu bar menu shows **Finish Setting Up…**.
   don't look at), and each is translated once a session, so coming back to it is instant.
   You keep using the computer as usual: clicks and scrolling go straight through. It keeps up as the
   screen changes: when anything under a block changes, the whole block's highlight disappears at once
-  (within a tenth of a second), and once things settle that part of the screen is read again and its
+  (within a tenth of a second while things move; it checks less often once the screen and pointer
+  have been still a while, and half as often on battery), and once things settle that part of the screen is read again and its
   highlights fade back in. A glow around the screen edges shows it's on, and a small capsule at the
   bottom holds just the language — click it to pick any other; the choice is remembered apart from
   the composer's and starts as your Mac's language — and an **esc** key. **Esc** ends it (or click the
   key, hold the shortcut again, or **Translate Screen** in the menu bar menu).
+- **Translate a selection:** select text that isn't in a field you can type in — a web page, a PDF,
+  a message — and tap the shortcut. Its translation appears on a card beside it, in the language you
+  read in (screen translation's, which starts as your Mac's) or, for text already in that language,
+  the composer's. **⌘C** copies the translation; **Esc**, a click, or the shortcut again closes it.
+  Apps that don't describe their selection to Accessibility are asked to copy it, and your clipboard
+  is put back right after.
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations
   are stored, never your source text.
 - **Settings → Translate**
@@ -158,6 +168,9 @@ dragging it to the edge of the screen.
   sticky headers appear once. Its keys
   work wherever the focus is: **Return** (copy), **⌘S**, **⇧⌘S**, **⌘T** (pinned to fit the screen),
   or **Esc** to cancel. Up to 30,000 pixels tall; NyCopilot's own windows are never in the picture.
+- **Translate** with **R** (or the speech-bubble button): the capture's text is read paragraph by
+  paragraph and its translation appears on a card beside the region. It reads the finished image,
+  so text under a mosaic stays hidden.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 
@@ -166,18 +179,34 @@ a card. **⇧F3** hides or shows all pins. A faint blue border fades in while th
 and turns solid when you click it. On a pin: drag to move, scroll to zoom, ⌥-scroll for opacity,
 **1–4** to rotate and flip, **T** to select its text in place (T again copies it all), **0** for actual size, ⌘C to copy, ⌘S to save, **Esc** or a double-click to
 close. Right-click for opacity, shadow, click-through, and **Close All Pins**; **Make Pins Clickable**
-in the menu bar menu brings click-through pins back.
+in the menu bar menu brings click-through pins back. Pins stay open when you quit: they come back
+where they were, as they were, the next time NyCopilot starts.
 
 **Settings → Screenshot** sets the save folder (Pictures/NyCopilot by default), PNG or JPEG, a
 file name pattern with `{date}`, `{time}`, and `{n}`, pin shadows, and the shortcuts. **Hide NyCopilot
 windows** (off by default) leaves pins and other NyCopilot windows out of captures.
+
+## Clipboard
+
+- Every piece of text you copy is kept, newest first; copying the same text again moves it to the
+  top. Passwords and anything an app marks private or transient are never kept, nor copies from
+  password managers (1Password, Bitwarden, Passwords, Keychain Access, KeePassXC), nor copied files.
+- **⌥⌘V** opens the history near the pointer: type to search, **↑↓** to choose, **Return** (or a
+  double-click) pastes into the field you were in, **⌘1–⌘9** pastes one of the first nine, **⌘C**
+  copies without pasting, **⌘⌫** forgets an entry, **Esc** closes. The pasted entry stays on your
+  clipboard.
+- **Settings → Clipboard** turns it off, sets how long entries are kept (a day to a year, 30 days by
+  default) and how many (500 by default), clears everything, and changes the shortcut.
 
 ## Shortcuts
 
 Every module lists its shortcuts in its own Settings tab. A shortcut needs ⌘, ⌥, or ⌃, or can be a
 function key on its own (F1, F2…). On Apple keyboards the F-keys control brightness and volume unless
 you hold fn or turn on "Use F1, F2, etc. keys as standard function keys" in System Settings →
-Keyboard. **Settings → General** shows the Accessibility status and an **Open at login** switch.
+Keyboard. **Settings → General** shows the Accessibility and Screen Recording status, an **Open at
+login** switch, and **Copy Diagnostics**: what NyCopilot did lately — which fields it found, where it
+pasted, what failed and why — without any of your text, ready to paste into a bug report. The same
+reasons show up as they happen: the composer says when it's in copy mode because Accessibility is off.
 
 ## Privacy and data
 
@@ -186,7 +215,9 @@ Keyboard. **Settings → General** shows the Accessibility status and an **Open 
   (the first engine that succeeds, in your order). There
   is no telemetry. Screenshots never leave your Mac.
 - Data lives in `~/Library/Application Support/NyCopilot/nycopilot.db` (folder 0700, file 0600):
-  settings, translation history, and capture history (regions and file paths, not images). Deleting
+  settings, translation history, clipboard history (text and the app it came from; it never leaves
+  this Mac), and capture history (regions and file paths, not images). Open pins are kept as PNGs in
+  `Pins/` beside it and deleted when you close them. The diagnostics log lives only in memory. Deleting
   an item removes its content immediately and leaves a content-free tombstone for future sync.
 - The model's API key, the Google web app's access key, and the Volcengine key are stored only in the
   macOS Keychain (`dev.nycopilot.NyCopilot`) and passed to the core per request; they are never written
