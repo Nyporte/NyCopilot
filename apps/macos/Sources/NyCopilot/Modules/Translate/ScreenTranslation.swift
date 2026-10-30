@@ -91,6 +91,67 @@ final class ScreenTranslator {
         let line: ScreenText.Line
         let background: NSColor
         let foreground: NSColor
+        /// The original's font size, as best it can be told.
+        let fontSize: CGFloat
+        /// How much of the line is ink: bold lines have noticeably more than the screen's usual.
+        let coverage: Double
+    }
+
+    /// Lines wrapped from one paragraph, translated together and laid out over the same area.
+    struct Paragraph {
+        let entries: [Entry]
+        let text: String
+        let rect: CGRect
+        let fontSize: CGFloat
+        /// Baseline to baseline, when there's more than one line.
+        let pitch: CGFloat?
+        let bold: Bool
+    }
+
+    /// Lines into paragraphs: directly below one another at line spacing, in the same column, the
+    /// same size, on the same background. Only a line long enough to have wrapped carries on to the
+    /// next — short labels stacked in a sidebar or a menu stay apart, and a paragraph's short last line
+    /// ends it — and a bullet or number starts a new one.
+    static func paragraphs(_ entries: [Entry]) -> [Paragraph] {
+        // Bold against this screen's usual ink, since scripts differ (Chinese is denser than English).
+        let coverages = entries.map(\.coverage).sorted()
+        let usual = coverages.isEmpty ? 0 : coverages[coverages.count / 2]
+        var groups: [[Entry]] = []
+        for entry in entries.sorted(by: { $0.line.rect.minY < $1.line.rect.minY }) {
+            let candidates = groups.indices.filter { continues(groups[$0], with: entry) }
+            // The paragraph whose last line sits closest above.
+            if let index = candidates.max(by: { groups[$0].last!.line.rect.maxY < groups[$1].last!.line.rect.maxY }) {
+                groups[index].append(entry)
+            } else {
+                groups.append([entry])
+            }
+        }
+        return groups.map { group in
+            let sizes = group.map(\.fontSize).sorted(), tops = group.map(\.line.rect.minY)
+            let steps = zip(tops.dropFirst(), tops).map { $0 - $1 }.sorted()
+            let ink = group.map(\.coverage).reduce(0, +) / Double(group.count)
+            return Paragraph(entries: group, text: ScreenText.joined(group.map(\.line.text)),
+                             rect: group.map(\.line.rect).reduce(group[0].line.rect) { $0.union($1) },
+                             fontSize: sizes[sizes.count / 2], pitch: steps.isEmpty ? nil : steps[steps.count / 2],
+                             bold: entries.count >= 3 && ink >= max(0.3, usual * 1.45))
+        }
+    }
+
+    private static func continues(_ group: [Entry], with next: Entry) -> Bool {
+        let last = group.last!, above = last.line.rect, below = next.line.rect, size = last.fontSize
+        guard abs(next.fontSize - size) <= size * 0.2 else { return false }
+        let gap = below.minY - above.maxY
+        guard gap >= -size * 0.3, gap <= size * 0.75 else { return false }
+        let overlap = min(above.maxX, below.maxX) - max(above.minX, below.minX)
+        guard abs(above.minX - below.minX) <= max(size * 1.2, 8) || overlap >= min(above.width, below.width) * 0.8 else { return false }
+        guard last.background.resembles(next.background) else { return false }
+        let widest = max(group.map(\.line.rect.width).max()!, below.width)
+        guard above.width >= widest * 0.75, above.width >= size * 12 else { return false }
+        let start = next.line.text.trimmingCharacters(in: .whitespaces)
+        if let first = start.first, "•·-–—*▪◦●".contains(first) || (first.isNumber && start.dropFirst().prefix(2).contains { ".)、".contains($0) }) {
+            return false
+        }
+        return true
     }
 
     private static let glanceScale: CGFloat = 1.0 / 8
@@ -154,8 +215,8 @@ final class ScreenTranslator {
             // Lines where the screen changed meanwhile wait for the next read.
             .filter { line in !display.changedDuringRead.contains { $0.intersects(line.rect) } }
             .map { line -> Entry in
-                let background = pixels.background(around: line.rect)
-                return Entry(line: line, background: background, foreground: background.isLight ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.96, alpha: 1))
+                let background = pixels.background(around: line.rect), ink = pixels.ink(in: line.rect, on: background)
+                return Entry(line: line, background: background, foreground: ink.color, fontSize: ScreenText.fontSize(of: line), coverage: ink.coverage)
             }
         display.entries.removeAll { band.intersects($0.line.rect) }
         display.entries += found
@@ -163,15 +224,15 @@ final class ScreenTranslator {
         await translateMissing()
     }
 
-    /// One batch for every line on every display that has no translation yet.
+    /// One batch for every paragraph on every display that has no translation yet.
     private func translateMissing() async {
         var missing: [String] = [], seen = Set<String>(), bytes = 0
         for display in displays {
-            for entry in display.entries where translations[entry.line.text] == nil && !seen.contains(entry.line.text) {
-                guard missing.count < 400, bytes + entry.line.text.utf8.count < 60_000 else { break }
-                seen.insert(entry.line.text)
-                missing.append(entry.line.text)
-                bytes += entry.line.text.utf8.count
+            for paragraph in Self.paragraphs(display.entries) where translations[paragraph.text] == nil && !seen.contains(paragraph.text) {
+                guard missing.count < 400, bytes + paragraph.text.utf8.count < 60_000 else { break }
+                seen.insert(paragraph.text)
+                missing.append(paragraph.text)
+                bytes += paragraph.text.utf8.count
             }
         }
         guard !missing.isEmpty else {
@@ -193,10 +254,11 @@ final class ScreenTranslator {
     }
 
     private func render(_ display: Display) {
-        display.overlay.show(display.entries.compactMap { entry in
-            guard let text = translations[entry.line.text], text.trimmingCharacters(in: .whitespaces) != entry.line.text.trimmingCharacters(in: .whitespaces)
-            else { return nil }
-            return TranslationOverlay.Box(rect: entry.line.rect, text: text, background: entry.background, foreground: entry.foreground)
+        display.overlay.show(Self.paragraphs(display.entries).compactMap { paragraph in
+            guard let text = translations[paragraph.text], text.trimmingCharacters(in: .whitespaces) != paragraph.text else { return nil }
+            let first = paragraph.entries[0]
+            return TranslationOverlay.Box(rect: paragraph.rect, text: text, background: first.background, foreground: first.foreground,
+                                          fontSize: paragraph.fontSize, pitch: paragraph.pitch, bold: paragraph.bold)
         })
     }
 
@@ -264,6 +326,30 @@ private struct PixelSampler {
         return (Int(pixels[p]), Int(pixels[p + 1]), Int(pixels[p + 2]))
     }
 
+    /// The line's own text colour and how much of it there is: across a grid of points inside the
+    /// line, the one furthest from the background, and the share of points that are ink (bold text
+    /// covers more of its line than regular).
+    func ink(in rect: CGRect, on background: NSColor) -> (color: NSColor, coverage: Double) {
+        guard let base = background.usingColorSpace(.sRGB) else { return (.labelColor, 0) }
+        let back = (Int(base.redComponent * 255), Int(base.greenComponent * 255), Int(base.blueComponent * 255))
+        let columns = max(8, min(400, Int(rect.width * scale / 2))), rows = max(4, min(40, Int(rect.height * scale / 2)))
+        var best: ((Int, Int, Int), Int)?, inked = 0, seen = 0
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let point = CGPoint(x: rect.minX + rect.width * (CGFloat(column) + 0.5) / CGFloat(columns),
+                                    y: rect.minY + rect.height * (CGFloat(row) + 0.5) / CGFloat(rows))
+                guard let pixel = sample(point) else { continue }
+                let distance = abs(pixel.0 - back.0) + abs(pixel.1 - back.1) + abs(pixel.2 - back.2)
+                seen += 1
+                if distance > 200 { inked += 1 }
+                if distance > (best?.1 ?? -1) { best = (pixel, distance) }
+            }
+        }
+        guard let best, best.1 > 120 else { return (base.isLight ? NSColor(white: 0.08, alpha: 1) : NSColor(white: 0.96, alpha: 1), 0) }
+        return (NSColor(srgbRed: CGFloat(best.0.0) / 255, green: CGFloat(best.0.1) / 255, blue: CGFloat(best.0.2) / 255, alpha: 1),
+                seen > 0 ? Double(inked) / Double(seen) : 0)
+    }
+
     /// The colour just around a line: the median of points along a ring a little outside it.
     func background(around rect: CGRect) -> NSColor {
         let ring = rect.insetBy(dx: -3, dy: -3)
@@ -281,6 +367,12 @@ private struct PixelSampler {
 }
 
 private extension NSColor {
+    /// Near enough to be the same background.
+    func resembles(_ other: NSColor) -> Bool {
+        guard let a = usingColorSpace(.sRGB), let b = other.usingColorSpace(.sRGB) else { return false }
+        return abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent) + abs(a.blueComponent - b.blueComponent) < 0.25
+    }
+
     var isLight: Bool {
         guard let rgb = usingColorSpace(.sRGB) else { return true }
         return 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent > 0.55
@@ -296,6 +388,10 @@ final class TranslationOverlay: NSWindow {
         let text: String
         let background: NSColor
         let foreground: NSColor
+        /// The original's size, line spacing (for a paragraph), and weight.
+        let fontSize: CGFloat
+        let pitch: CGFloat?
+        let bold: Bool
     }
 
     enum Status: Equatable {
@@ -344,28 +440,46 @@ final class TranslationOverlay: NSWindow {
             drawPill()
         }
 
-        /// The translation over its line: the line's own background, the text fitted to the line's height
-        /// and, if it can, its width; a longer translation widens the box rather than shrinking unreadably.
+        /// The translation over the original: on its background, at the original's size and line
+        /// spacing. A longer translation first gives up a little size (down to 80%), then takes more room —
+        /// wider for a single line, taller for a paragraph — rather than shrinking out of reach.
         private func draw(_ box: Box) {
-            var rect = box.rect.insetBy(dx: -3, dy: -1.5)
-            var size = max(9, box.rect.height * 0.78)
-            var attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size), .foregroundColor: box.foreground]
-            var width = (box.text as NSString).size(withAttributes: attributes).width
-            if width > box.rect.width {
-                size = max(9, size * box.rect.width / width)
-                attributes[.font] = NSFont.systemFont(ofSize: size)
-                width = (box.text as NSString).size(withAttributes: attributes).width
+            var rect = box.rect.insetBy(dx: -3, dy: -2)
+            var size = box.fontSize
+            func attributes(_ size: CGFloat) -> [NSAttributedString.Key: Any] {
+                let style = NSMutableParagraphStyle()
+                if let pitch = box.pitch {
+                    let height = pitch * size / box.fontSize
+                    style.minimumLineHeight = height
+                    style.maximumLineHeight = height
+                }
+                style.lineBreakMode = box.pitch == nil ? .byClipping : .byWordWrapping
+                return [.font: NSFont.systemFont(ofSize: size, weight: box.bold ? .semibold : .regular), .foregroundColor: box.foreground,
+                        .paragraphStyle: style]
             }
-            rect.size.width = min(max(rect.width, width + 6), bounds.maxX - rect.minX)
+            let text = box.text as NSString
+            func extent(_ size: CGFloat) -> CGSize {
+                box.pitch == nil ? text.size(withAttributes: attributes(size))
+                    : text.boundingRect(with: CGSize(width: rect.width - 6, height: .greatestFiniteMagnitude),
+                                        options: [.usesLineFragmentOrigin], attributes: attributes(size)).size
+            }
+            var needed = extent(size)
+            let fits = { (extent: CGSize) in box.pitch == nil ? extent.width <= rect.width - 6 : extent.height <= rect.height }
+            while !fits(needed), size > box.fontSize * 0.8 {
+                size = max(box.fontSize * 0.8, size * 0.94)
+                needed = extent(size)
+            }
+            if box.pitch == nil {
+                rect.size.width = min(max(rect.width, needed.width + 6), bounds.maxX - rect.minX)
+            } else {
+                rect.size.height = max(rect.height, needed.height + 4)
+            }
             // Opaque: the original must not show through beside a shorter translation.
             box.background.setFill()
             NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-            let height = (box.text as NSString).size(withAttributes: attributes).height
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.lineBreakMode = .byTruncatingTail
-            attributes[.paragraphStyle] = paragraph
-            (box.text as NSString).draw(in: CGRect(x: rect.minX + 3, y: rect.midY - height / 2, width: rect.width - 6, height: height),
-                                        withAttributes: attributes)
+            let top = box.pitch == nil ? rect.midY - needed.height / 2 : rect.minY + 2
+            text.draw(with: CGRect(x: rect.minX + 3, y: top, width: rect.width - 6, height: rect.maxY - top),
+                      options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes(size))
         }
 
         /// A soft accent glow fading in from every edge: the screen is being translated.

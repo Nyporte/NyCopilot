@@ -30,6 +30,37 @@ enum ScreenText {
         }.value
     }
 
+    /// The original's font size, judged by width — how wide the line's text is in the system font
+    /// against how wide it is on screen (Vision's widths are within a few percent of the ink) — since
+    /// the box's height swings from 0.8× to 1.4× the size with descenders and accents, and only keeps
+    /// the guess sane. The system font spaces letters differently at each size, so the measurement is
+    /// taken near the answer and refined once.
+    static func fontSize(of line: Line) -> CGFloat {
+        var size = line.rect.height
+        for _ in 0..<2 {
+            let width = (line.text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)]).width
+            guard width > 0 else { break }
+            size = line.rect.width * size / width
+        }
+        return min(max(size, line.rect.height * 0.65), line.rect.height * 1.3)
+    }
+
+    /// Lines joined back into the text they were wrapped from: a hyphen that split a word goes, and
+    /// Chinese, Japanese, and Korean lines meet without a space.
+    static func joined(_ lines: [String]) -> String {
+        lines.map { $0.trimmingCharacters(in: .whitespaces) }.reduce("") { text, line in
+            guard let end = text.last, let start = line.first else { return text + line }
+            if end == "-", start.isLowercase { return String(text.dropLast()) + line }
+            if isCJK(end) || isCJK(start) { return text + line }
+            return text + " " + line
+        }
+    }
+
+    static func isCJK(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first?.value else { return false }
+        return (0x3000...0x9FFF).contains(scalar) || (0xAC00...0xD7AF).contains(scalar) || (0xFF00...0xFFEF).contains(scalar)
+    }
+
     /// Whether a line is worth translating into the language with this code: it has letters, more than
     /// one, and isn't clearly in that language already.
     static func needsTranslation(_ text: String, into code: String?) -> Bool {
