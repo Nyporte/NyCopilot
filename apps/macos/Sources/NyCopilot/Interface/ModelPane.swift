@@ -8,9 +8,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
     private let model = NSTextField()
     private let key = NSSecureTextField()
     private let removeKey = NSButton()
-    private let status = NSTextField(wrappingLabelWithString: "")
-    private let statusIcon = Design.symbol("circle", size: 13)
-    private let progress = NSProgressIndicator()
+    private let status = StatusLine()
     private let testButton = Design.button("Test Connection", target: nil, action: nil)
     private let saveButton = Design.button("Save", target: nil, action: nil, primary: true)
     private var hasSavedKey = false
@@ -41,14 +39,6 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         removeKey.target = self
         removeKey.action = #selector(removeSavedKey)
 
-        status.font = .systemFont(ofSize: 12)
-        status.textColor = .secondaryLabelColor
-        status.maximumNumberOfLines = 3
-        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        progress.style = .spinning
-        progress.controlSize = .small
-        progress.isDisplayedWhenStopped = false
-        progress.isHidden = true
         testButton.target = self
         testButton.action = #selector(testConnection)
         saveButton.target = self
@@ -61,9 +51,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
                 FormRow("Model ID", accessory: model),
                 FormRow("API key", accessory: Design.hstack([removeKey, key], spacing: 6))
             ])
-        let feedback = Design.hstack([statusIcon, progress, status], spacing: 6)
-        feedback.alignment = .firstBaseline
-        let bar = Design.hstack([feedback, Design.spacer(), testButton, saveButton], spacing: 8)
+        let bar = Design.hstack([status, Design.spacer(), testButton, saveButton], spacing: 8)
         return [connection, bar]
     }
 
@@ -72,10 +60,12 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         endpoint.stringValue = provider.endpoint
         model.stringValue = provider.model
         key.stringValue = ""
-        hasSavedKey = KeychainStore.hasKey
+        hasSavedKey = KeychainStore.hasKey()
         removingKey = false
         refreshKeyField()
-        showStatus(provider.isComplete ? nil : "Add an endpoint and model to start using NyCopilot.", style: .info)
+        status.show(provider.isComplete ? nil : services.preferences.canTranslate
+                    ? "Optional while Google Translate is set up: the model takes over when Google fails or a language needs it."
+                    : "Add an endpoint and model to start using NyCopilot.", style: .info)
         updateButtons()
     }
 
@@ -101,7 +91,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         removingKey = true
         key.stringValue = ""
         refreshKeyField()
-        showStatus("The saved key will be removed when you click Save.", style: .info)
+        status.show("The saved key will be removed when you click Save.", style: .info)
         updateButtons()
     }
 
@@ -117,14 +107,14 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
                 try KeychainStore.write("")
             }
         } catch {
-            showStatus(error.localizedDescription, style: .error)
+            status.show(error.localizedDescription, style: .error)
             return
         }
-        hasSavedKey = KeychainStore.hasKey
+        hasSavedKey = KeychainStore.hasKey()
         removingKey = false
         key.stringValue = ""
         refreshKeyField()
-        showStatus("Saved.", style: .success)
+        status.show("Saved.", style: .success)
         updateButtons()
     }
 
@@ -133,11 +123,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         let configuration = draft
         let typedKey = key.stringValue
         let removing = removingKey
-        progress.isHidden = false
-        progress.startAnimation(nil)
-        statusIcon.isHidden = true
-        status.stringValue = "Connecting…"
-        status.textColor = .secondaryLabelColor
+        status.showProgress("Connecting…")
         let core = services.core
         struct Timing: Decodable { let elapsedMs: Int }
         test = Task { [weak self] in
@@ -148,39 +134,16 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
                                                                        "api_key": apiKey], as: Timing.self))
             } catch { outcome = .failure(error) }
             guard let self else { return }
-            progress.stopAnimation(nil)
-            progress.isHidden = true
             test = nil
             switch outcome {
             case .success(let timing):
                 let seconds = String(format: "%.1f", Double(timing.elapsedMs) / 1000)
-                showStatus("Connected — \(configuration.model) replied in \(seconds) s.", style: .success)
+                status.show("Connected — \(configuration.model) replied in \(seconds) s.", style: .success)
             case .failure(let error):
-                showStatus(error.localizedDescription, style: .error)
+                status.show(error.localizedDescription, style: .error)
             }
             updateButtons()
         }
         updateButtons()
-    }
-
-    private enum StatusStyle { case info, success, error }
-
-    private func showStatus(_ text: String?, style: StatusStyle) {
-        status.stringValue = text ?? ""
-        statusIcon.isHidden = text == nil
-        switch style {
-        case .info:
-            statusIcon.image = NSImage(systemSymbolName: "info.circle", accessibilityDescription: nil)
-            statusIcon.contentTintColor = .secondaryLabelColor
-            status.textColor = .secondaryLabelColor
-        case .success:
-            statusIcon.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)
-            statusIcon.contentTintColor = .systemGreen
-            status.textColor = .labelColor
-        case .error:
-            statusIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-            statusIcon.contentTintColor = .systemOrange
-            status.textColor = .labelColor
-        }
     }
 }

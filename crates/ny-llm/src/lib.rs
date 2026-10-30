@@ -92,31 +92,58 @@ pub fn request_body(prompt: &ChatPrompt, config: &ProviderConfig, api_key: &str)
 /// Send one request and return the first choice's text.
 pub fn complete(prompt: &ChatPrompt, config: &ProviderConfig, api_key: &str) -> Result<String> {
     let body = request_body(prompt, config, api_key)?;
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .save_redirect_history(false)
-        .timeout_global(Some(Duration::from_secs(60)))
-        .timeout_connect(Some(Duration::from_secs(15)))
-        .timeout_recv_response(Some(Duration::from_secs(30)))
-        .timeout_recv_body(Some(Duration::from_secs(30)))
-        .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
-        .build()
-        .into();
-    let mut request = agent.post(endpoint_url(&config.endpoint)?.as_str())
+    let mut request = http::agent().post(endpoint_url(&config.endpoint)?.as_str())
         .header("Content-Type", "application/json")
         .header("Accept", "application/json");
     if !api_key.is_empty() { request = request.header("Authorization", &format!("Bearer {api_key}")); }
-    let mut response = request.send(&body[..]).map_err(transport_error)?;
+    let mut response = request.send(&body[..]).map_err(http::transport_error)?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) { return Err(http_status(status)); }
-    if response.body().content_length().is_some_and(|length| length > MAX_RESPONSE_BYTES) {
-        return Err(too_large());
+    decode_response(&http::read_body(&mut response)?)
+}
+
+/// The bounds every outgoing request shares, for model providers and other translation services.
+pub mod http {
+    use super::*;
+
+    /// No automatic redirects (callers decide), no retries, platform-verified TLS, and time limits.
+    pub fn agent() -> ureq::Agent {
+        ureq::Agent::config_builder()
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .save_redirect_history(false)
+            .timeout_global(Some(Duration::from_secs(60)))
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_recv_response(Some(Duration::from_secs(30)))
+            .timeout_recv_body(Some(Duration::from_secs(30)))
+            .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
+            .build()
+            .into()
     }
-    let mut data = Vec::new();
-    response.body_mut().as_reader().take(MAX_RESPONSE_BYTES + 1).read_to_end(&mut data)
-        .map_err(|_| NyError::new("network", "The connection dropped while reading the reply. Try again."))?;
-    decode_response(&data)
+
+    /// The whole body, refusing anything over 1 MB.
+    pub fn read_body(response: &mut ureq::http::Response<ureq::Body>) -> Result<Vec<u8>> {
+        if response.body().content_length().is_some_and(|length| length > MAX_RESPONSE_BYTES) {
+            return Err(too_large());
+        }
+        let mut data = Vec::new();
+        response.body_mut().as_reader().take(MAX_RESPONSE_BYTES + 1).read_to_end(&mut data)
+            .map_err(|_| NyError::new("network", "The connection dropped while reading the reply. Try again."))?;
+        if data.len() as u64 > MAX_RESPONSE_BYTES { return Err(too_large()); }
+        Ok(data)
+    }
+
+    pub fn transport_error(error: ureq::Error) -> NyError {
+        use ureq::Error::*;
+        let message = match &error {
+            Timeout(_) => "The request timed out. Check the service, then try again.",
+            HostNotFound => "Can’t find the host. Check the URL in Settings.",
+            ConnectionFailed => "Can’t reach the server. Is it running?",
+            Tls(_) | Rustls(_) => "Secure connection failed. Check the server’s TLS certificate.",
+            _ => "The network request failed. Check your connection and the URL.",
+        };
+        NyError::new("network", message)
+    }
 }
 
 /// Accept the first plain-text choice; reject truncated, empty, or non-Chat-Completions replies.
@@ -153,18 +180,6 @@ fn http_status(status: u16) -> NyError {
         _ => format!("Request failed (HTTP {status}). Check the endpoint and model."),
     };
     NyError { code: "http_status".into(), message, status: Some(status) }
-}
-
-fn transport_error(error: ureq::Error) -> NyError {
-    use ureq::Error::*;
-    let message = match &error {
-        Timeout(_) => "The request timed out. Check the provider, then try again.",
-        HostNotFound => "Can’t find the API host. Check the endpoint URL in Settings.",
-        ConnectionFailed => "Can’t reach the API endpoint. Is the server running?",
-        Tls(_) | Rustls(_) => "Secure connection failed. Check the endpoint’s TLS certificate.",
-        _ => "The network request failed. Check your connection and the endpoint URL.",
-    };
-    NyError::new("network", message)
 }
 
 /// The `llm` module: provider settings plus raw completion for modules and clients.

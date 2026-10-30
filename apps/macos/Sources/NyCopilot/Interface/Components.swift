@@ -231,3 +231,56 @@ final class StatusBadge: NSStackView {
         dot.fill = color
     }
 }
+
+/// One line of feedback under a form: an icon and message, or a spinner while something runs.
+@MainActor
+final class StatusLine: NSStackView {
+    enum Style { case info, success, error }
+
+    private let icon = Design.symbol("circle", size: 13)
+    private let spinner = NSProgressIndicator()
+    private let label = NSTextField(wrappingLabelWithString: "")
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .horizontal
+        spacing = 6
+        alignment = .firstBaseline
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .secondaryLabelColor
+        label.maximumNumberOfLines = 3
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        spinner.isHidden = true
+        icon.isHidden = true
+        [icon, spinner, label].forEach(addArrangedSubview)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init()") }
+
+    func showProgress(_ text: String) {
+        icon.isHidden = true
+        spinner.isHidden = false
+        spinner.startAnimation(nil)
+        label.stringValue = text
+        label.textColor = .secondaryLabelColor
+    }
+
+    /// nil clears the line.
+    func show(_ text: String?, style: Style) {
+        spinner.stopAnimation(nil)
+        spinner.isHidden = true
+        label.stringValue = text ?? ""
+        icon.isHidden = text == nil
+        let (symbol, tint, color): (String, NSColor, NSColor) = switch style {
+        case .info: ("info.circle", .secondaryLabelColor, .secondaryLabelColor)
+        case .success: ("checkmark.circle.fill", .systemGreen, .labelColor)
+        case .error: ("exclamationmark.triangle.fill", .systemOrange, .labelColor)
+        }
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        icon.contentTintColor = tint
+        label.textColor = color
+    }
+}

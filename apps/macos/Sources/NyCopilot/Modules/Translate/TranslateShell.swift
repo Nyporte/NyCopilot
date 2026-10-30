@@ -107,13 +107,16 @@ final class TranslateShell: ModuleShell {
         }
     }
 
-    private struct RunResult: Decodable { let text: String; let targetLanguage: String }
+    private struct RunResult: Decodable { let text: String; let targetLanguage: String; let notice: String? }
 
     /// One request per submit. A newer submit or a cancel makes older results irrelevant, and the
     /// core discards a cancelled result before it reaches history.
     private func translate(_ text: String) {
-        let apiKey: String
-        do { apiKey = try services.apiKey() } catch { composer.showError(error.localizedDescription); return }
+        let apiKey: String, googleKey: String
+        do { (apiKey, googleKey) = (try services.apiKey(), try services.googleKey()) } catch {
+            composer.showError(error.localizedDescription)
+            return
+        }
         cancelRequest()
         operationID = UUID()
         let id = operationID
@@ -124,7 +127,7 @@ final class TranslateShell: ModuleShell {
             let result: RunResult
             do {
                 result = try await core.perform("translate.run", ["text": text, "target_language": language, "api_key": apiKey,
-                                                                 "request_id": id.uuidString], as: RunResult.self)
+                                                                 "google_key": googleKey, "request_id": id.uuidString], as: RunResult.self)
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
                 showFailure(error)
@@ -132,12 +135,18 @@ final class TranslateShell: ModuleShell {
             }
             guard let self, !Task.isCancelled, operationID == id else { return }
             await deliver(result.text, id: id)
+            if let notice = result.notice { services.toast.show("Translated by the model", detail: notice, style: .warning) }
         }
     }
 
     private func showFailure(_ error: Error) {
         let code = (error as? NyCore.Failure)?.code
         switch code {
+        case "google_access", "invalid_key", "unsupported_language":
+            composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
+                self?.composer.cancel()
+                self?.services.openSettings("translate")
+            }))
         case "provider_not_configured", "invalid_setting":
             composer.showError(error.localizedDescription, action: ("Open Settings", { [weak self] in
                 self?.composer.cancel()

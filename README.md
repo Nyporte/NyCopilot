@@ -42,8 +42,10 @@ A short guide opens on first launch:
 
 1. **Allow Accessibility**, which Translate and Window Layouts use to read fields, paste, and move
    windows.
-2. **Connect a model.** Settings → Model takes any OpenAI-compatible Chat Completions endpoint, hosted
-   or local (Ollama, LM Studio…), a model ID, and an optional API key. **Test Connection** checks it.
+2. **Connect a translator.** Settings → Model takes any OpenAI-compatible Chat Completions endpoint,
+   hosted or local (Ollama, LM Studio…), a model ID, and an optional API key; **Test Connection** checks
+   it. Or set up **Google Translate** in Settings → Translate (below). Either is enough; with both,
+   Google goes first and the model is the fallback.
 3. **Try it.** Press ⌥⌘T in any text field.
 
 Screenshot & Pin asks for **Screen Recording** the first time you capture. Until setup is done, the
@@ -59,6 +61,12 @@ menu bar menu shows **Finish Setting Up…**.
   and puts the translation on your clipboard. If anything changes before pasting (you switched apps,
   edited the field, moved the cursor), NyCopilot doesn't paste; the result goes to your clipboard and
   History with a short note.
+- **Google Translate** (Settings → Translate) goes first when it's on and has a web app URL. Your
+  Apps Script web app receives `{key, text, source: "auto", target}` as a POST body and answers with
+  `{code, translated}`. Deploy it with **Execute as: Me** and **Who has access: Anyone**: any other
+  access setting sends requests to Google's sign-in page, so the script never runs. **Test** translates
+  a sample with the values on screen. The model takes over, with a short note, when Google fails, and
+  for languages Google has no code for, such as "formal Japanese".
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations
   are stored, never your source text.
 - **Settings → Translate**
@@ -131,15 +139,18 @@ Keyboard. **Settings → General** shows the Accessibility status and an **Open 
 
 ## Privacy and data
 
-- Text is sent only when you press Return in Translate, and only to the endpoint you configured. There
+- Text is sent only when you press Return in Translate, and only to the services you configured
+  (your Google web app, then the model if Google fails). There
   is no telemetry. Screenshots never leave your Mac.
 - Data lives in `~/Library/Application Support/NyCopilot/nycopilot.db` (folder 0700, file 0600):
   settings, translation history, and capture history (regions and file paths, not images). Deleting
   an item removes its content immediately and leaves a content-free tombstone for future sync.
-- The API key is stored only in the macOS Keychain (`dev.nycopilot.NyCopilot`) and passed to the core
-  per request; it is never written to the database or to preferences.
-- Model requests are bounded: 64 KiB of input, 1 MiB reply, 60 s total, no redirects, no retries, no
-  caching. HTTP errors never expose the provider's response body.
+- The model's API key and the Google web app's access key are stored only in the macOS Keychain
+  (`dev.nycopilot.NyCopilot`) and passed to the core per request; they are never written to the
+  database or to preferences. The access key travels only in the POST body, never in a URL.
+- Requests are bounded: 64 KiB of input, 1 MiB reply, 60 s total, no retries, no caching. Model
+  requests follow no redirects; Google requests follow exactly one, to `script.googleusercontent.com`,
+  as a plain GET without the key. HTTP errors never expose the server's response body.
 
 ## Coming from NyTranslate
 

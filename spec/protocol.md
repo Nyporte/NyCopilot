@@ -64,7 +64,8 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | --- | --- | --- |
 | `llm.complete` | `{system, user, api_key?}` | `{text}` |
 | `llm.test` | `{endpoint, model, api_key?}` | `{elapsed_ms}` |
-| `translate.run` | `{text, target_language?, api_key?, request_id?}` | `{text, target_language, record}` — saved to `translate.history` before returning |
+| `translate.run` | `{text, target_language?, api_key?, google_key?, request_id?}` | `{text, target_language, engine, notice?, record}` — Google Translate first when it is on, set up, and has a code for the language; otherwise, or when Google fails, the model. `engine` is `"google"` or `"model"`; `notice` explains a fallback. Saved to `translate.history` before returning |
+| `translate.test_google` | `{url, key?}` | `{text, elapsed_ms}` — translates a short sample through the web app |
 | `translate.languages` | — | `[{name, native, code}]` — suggested languages with their own names and badge codes |
 | `translate.cycle` | `{step: 1 or -1}` | `{target_language, native, code}` — steps through the favorites and saves the result as the target |
 | `translate.native_name` | `{language}` | `{native, code}` — own name (as given when unknown) and badge code (EN, 中, 日; a mentioned language's code, else two letters) |
@@ -84,7 +85,8 @@ Window and capture rectangles are `{x, y, w, h}` in points with a top-left origi
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
 `translate.target_language` (synced, `"English"`), `translate.favorite_languages` (synced, 1–8
 distinct names, default English, Simplified Chinese, Japanese), `translate.trim_whitespace` (synced,
-`true`: trims leading and trailing whitespace from results), and `translate.instructions` (synced; the
+`true`: trims leading and trailing whitespace from results), `translate.google_enabled` (synced, `true`),
+`translate.google_url` (synced, `""`: the Apps Script web app's `/exec` URL; empty means model only), and `translate.instructions` (synced; the
 system message for translations, at most 8,000 characters, where `{language}` is replaced with the
 target language; `settings.reset` restores the built-in text), `windows.gap` (synced, `0`, 0–60
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and

@@ -1,6 +1,6 @@
 import AppKit
 
-/// Translate's Settings tab: favorite languages, model instructions, shortcuts, and history.
+/// Translate's Settings tab: favorite languages, Google Translate, model instructions, shortcuts, and history.
 @MainActor
 final class TranslatePane: SettingsPane, NSTextViewDelegate {
     private let services: CopilotServices
@@ -16,6 +16,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     private var savedInstructions = ""
     private lazy var defaultInstructions = Self.defaultInstructions(services.core)
     private lazy var shortcuts = ShortcutEditor(services: services)
+    private lazy var google = GoogleSection(services: services)
 
     init(services: CopilotServices, openHistory: @escaping () -> Void) {
         self.services = services
@@ -46,13 +47,14 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
             FormSection("Favorite Languages",
                         footer: "In the translate box, Tab steps through these in this order and Shift+Tab goes back. Use ▲ ▼ to change the order.",
                         rows: [favorites]),
-            message,
+            message
+        ] + google.makeViews() + [
             FormSection("Result", rows: [
                 FormRow("Trim spaces and line breaks", subtitle: "Removes them from the start and end of each translation.",
                         accessory: trimSwitch)
             ]),
             FormSection("Instructions",
-                        footer: "Sent to the model with every translation. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
+                        footer: "Sent to the model with each translation it makes. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
                         rows: [makeEditor()]),
             instructionsBar,
             shortcuts.section("Shortcuts", footer: "Click a shortcut and press a new combination. Press Delete to turn it off.",
@@ -75,6 +77,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
                        })
         trimSwitch.state = services.core.setting(.trimWhitespace, default: true) ? .on : .off
         message.isHidden = true
+        google.refresh()
         loadInstructions()
         shortcuts.refresh()
     }

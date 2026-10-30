@@ -1,9 +1,12 @@
 //! Translate: type in any text field, get the text back in another language.
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use ny_core::{parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use ny_llm::{ChatPrompt, ProviderConfig};
+
+use crate::google;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -103,6 +106,37 @@ pub fn validate_instructions(instructions: &str) -> Result<()> {
     Ok(())
 }
 
+/// Which service produced a translation, and why the preferred one was skipped, if it was.
+pub struct Translation { pub text: String, pub engine: &'static str, pub notice: Option<String> }
+
+/// Google first when it is on, set up, and has a code for the language; the model otherwise, and
+/// whenever Google fails. Text that is empty or too long fails the same way on both, so it isn't retried.
+pub fn translate_text(core: &Core, text: &str, language: &str, api_key: &str, google_key: &str) -> Result<Translation> {
+    let model = ProviderConfig::from_core(core)?;
+    let via_model = || -> Result<String> {
+        let instructions = core.setting::<String>("translate.instructions")?;
+        ny_llm::complete(&prompt(text, language, &instructions), &model, api_key)
+    };
+    let url = core.setting::<String>("translate.google_url")?;
+    if !core.setting::<bool>("translate.google_enabled")? || url.trim().is_empty() {
+        return Ok(Translation { text: via_model()?, engine: "model", notice: None });
+    }
+    let Some(code) = google::language_code(language) else {
+        if model.is_complete() { return Ok(Translation { text: via_model()?, engine: "model", notice: None }); }
+        return Err(NyError::new("unsupported_language", format!(
+            "Google Translate has no code for “{language}”. Choose a standard language, or connect a model in Settings → Model.")));
+    };
+    match google::translate(&url, google_key, text, &code) {
+        Ok(text) => Ok(Translation { text, engine: "google", notice: None }),
+        Err(error) if model.is_complete() && !matches!(error.code.as_str(), "empty_input" | "input_too_large") => match via_model() {
+            Ok(text) => Ok(Translation { text, engine: "model",
+                                         notice: Some(format!("Google Translate failed, so the model translated this. {}", error.message)) }),
+            Err(fallback) => Err(NyError { message: format!("{} The model fallback failed too: {}", error.message, fallback.message), ..error }),
+        },
+        Err(error) => Err(error),
+    }
+}
+
 /// Source text travels only as the user message so it cannot rewrite the instructions.
 pub fn prompt(text: &str, language: &str, instructions: &str) -> ChatPrompt {
     ChatPrompt { system: instructions.trim().replace(LANGUAGE_PLACEHOLDER, language), user: text.into() }
@@ -127,9 +161,14 @@ impl Module for TranslateModule {
                                  "Remove spaces, tabs, and line breaks from the start and end of each translation."),
                 SettingSpec::new("translate.favorite_languages", json!(DEFAULT_FAVORITES), Scope::Synced,
                                  "Languages that Tab steps through in the composer, in order."),
+                SettingSpec::new("translate.google_enabled", json!(true), Scope::Synced,
+                                 "Try Google Translate before the model when a web app URL is set."),
+                SettingSpec::new("translate.google_url", json!(""), Scope::Synced,
+                                 "The Apps Script web app (/exec URL) that runs Google Translate; empty uses the model only."),
             ],
             commands: vec![
-                CommandSpec::new("run", "Translate {text, target_language?, api_key?, request_id?} with the saved instructions → {text, target_language, record}."),
+                CommandSpec::new("run", "Translate {text, target_language?, api_key?, google_key?, request_id?}, Google first → {text, target_language, engine, notice?, record}."),
+                CommandSpec::new("test_google", "Check a web app: {url, key} → {text, elapsed_ms} for a short sample."),
                 CommandSpec::new("languages", "Suggested languages: [{name, native, code}]."),
                 CommandSpec::new("cycle", "Step the target through the favorites: {step: 1 or -1} → {target_language, native, code}."),
                 CommandSpec::new("native_name", "A language's own name and badge code: {language} → {native, code}."),
@@ -140,7 +179,10 @@ impl Module for TranslateModule {
 
     fn call(&self, core: &Core, command: &str, params: Value) -> Result<Value> {
         #[derive(Deserialize)]
-        struct Run { text: String, target_language: Option<String>, #[serde(default)] api_key: String, request_id: Option<String> }
+        struct Run {
+            text: String, target_language: Option<String>, #[serde(default)] api_key: String,
+            #[serde(default)] google_key: String, request_id: Option<String>,
+        }
         #[derive(Deserialize)]
         struct Import { path: PathBuf }
         match command {
@@ -150,14 +192,22 @@ impl Module for TranslateModule {
                 let language = match p.target_language { Some(l) => l, None => core.setting::<String>("translate.target_language")? };
                 let language = language.trim().to_string();
                 validate_language(&language)?;
-                let instructions = core.setting::<String>("translate.instructions")?;
-                let reply = ny_llm::complete(&prompt(&p.text, &language, &instructions), &ProviderConfig::from_core(core)?, &p.api_key)?;
-                let text = finish(reply, core.setting("translate.trim_whitespace")?);
+                let result = translate_text(core, &p.text, &language, &p.api_key, &p.google_key)?;
+                let text = finish(result.text, core.setting("translate.trim_whitespace")?);
                 request.check()?;
                 // Saved before the client attempts to paste, so a failed paste never loses the result.
-                let record = core.insert_record(HISTORY, json!({ "text": text, "target_language": language }),
+                let record = core.insert_record(HISTORY, json!({ "text": text, "target_language": language, "engine": result.engine }),
                                                 &format!("{text}\n{language}"), None)?;
-                Ok(json!({ "text": text, "target_language": language, "record": record }))
+                Ok(json!({ "text": text, "target_language": language, "engine": result.engine, "notice": result.notice, "record": record }))
+            }
+            "test_google" => {
+                #[derive(Deserialize)]
+                struct Test { url: String, #[serde(default)] key: String }
+                let p: Test = parse(params)?;
+                google::validate_url(&p.url)?;
+                let started = Instant::now();
+                let text = google::translate(&p.url, &p.key, "Hello, world.", "zh-CN")?;
+                Ok(json!({ "text": text, "elapsed_ms": started.elapsed().as_millis() as u64 }))
             }
             "languages" => Ok(json!(SUGGESTED_LANGUAGES.iter()
                 .map(|(name, native, code)| json!({ "name": name, "native": native, "code": code })).collect::<Vec<_>>())),
@@ -191,6 +241,7 @@ impl Module for TranslateModule {
             "translate.target_language" => validate_language(text),
             "translate.instructions" => validate_instructions(text),
             "translate.favorite_languages" => validate_favorites(value),
+            "translate.google_url" if !text.trim().is_empty() => google::validate_url(text),
             // Booleans such as trim_whitespace are already type-checked against their default.
             _ => Ok(()),
         }

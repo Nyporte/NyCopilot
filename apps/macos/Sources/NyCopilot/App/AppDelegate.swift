@@ -104,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The status menu is rebuilt on open so shortcuts and setup state are always current.
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        if !Accessibility.isTrusted || !services.preferences.provider.isComplete {
+        if !Accessibility.isTrusted || !services.preferences.canTranslate {
             let setup = NSMenuItem(title: "Finish Setting Up…", action: #selector(showWelcomeFromMenu), keyEquivalent: "")
             setup.target = self
             setup.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)?

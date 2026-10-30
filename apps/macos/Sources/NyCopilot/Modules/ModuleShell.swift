@@ -41,6 +41,7 @@ final class CopilotServices {
 
     /// The API key from the Keychain; the core never stores secrets itself.
     func apiKey() throws -> String { try KeychainStore.read() }
+    func googleKey() throws -> String { try KeychainStore.read(.google) }
 
     /// A menu item whose shortcut column mirrors the action's current global shortcut.
     func menuItem(_ title: String, symbol: String, hotKey actionID: String?, target: AnyObject, action: Selector) -> NSMenuItem {

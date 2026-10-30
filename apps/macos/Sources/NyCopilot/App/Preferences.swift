@@ -20,6 +20,11 @@ final class Preferences {
         Provider(endpoint: core.setting(.llmEndpoint, default: ""), model: core.setting(.llmModel, default: ""))
     }
 
+    /// Something can translate: a model, or Google Translate through a web app.
+    var canTranslate: Bool {
+        provider.isComplete || (core.setting(.googleEnabled, default: true) && !core.setting(.googleURL, default: "").isEmpty)
+    }
+
     /// Validated by the core. The model is checked first so an invalid pair never half-saves.
     func setProvider(_ provider: Provider) throws {
         let endpoint = provider.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)

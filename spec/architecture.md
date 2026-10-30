@@ -57,7 +57,8 @@ platform's per-user application-data folder):
   default; it is not implemented yet because there is no server yet.
 
 Secrets are never stored in the database. Clients keep them in the platform's credential store
-(Keychain, Windows Credential Manager, Secret Service) and pass them per call (`api_key`).
+(Keychain, Windows Credential Manager, Secret Service) and pass them per call (`api_key`,
+`google_key`).
 
 ## Modules
 

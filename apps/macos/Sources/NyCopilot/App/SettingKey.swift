@@ -8,6 +8,8 @@ enum SettingKey: String {
     case favoriteLanguages = "translate.favorite_languages"
     case instructions = "translate.instructions"
     case trimWhitespace = "translate.trim_whitespace"
+    case googleEnabled = "translate.google_enabled"
+    case googleURL = "translate.google_url"
     case windowGap = "windows.gap"
     case windowRepeat = "windows.repeat"
     case dragSnap = "windows.drag_snap"

@@ -11,6 +11,7 @@ use std::sync::Arc;
 use ny_core::Module;
 
 pub mod capture;
+pub mod google;
 pub mod translate;
 pub mod windows;
 

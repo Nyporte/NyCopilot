@@ -81,7 +81,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
 
     private func refresh() {
         accessStep.isComplete = Accessibility.isTrusted
-        modelStep.isComplete = services.preferences.provider.isComplete
+        modelStep.isComplete = services.preferences.canTranslate
         let shortcut = services.hotKeys.combination(for: TranslateShell.Action.compose).map(KeyNames.display) ?? "your shortcut"
         tryStep.detail = "Click in any text field, press \(shortcut), type, and hit Return. The translation replaces your text."
         tryStep.isComplete = false
