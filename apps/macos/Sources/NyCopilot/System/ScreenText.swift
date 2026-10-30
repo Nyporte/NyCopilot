@@ -86,12 +86,24 @@ enum ScreenText {
 
     /// The language code NaturalLanguage uses for one of NyCopilot's language names, when known.
     static func code(for language: String) -> String? {
-        let known = ["english": "en", "simplified chinese": "zh-Hans", "chinese": "zh-Hans", "traditional chinese": "zh-Hant",
+        names[language.trimmingCharacters(in: .whitespaces).lowercased()]
+    }
+
+    /// The Mac's own language, as one of NyCopilot's language names (English if it isn't one of them).
+    static var deviceLanguage: String {
+        let preferred = Locale.preferredLanguages.first?.lowercased() ?? "en"
+        if preferred.hasPrefix("zh") { return preferred.contains("hant") || preferred.hasSuffix("tw") || preferred.hasSuffix("hk") ? "Traditional Chinese" : "Simplified Chinese" }
+        let base = String(preferred.prefix { $0 != "-" })
+        // The plainest name for the code ("Portuguese" over "Brazilian Portuguese").
+        return names.filter { $0.value == base }.min { $0.key.count < $1.key.count }.map { $0.key.capitalized } ?? "English"
+    }
+
+    private static let names: [String: String] = {
+        ["english": "en", "simplified chinese": "zh-Hans", "chinese": "zh-Hans", "traditional chinese": "zh-Hant",
                      "japanese": "ja", "korean": "ko", "spanish": "es", "french": "fr", "german": "de", "italian": "it",
                      "portuguese": "pt", "brazilian portuguese": "pt", "russian": "ru", "arabic": "ar", "dutch": "nl",
                      "swedish": "sv", "danish": "da", "norwegian": "nb", "finnish": "fi", "polish": "pl", "turkish": "tr",
                      "ukrainian": "uk", "vietnamese": "vi", "thai": "th", "indonesian": "id", "hindi": "hi", "greek": "el",
                      "hebrew": "he", "czech": "cs", "hungarian": "hu", "romanian": "ro"]
-        return known[language.trimmingCharacters(in: .whitespaces).lowercased()]
-    }
+    }()
 }

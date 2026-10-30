@@ -85,7 +85,8 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
 Settings declared by modules: `llm.endpoint`, `llm.model` (synced, `""`),
-`translate.target_language` (synced, `"English"`), `translate.favorite_languages` (synced, 1–8
+`translate.target_language` (synced, `"English"`), `translate.screen_language` (synced, `""`: the language
+screen translation reads into; empty means the device's own), `translate.favorite_languages` (synced, 1–8
 distinct names, default English, Simplified Chinese, Japanese), `translate.trim_whitespace` (synced,
 `true`: trims leading and trailing whitespace from results), `translate.engine_order` (synced,
 `["google", "volcengine", "model"]`; engines it omits are tried last), `translate.google_enabled`,

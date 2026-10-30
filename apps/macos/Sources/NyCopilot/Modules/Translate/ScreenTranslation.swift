@@ -3,8 +3,10 @@ import Carbon
 import MacPlatform
 
 /// Screen translation: hold the translate shortcut and every line of text on every display is
-/// highlighted, like Live Text. Point at a block not in your language and a card with its translation
-/// floats beside it. The page itself is left exactly as it is. The overlay lets every click and scroll
+/// highlighted, like Live Text. Point at a block not in the chosen language and a card with its
+/// translation floats beside it. The page itself is left exactly as it is. A small capsule at the
+/// bottom picks the language — its own, apart from the composer's, since reading usually goes into
+/// your language and writing out of it. The overlay lets every click and scroll
 /// through, so the computer works as usual underneath, and it keeps up as the screen changes. Esc ends it.
 ///
 /// Keeping up cheaply: each display is glanced at ten times a second at an eighth of its resolution.
@@ -21,15 +23,17 @@ final class ScreenTranslator {
     /// Pointer movement, watched (never caught), so cards follow the pointer while clicks go through.
     private var pointerMonitors: [Any] = []
     private let card = TranslationCard()
+    private let bar = ScreenTranslationBar()
     /// The block under the pointer, and the card about to show for it.
     private var hovered: (display: Display, paragraph: Paragraph)?
     private var pendingCard: DispatchWorkItem?
     private var language = "", nativeLanguage = ""
     private var keys: [String: String] = [:]
-    /// Blocks translated this session, by their text, in the language set when it started.
+    /// Blocks translated this session, by language and text, so switching back costs nothing.
     private var translations: [String: String] = [:]
     /// Blocks out for translation right now, so none is asked for twice.
     private var requested: Set<String> = []
+    private func key(_ text: String) -> String { language + "\u{1}" + text }
 
     var isActive: Bool { watching != nil }
 
@@ -50,13 +54,14 @@ final class ScreenTranslator {
             services.openSettings("translate")
             return
         }
-        let target: String = services.core.setting(.targetLanguage, default: "English")
-        if target != language { translations = [:] }
-        language = target
-        nativeLanguage = (try? services.core.call("translate.native_name", ["language": language]) as? [String: Any])?["native"] as? String ?? language
+        let chosen: String = services.core.setting(.screenLanguage, default: "")
+        choose(chosen.isEmpty ? ScreenText.deviceLanguage : chosen, remember: false)
         keys = ["api_key": (try? services.apiKey()) ?? "", "google_key": (try? services.googleKey()) ?? "",
                 "volcengine_key": (try? services.volcengineKey()) ?? ""]
-        displays = NSScreen.screens.map { Display(screen: $0, overlay: TranslationOverlay(screen: $0, language: nativeLanguage)) }
+        displays = NSScreen.screens.map { Display(screen: $0, overlay: TranslationOverlay(screen: $0)) }
+        bar.onPick = { [weak self] language in self?.choose(language, remember: true) }
+        bar.onExit = { [weak self] in self?.stop() }
+        bar.present(languages: languages(), selected: language, on: NSScreen.main ?? NSScreen.screens[0])
         displays.forEach { overlay in
             // The dimming eases in rather than dropping over the screen.
             overlay.overlay.alphaValue = 0
@@ -81,9 +86,37 @@ final class ScreenTranslator {
         pointerMonitors.forEach(NSEvent.removeMonitor)
         pointerMonitors = []
         hover(nil)
+        bar.orderOut(nil)
         displays.forEach { $0.overlay.orderOut(nil) }
         displays = []
         requested = []
+    }
+
+    // MARK: Language
+
+    /// Reads into `name` from now on: highlights recount what needs translating, and a card showing
+    /// re-translates. `remember` keeps the choice for next time.
+    private func choose(_ name: String, remember: Bool) {
+        language = name
+        nativeLanguage = (try? services.core.call("translate.native_name", ["language": name]) as? [String: Any])?["native"] as? String ?? name
+        if remember { try? services.core.setSetting(.screenLanguage, name) }
+        hover(nil)
+        displays.forEach(update)
+    }
+
+    /// The menu: favourites first, then every other language NyCopilot knows, in their own scripts.
+    private func languages() -> [[ScreenTranslationBar.Language]] {
+        struct Known: Decodable { let name: String; let native: String }
+        let known = (try? services.core.call("translate.languages", as: [Known].self)) ?? []
+        let favorites: [String] = services.core.setting(.favoriteLanguages, default: [String]())
+        func entry(_ name: String) -> ScreenTranslationBar.Language {
+            .init(name: name, native: known.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.native
+                    ?? (name == language ? nativeLanguage : name))
+        }
+        var first = favorites.map(entry)
+        if !first.contains(where: { $0.name == language }) { first.insert(entry(language), at: 0) }
+        let rest = known.filter { item in !first.contains { $0.name.caseInsensitiveCompare(item.name) == .orderedSame } }.map { entry($0.name) }
+        return [first, rest].filter { !$0.isEmpty }
     }
 
     // MARK: Blocks of text
@@ -224,12 +257,12 @@ final class ScreenTranslator {
         var band = CGRect(x: 0, y: region.minY - 8, width: size.width, height: region.height + 16)
             .intersection(CGRect(origin: .zero, size: size))
         if band.height > size.height * 0.6 { band = CGRect(origin: .zero, size: size) }
-        display.overlay.status = .reading
+        bar.reading = true
         guard let screenshot = try? await ScreenGrabber.snapshot(of: display.screen, pixelsPerPoint: scale),
               let crop = screenshot.cropping(to: CGRect(x: band.minX * scale, y: band.minY * scale,
                                                         width: band.width * scale, height: band.height * scale).integral),
               let lines = try? await ScreenText.lines(in: crop, scale: scale), isActive else {
-            display.overlay.status = .ready
+            bar.reading = displays.contains { $0 !== display && $0.reading }
             return
         }
         let pixels = PixelSampler(crop, scale: scale, origin: band.origin)
@@ -241,7 +274,7 @@ final class ScreenTranslator {
         display.entries.removeAll { band.intersects($0.line.rect) }
         display.entries += found
         update(display)
-        display.overlay.status = .ready
+        bar.reading = displays.contains { $0 !== display && $0.reading }
     }
 
     /// Regroups a display's blocks and redraws its highlights; the card follows if its block went away.
@@ -256,19 +289,20 @@ final class ScreenTranslator {
     /// The block pointed at, unless it's already translated or on its way; the card updates if it's
     /// still showing that block when the translation arrives.
     private func translate(_ text: String) async {
-        guard translations[text] == nil, !requested.contains(text) else { return }
-        requested.insert(text)
-        defer { requested.remove(text) }
+        let language = language, key = key(text)
+        guard translations[key] == nil, !requested.contains(key) else { return }
+        requested.insert(key)
+        defer { requested.remove(key) }
         struct Batch: Decodable { let texts: [String] }
         let params: [String: Any] = ["texts": [text], "target_language": language]
         do {
             let result = try await services.core.perform("translate.batch", params.merging(keys) { _, key in key }, as: Batch.self)
             guard isActive, let translation = result.texts.first else { return }
             if translations.count > 5000 { translations = [:] }
-            translations[text] = translation
-            if let hovered, hovered.paragraph.text == text, card.isVisible { card.show(translation) }
+            translations[key] = translation
+            if let hovered, hovered.paragraph.text == text, language == self.language, card.isVisible { card.show(translation) }
         } catch {
-            guard isActive, let hovered, hovered.paragraph.text == text, card.isVisible else { return }
+            guard isActive, let hovered, hovered.paragraph.text == text, language == self.language, card.isVisible else { return }
             card.show(failure: error.localizedDescription)
         }
     }
@@ -303,7 +337,7 @@ final class ScreenTranslator {
         let frame = target.display.screen.frame, rect = target.paragraph.rect
         let source = NSRect(x: frame.minX + rect.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
         card.present(language: nativeLanguage, beside: source, on: target.display.screen)
-        if let text = translations[target.paragraph.text] {
+        if let text = translations[key(target.paragraph.text)] {
             card.show(text)
         } else {
             card.showWaiting()
@@ -402,21 +436,15 @@ private extension NSColor {
 
 /// One display's overlay, in the manner of Live Text: the screen dimmed a little except for its text,
 /// each block (a paragraph's lines together) one glowing shape; the block under the pointer outlined;
-/// a glow along the screen's edges; and a status pill. Every click and scroll goes through to what's
-/// underneath.
+/// and a glow along the screen's edges. Every click and scroll goes through to what's underneath.
 @MainActor
 final class TranslationOverlay: NSWindow {
-    enum Status: Equatable {
-        case reading, ready
-    }
-
-    var status: Status = .reading { didSet { if status != oldValue { canvas.status = status } } }
     /// The lines of the block under the pointer, in this display's points (top-left).
     var hovered: [CGRect] = [] { didSet { if hovered != oldValue { canvas.hovered = hovered } } }
     private let canvas: Canvas
 
-    init(screen: NSScreen, language: String) {
-        canvas = Canvas(language: language, dock: screen.visibleFrame.minY - screen.frame.minY)
+    init(screen: NSScreen) {
+        canvas = Canvas()
         super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
@@ -439,18 +467,12 @@ final class TranslationOverlay: NSWindow {
         private var fading: Timer?
         private static let fadeIn: CFTimeInterval = 0.25
         var hovered: [CGRect] = [] { didSet { needsDisplay = true } }
-        var status: Status = .reading { didSet { needsDisplay = true } }
-        private let language: String
-        /// The Dock's height at the bottom, if it's there.
-        private let dock: CGFloat
 
-        init(language: String, dock: CGFloat) {
-            self.language = language
-            self.dock = dock
+        init() {
             super.init(frame: .zero)
         }
 
-        required init?(coder: NSCoder) { fatalError("Use init(language:dock:)") }
+        required init?(coder: NSCoder) { fatalError("Use init()") }
 
         override var isFlipped: Bool { true }
 
@@ -584,7 +606,6 @@ final class TranslationOverlay: NSWindow {
                 outline.stroke()
             }
             drawEdges()
-            drawPill()
         }
 
         /// A soft accent glow fading in from every edge: the screen is being translated.
@@ -597,28 +618,141 @@ final class TranslationOverlay: NSWindow {
                 path.stroke()
             }
         }
+    }
+}
 
-        /// What's going on and how to leave, at the bottom just above the Dock, where there's usually
-        /// the least text to cover.
-        private func drawPill() {
-            let state: String = switch status {
-            case .ready: "Point at text to read it in \(language) · Esc to exit"
-            case .reading: "Reading the screen… · Esc to exit"
-            }
-            let text = NSMutableAttributedString(string: "Screen translation", attributes: [
-                .font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: NSColor.white])
-            text.append(NSAttributedString(string: "   \(state)", attributes: [
-                .font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.white.withAlphaComponent(0.75)]))
-            let size = text.size(), height = size.height + 10
-            let pill = CGRect(x: bounds.midX - size.width / 2 - 14, y: bounds.maxY - dock - height - 12, width: min(size.width + 28, bounds.width - 40), height: height)
-            NSColor(white: 0.1, alpha: 0.82).setFill()
-            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
-            NSColor.controlAccentColor.withAlphaComponent(0.8).setStroke()
-            let outline = NSBezierPath(roundedRect: pill.insetBy(dx: 0.5, dy: 0.5), xRadius: pill.height / 2, yRadius: pill.height / 2)
-            outline.lineWidth = 1
-            outline.stroke()
-            text.draw(with: pill.insetBy(dx: 14, dy: 5), options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+/// The small capsule at the bottom while the screen is translated: what it reads into, as a menu, and
+/// the way out. The translate icon turns into a spinner while the screen is being read. It never takes
+/// the keyboard from the app in front.
+@MainActor
+final class ScreenTranslationBar: NSPanel {
+    struct Language {
+        let name: String
+        let native: String
+    }
+
+    var onPick: ((String) -> Void)?
+    var onExit: (() -> Void)?
+    var reading = false {
+        didSet {
+            guard reading != oldValue else { return }
+            icon.isHidden = reading
+            spinner.isHidden = !reading
+            reading ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
         }
+    }
+    private let icon = Design.symbol("translate", size: 12, color: .white.withAlphaComponent(0.85))
+    private let spinner = NSProgressIndicator()
+    private let picker = FirstClickPopUp()
+    /// Each language's own name, by its English one, for the capsule's title.
+    private var natives: [String: String] = [:]
+    private let content: NSStackView
+
+    init() {
+        content = Design.hstack([], spacing: 6)
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 160, height: 30), styleMask: [.borderless, .nonactivatingPanel],
+                   backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        becomesKeyOnlyIfNeeded = true
+        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)
+        isReleasedWhenClosed = false
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        appearance = NSAppearance(named: .darkAqua)
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        spinner.isHidden = true
+        for view in [icon, spinner] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            view.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        }
+        // A pull-down, so the capsule shows just the language's own name while the menu can say more.
+        picker.pullsDown = true
+        picker.isBordered = false
+        picker.font = .systemFont(ofSize: 12, weight: .medium)
+        picker.contentTintColor = .white
+        picker.target = self
+        picker.action = #selector(picked)
+        let escape = Design.label("esc", size: 10, weight: .medium, color: .white.withAlphaComponent(0.6))
+        let key = ExitKey()
+        key.toolTip = "Esc ends screen translation"
+        key.onClick = { [weak self] in self?.onExit?() }
+        key.translatesAutoresizingMaskIntoConstraints = false
+        escape.translatesAutoresizingMaskIntoConstraints = false
+        key.addSubview(escape)
+        NSLayoutConstraint.activate([
+            escape.leadingAnchor.constraint(equalTo: key.leadingAnchor, constant: 4), escape.trailingAnchor.constraint(equalTo: key.trailingAnchor, constant: -4),
+            escape.centerYAnchor.constraint(equalTo: key.centerYAnchor), key.heightAnchor.constraint(equalToConstant: 16)
+        ])
+        key.wantsLayer = true
+        key.layer?.borderColor = NSColor.white.withAlphaComponent(0.3).cgColor
+        key.layer?.borderWidth = 1
+        key.layer?.cornerRadius = 4
+        [icon, spinner, picker, key].forEach(content.addArrangedSubview)
+        let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 15)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        material.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 12),
+            content.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -8),
+            content.centerYAnchor.constraint(equalTo: material.centerYAnchor),
+            material.heightAnchor.constraint(equalToConstant: 30)
+        ])
+        contentView = material
+    }
+
+    /// Fills the menu — groups of languages, a divider between groups — and shows the capsule at the
+    /// bottom of `screen`, just above the Dock.
+    func present(languages groups: [[Language]], selected: String, on screen: NSScreen) {
+        picker.removeAllItems()
+        picker.addItem(withTitle: "")
+        for (index, group) in groups.enumerated() {
+            if index > 0 { picker.menu?.addItem(.separator()) }
+            for language in group {
+                let item = NSMenuItem(title: language.native, action: nil, keyEquivalent: "")
+                item.representedObject = language.name
+                item.state = language.name == selected ? .on : .off
+                natives[language.name] = language.native
+                if language.native.caseInsensitiveCompare(language.name) != .orderedSame {
+                    let title = NSMutableAttributedString(string: language.native, attributes: [.font: NSFont.menuFont(ofSize: 13)])
+                    title.append(NSAttributedString(string: "  \(language.name)", attributes: [
+                        .font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
+                    item.attributedTitle = title
+                }
+                picker.menu?.addItem(item)
+            }
+        }
+        picker.itemArray.first?.title = natives[selected] ?? selected
+        content.layoutSubtreeIfNeeded()
+        let size = NSSize(width: content.fittingSize.width + 20, height: 30)
+        let visible = screen.visibleFrame
+        setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.minY + 14, width: size.width, height: size.height), display: true)
+        orderFrontRegardless()
+    }
+
+    @objc private func picked() {
+        guard let chosen = picker.selectedItem, let name = chosen.representedObject as? String else { return }
+        picker.itemArray.forEach { $0.state = $0 === chosen ? .on : .off }
+        picker.itemArray.first?.title = natives[name] ?? name
+        onPick?(name)
+        // The capsule follows the shorter or longer name.
+        content.layoutSubtreeIfNeeded()
+        let width = content.fittingSize.width + 20
+        setFrame(NSRect(x: frame.midX - width / 2, y: frame.minY, width: width, height: frame.height), display: true)
+    }
+
+    /// Opens on the first click, though the capsule never becomes the key window.
+    private final class FirstClickPopUp: NSPopUpButton {
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+
+    /// The `esc` keycap, which also ends screen translation when clicked.
+    private final class ExitKey: NSView {
+        var onClick: (() -> Void)?
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseUp(with event: NSEvent) { if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() } }
     }
 }
 

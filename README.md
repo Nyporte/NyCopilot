@@ -77,7 +77,7 @@ menu bar menu shows **Finish Setting Up…**.
 - **Hold ⌥⌘T** (the translate shortcut — a tap still opens the composer) to translate what's on
   screen. Like Live Text, the screen dims a little and the text on every display glows, a paragraph's
   lines as one shape —
-  the page itself stays exactly as it is. Point at a block that isn't in your language and its lines
+  the page itself stays exactly as it is. Point at a block that isn't in the language you read into and its lines
   are outlined and a card with its translation floats just below it. Lines wrapped from one paragraph are one block, so sentences are
   translated whole; sidebar labels, list items, and headings are their own blocks. Text is read on
   your Mac; only a block you rest the pointer on is sent for translation (nothing is spent on text you
@@ -85,8 +85,10 @@ menu bar menu shows **Finish Setting Up…**.
   You keep using the computer as usual: clicks and scrolling go straight through. It keeps up as the
   screen changes: when anything under a block changes, the whole block's highlight disappears at once
   (within a tenth of a second), and once things settle that part of the screen is read again and its
-  highlights fade back in. A glow around the screen edges and a pill at the bottom show it's on; **Esc** ends it
-  (or hold the shortcut again, or **Translate Screen** in the menu bar menu).
+  highlights fade back in. A glow around the screen edges shows it's on, and a small capsule at the
+  bottom holds just the language — click it to pick any other; the choice is remembered apart from
+  the composer's and starts as your Mac's language — and an **esc** key. **Esc** ends it (or click the
+  key, hold the shortcut again, or **Translate Screen** in the menu bar menu).
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations
   are stored, never your source text.
 - **Settings → Translate**

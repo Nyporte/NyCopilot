@@ -311,6 +311,8 @@ impl Module for TranslateModule {
                                  "Remove spaces, tabs, and line breaks from the start and end of each translation."),
                 SettingSpec::new("translate.favorite_languages", json!(DEFAULT_FAVORITES), Scope::Synced,
                                  "Languages that Tab steps through in the composer, in order."),
+                SettingSpec::new("translate.screen_language", json!(""), Scope::Synced,
+                                 "Language screen translation reads into; empty means the device's own language."),
                 SettingSpec::new("translate.engine_order", json!(Engine::ALL.map(Engine::id)), Scope::Synced,
                                  "Translation services in the order they are tried; the next takes over when one fails."),
                 SettingSpec::new("translate.google_enabled", json!(true), Scope::Synced, "Use Google Translate when its web app URL is set."),
@@ -412,6 +414,7 @@ impl Module for TranslateModule {
         let text = value.as_str().unwrap_or_default();
         match key {
             "translate.target_language" => validate_language(text),
+            "translate.screen_language" if !text.trim().is_empty() => validate_language(text),
             "translate.instructions" => validate_instructions(text),
             "translate.favorite_languages" => validate_favorites(value),
             "translate.google_url" if !text.trim().is_empty() => google::validate_url(text),
@@ -468,6 +471,9 @@ mod tests {
         for bad in [json!([]), json!(["English", "english"]), json!(["English\nFrench"]), json!("English")] {
             assert!(core.call("settings.set", json!({ "key": "translate.favorite_languages", "value": bad })).is_err(), "{bad}");
         }
+        assert_eq!(core.setting::<String>("translate.screen_language").unwrap(), "");
+        core.call("settings.set", json!({ "key": "translate.screen_language", "value": "Japanese" })).unwrap();
+        assert!(core.call("settings.set", json!({ "key": "translate.screen_language", "value": "a\nb" })).is_err());
         assert_eq!(native_name("klingon"), "klingon");
         assert_eq!(native_name("korean"), "한국어");
         assert_eq!(short_code("Japanese"), "日");

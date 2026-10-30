@@ -8,6 +8,7 @@ enum SettingKey: String {
     case favoriteLanguages = "translate.favorite_languages"
     case instructions = "translate.instructions"
     case trimWhitespace = "translate.trim_whitespace"
+    case screenLanguage = "translate.screen_language"
     case engineOrder = "translate.engine_order"
     case googleEnabled = "translate.google_enabled"
     case googleURL = "translate.google_url"
