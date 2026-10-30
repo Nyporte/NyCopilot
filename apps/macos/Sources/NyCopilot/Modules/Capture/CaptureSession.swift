@@ -72,6 +72,7 @@ final class CaptureSession {
             if window.frame.contains(mouse) {
                 window.makeKey()
                 window.makeFirstResponder(view)
+                view.hoverAtPointer()
             }
         }
         NSCursor.crosshair.set()

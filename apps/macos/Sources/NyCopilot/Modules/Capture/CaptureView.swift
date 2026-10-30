@@ -49,7 +49,15 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private let recent: [CGRect]
     private lazy var pixelated = CaptureRenderer.pixelate(frozen.image, blockSize: 12 * frozen.scale)
     private let toolbar: CaptureToolbar
-    var isPassive = false { didSet { hoverWindow = nil; needsDisplay = true } }
+    /// Another display has the selection. Becoming the active one keeps what's outlined, so the
+    /// click that started it can still take it.
+    var isPassive = false {
+        didSet {
+            guard isPassive != oldValue else { return }
+            if isPassive { hoverWindow = nil }
+            needsDisplay = true
+        }
+    }
 
     var tool: AnnotationTool? {
         didSet {
@@ -292,6 +300,16 @@ final class CaptureView: NSView, NSTextViewDelegate {
         pointer = point
         if selection == nil, !isPassive { hover(at: point) }
         updateCursor(at: point)
+        needsDisplay = true
+    }
+
+    /// Outlines what's under the pointer as soon as the capture opens, before it moves.
+    func hoverAtPointer() {
+        guard let window else { return }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(point) else { return }
+        pointer = point
+        if selection == nil, !isPassive { hover(at: point) }
         needsDisplay = true
     }
 

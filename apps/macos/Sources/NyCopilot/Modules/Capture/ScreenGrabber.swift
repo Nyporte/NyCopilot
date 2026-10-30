@@ -58,8 +58,15 @@ enum ScreenGrabber {
             for await (index, image) in group { images[index] = image }
             return images
         }
-        let frozen = zip(screens, images).compactMap { screen, image in
-            image.map { FrozenScreen(screen: screen, image: $0, windows: windows.compactMap { local($0, on: screen) }) }
+        let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
+        let frozen = zip(screens, images).compactMap { (screen: NSScreen, image: CGImage?) -> FrozenScreen? in
+            guard let image else { return nil }
+            let scale = CGFloat(image.width) / screen.frame.width
+            // The Dock reports its bar a few points off from where it draws it; the pixels say where.
+            let onScreen = windows.compactMap { local($0, on: screen) }.map { (window: FrozenScreen.Window) -> FrozenScreen.Window in
+                window.pid == dock ? FrozenScreen.Window(rect: snappedToEdges(window.rect, in: image, scale: scale), pid: window.pid) : window
+            }
+            return FrozenScreen(screen: screen, image: image, windows: onScreen)
         }
         guard !frozen.isEmpty else { throw Failure.captureFailed }
         Diagnostics.note("capture", "froze \(frozen.count) display\(frozen.count == 1 ? "" : "s") in \(Int(Date().timeIntervalSince(started) * 1000)) ms "
@@ -181,6 +188,55 @@ enum ScreenGrabber {
         }
         if let dock { windows.append(dock) }
         return windows
+    }
+
+    /// `rect` (view points) moved by up to 12 points so its edges sit on the strongest edges in the
+    /// image: rows where brightness jumps along the top and bottom, columns along the sides. Kept as
+    /// it is unless an offset fits clearly better.
+    static func snappedToEdges(_ rect: CGRect, in image: CGImage, scale: CGFloat) -> CGRect {
+        let reach = 12 * scale
+        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+        let band = pixels.insetBy(dx: -reach - 1, dy: -reach - 1).integral
+            .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard band.width > 4, band.height > 4, let crop = image.cropping(to: band) else { return rect }
+        let width = crop.width, height = crop.height
+        var grey = [UInt8](repeating: 0, count: width * height)
+        let drawn = grey.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                                          space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            // Bitmap rows run top-down already: row 0 is the band's top, as in the view.
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return rect }
+        let inner = pixels.offsetBy(dx: -band.minX, dy: -band.minY)
+        /// Average brightness jump across a row (between it and the one above) or a column, over the
+        /// middle of the edge, away from rounded corners.
+        func rowJump(_ y: Int) -> Double {
+            guard y >= 1, y < height else { return 0 }
+            let from = max(Int(inner.minX + inner.width * 0.2), 0), to = min(Int(inner.maxX - inner.width * 0.2), width)
+            guard to > from else { return 0 }
+            var sum = 0
+            for x in from..<to { sum += abs(Int(grey[y * width + x]) - Int(grey[(y - 1) * width + x])) }
+            return Double(sum) / Double(to - from)
+        }
+        func columnJump(_ x: Int) -> Double {
+            guard x >= 1, x < width else { return 0 }
+            let from = max(Int(inner.minY + inner.height * 0.2), 0), to = min(Int(inner.maxY - inner.height * 0.2), height)
+            guard to > from else { return 0 }
+            var sum = 0
+            for y in from..<to { sum += abs(Int(grey[y * width + x]) - Int(grey[y * width + x - 1])) }
+            return Double(sum) / Double(to - from)
+        }
+        func bestShift(_ low: CGFloat, _ high: CGFloat, _ jump: (Int) -> Double) -> CGFloat {
+            func score(_ shift: Int) -> Double { jump(Int(low.rounded()) + shift) + jump(Int(high.rounded()) + shift) }
+            let span = Int(reach)
+            let best = (-span...span).max { score($0) < score($1) } ?? 0
+            return score(best) > score(0) * 1.25 + 2 ? CGFloat(best) : 0
+        }
+        let dy = bestShift(inner.minY, inner.maxY, rowJump)
+        let dx = bestShift(inner.minX, inner.maxX, columnJump)
+        return rect.offsetBy(dx: dx / scale, dy: dy / scale)
     }
 
     /// The Dock's visible bar, from Accessibility (its window covers the whole screen).
