@@ -78,8 +78,10 @@ menu bar menu shows **Finish Setting Up…**.
   screen in place. Every line of text on every display is read on your Mac and shown translated right
   where it is — at the original's size, weight, and colour, on its own background. Lines wrapped from
   one paragraph are translated together and laid out over the same area, so sentences stay whole;
-  sidebar labels, list items, and headings stay separate. It all goes through your translation
-  engines in one batch. You keep using
+  sidebar labels, list items, and headings stay separate. Each translation stays inside its original's
+  area so the page keeps its layout: a longer one shrinks a little, then ends with "…" — rest the
+  pointer on it to read it in full on a card that opens over its neighbours. It all goes through your
+  translation engines in one batch. You keep using
   the computer as usual: clicks and scrolling go straight through. It keeps up as the screen changes:
   translations disappear the moment what's under them changes, and once things settle, only the
   changed part is read again and only new text is translated (nothing is translated twice in a

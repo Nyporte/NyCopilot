@@ -16,6 +16,8 @@ final class ScreenTranslator {
     private var displays: [Display] = []
     private var watching: Task<Void, Never>?
     private var escape: GlobalHotKey?
+    /// Pointer movement, watched (never caught) so translations can open on hover while clicks go through.
+    private var pointerMonitors: [Any] = []
     private var language = ""
     private var keys: [String: String] = [:]
     /// Lines translated this session, by their text in the language set when it started.
@@ -52,6 +54,15 @@ final class ScreenTranslator {
         escape = try? GlobalHotKey(identifier: 3000)
         escape?.onPress = { [weak self] in MainActor.assumeIsolated { self?.stop() } }
         try? escape?.register(HotKeyCombination(keyCode: UInt32(kVK_Escape), modifiers: 0))
+        let moved: (NSEvent?) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated {
+                let location = NSEvent.mouseLocation
+                self?.displays.forEach { $0.overlay.pointer(at: location) }
+            }
+        }
+        let kinds: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .scrollWheel]
+        pointerMonitors = [NSEvent.addGlobalMonitorForEvents(matching: kinds) { moved($0) } as Any,
+                           NSEvent.addLocalMonitorForEvents(matching: kinds) { moved($0); return $0 } as Any]
         watching = Task { [weak self] in await self?.watch() }
     }
 
@@ -59,6 +70,8 @@ final class ScreenTranslator {
         watching?.cancel()
         watching = nil
         escape = nil
+        pointerMonitors.forEach(NSEvent.removeMonitor)
+        pointerMonitors = []
         displays.forEach { $0.overlay.orderOut(nil) }
         displays = []
     }
@@ -417,12 +430,27 @@ final class TranslationOverlay: NSWindow {
 
     func show(_ boxes: [Box]) { canvas.boxes = boxes }
 
+    /// Where the pointer is (screen coordinates), so a cut-off translation under it can open.
+    func pointer(at location: NSPoint) {
+        let inside = frame.contains(location) ? CGPoint(x: location.x - frame.minX, y: frame.maxY - location.y) : nil
+        canvas.pointer(at: inside)
+    }
+
     private final class Canvas: NSView {
-        var boxes: [Box] = [] { didSet { needsDisplay = true } }
+        var boxes: [Box] = [] {
+            didSet {
+                laid = boxes.map(layout)
+                hovered = nil
+                needsDisplay = true
+            }
+        }
         var status: Status = .reading { didSet { needsDisplay = true } }
         private let language: String
         /// The Dock's height at the bottom, if it's there.
         private let dock: CGFloat
+        private var laid: [Laid] = []
+        /// The cut-off translation the pointer rests on, shown in full.
+        private var hovered: Int? { didSet { if hovered != oldValue { needsDisplay = true } } }
 
         init(language: String, dock: CGFloat) {
             self.language = language
@@ -434,52 +462,110 @@ final class TranslationOverlay: NSWindow {
 
         override var isFlipped: Bool { true }
 
+        /// A translation placed: inside the original's area, at the size that fits there (down to 80%),
+        /// cut off with "…" if even that's too long — and the larger card it opens into on hover.
+        private struct Laid {
+            let box: Box
+            let rect: CGRect
+            let size: CGFloat
+            let truncated: Bool
+            let expanded: CGRect
+        }
+
+        private func attributes(_ box: Box, size: CGFloat, wrapping: Bool) -> [NSAttributedString.Key: Any] {
+            let style = NSMutableParagraphStyle()
+            if let pitch = box.pitch {
+                let height = pitch * size / box.fontSize
+                style.minimumLineHeight = height
+                style.maximumLineHeight = height
+            }
+            style.lineBreakMode = wrapping ? .byWordWrapping : .byTruncatingTail
+            return [.font: NSFont.systemFont(ofSize: size, weight: box.bold ? .semibold : .regular), .foregroundColor: box.foreground,
+                    .paragraphStyle: style]
+        }
+
+        private func extent(_ box: Box, size: CGFloat, width: CGFloat) -> CGSize {
+            let text = box.text as NSString
+            return box.pitch == nil ? text.size(withAttributes: attributes(box, size: size, wrapping: false))
+                : text.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin],
+                                    attributes: attributes(box, size: size, wrapping: true)).size
+        }
+
+        private func layout(_ box: Box) -> Laid {
+            let rect = box.rect.insetBy(dx: -3, dy: -2), room = rect.width - 6
+            let fits = { (extent: CGSize) in box.pitch == nil ? extent.width <= room : extent.height <= rect.height - 2 }
+            var size = box.fontSize, needed = extent(box, size: size, width: room)
+            while !fits(needed), size > box.fontSize * 0.8 {
+                size = max(box.fontSize * 0.8, size * 0.94)
+                needed = extent(box, size: size, width: room)
+            }
+            guard !fits(needed) else { return Laid(box: box, rect: rect, size: size, truncated: false, expanded: rect) }
+            // In full, at the original size: a line runs on to the right, a paragraph further down,
+            // moved back onto the screen if it would leave it.
+            let full = extent(box, size: box.fontSize, width: room)
+            var expanded = box.pitch == nil ? CGRect(x: rect.minX, y: rect.minY, width: min(full.width + 10, bounds.width - 16), height: rect.height)
+                : CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: full.height + 8)
+            expanded.origin.x = max(8, min(expanded.minX, bounds.maxX - 8 - expanded.width))
+            expanded.origin.y = max(8, min(expanded.minY, bounds.maxY - 8 - expanded.height))
+            return Laid(box: box, rect: rect, size: size, truncated: true, expanded: expanded)
+        }
+
+        /// The pointer moved (view coordinates): open the cut-off translation under it, and keep it open
+        /// while the pointer is anywhere over the opened card.
+        func pointer(at point: CGPoint?) {
+            guard let point else { hovered = nil; return }
+            if let index = hovered, laid.indices.contains(index), laid[index].expanded.union(laid[index].rect).contains(point) { return }
+            hovered = laid.lastIndex { $0.truncated && $0.rect.contains(point) }
+        }
+
         override func draw(_ dirtyRect: NSRect) {
-            for box in boxes { draw(box) }
+            for (index, item) in laid.enumerated() where index != hovered { draw(item) }
+            if let index = hovered, laid.indices.contains(index) { drawExpanded(laid[index]) }
             drawEdges()
             drawPill()
         }
 
-        /// The translation over the original: on its background, at the original's size and line
-        /// spacing. A longer translation first gives up a little size (down to 80%), then takes more room —
-        /// wider for a single line, taller for a paragraph — rather than shrinking out of reach.
-        private func draw(_ box: Box) {
-            var rect = box.rect.insetBy(dx: -3, dy: -2)
-            var size = box.fontSize
-            func attributes(_ size: CGFloat) -> [NSAttributedString.Key: Any] {
-                let style = NSMutableParagraphStyle()
-                if let pitch = box.pitch {
-                    let height = pitch * size / box.fontSize
-                    style.minimumLineHeight = height
-                    style.maximumLineHeight = height
-                }
-                style.lineBreakMode = box.pitch == nil ? .byClipping : .byWordWrapping
-                return [.font: NSFont.systemFont(ofSize: size, weight: box.bold ? .semibold : .regular), .foregroundColor: box.foreground,
-                        .paragraphStyle: style]
-            }
-            let text = box.text as NSString
-            func extent(_ size: CGFloat) -> CGSize {
-                box.pitch == nil ? text.size(withAttributes: attributes(size))
-                    : text.boundingRect(with: CGSize(width: rect.width - 6, height: .greatestFiniteMagnitude),
-                                        options: [.usesLineFragmentOrigin], attributes: attributes(size)).size
-            }
-            var needed = extent(size)
-            let fits = { (extent: CGSize) in box.pitch == nil ? extent.width <= rect.width - 6 : extent.height <= rect.height }
-            while !fits(needed), size > box.fontSize * 0.8 {
-                size = max(box.fontSize * 0.8, size * 0.94)
-                needed = extent(size)
-            }
-            if box.pitch == nil {
-                rect.size.width = min(max(rect.width, needed.width + 6), bounds.maxX - rect.minX)
-            } else {
-                rect.size.height = max(rect.height, needed.height + 4)
-            }
+        /// Inside the original's area and no further, so the page keeps its layout.
+        private func draw(_ item: Laid) {
             // Opaque: the original must not show through beside a shorter translation.
-            box.background.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-            let top = box.pitch == nil ? rect.midY - needed.height / 2 : rect.minY + 2
-            text.draw(with: CGRect(x: rect.minX + 3, y: top, width: rect.width - 6, height: rect.maxY - top),
-                      options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes(size))
+            item.box.background.setFill()
+            NSBezierPath(roundedRect: item.rect, xRadius: 3, yRadius: 3).fill()
+            let text = item.box.text as NSString
+            if item.box.pitch == nil {
+                let height = text.size(withAttributes: attributes(item.box, size: item.size, wrapping: false)).height
+                text.draw(in: CGRect(x: item.rect.minX + 3, y: item.rect.midY - height / 2, width: item.rect.width - 6, height: height),
+                          withAttributes: attributes(item.box, size: item.size, wrapping: false))
+            } else {
+                text.draw(with: CGRect(x: item.rect.minX + 3, y: item.rect.minY + 2, width: item.rect.width - 6, height: item.rect.height - 2),
+                          options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attributes(item.box, size: item.size, wrapping: true))
+            }
+        }
+
+        /// The whole translation, on a card that floats over its neighbours.
+        private func drawExpanded(_ item: Laid) {
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.3)
+            shadow.shadowBlurRadius = 10
+            shadow.shadowOffset = NSSize(width: 0, height: -3)
+            shadow.set()
+            item.box.background.setFill()
+            let card = NSBezierPath(roundedRect: item.expanded, xRadius: 5, yRadius: 5)
+            card.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            NSColor.controlAccentColor.withAlphaComponent(0.55).setStroke()
+            card.lineWidth = 1
+            card.stroke()
+            let text = item.box.text as NSString
+            if item.box.pitch == nil {
+                let style = attributes(item.box, size: item.box.fontSize, wrapping: false)
+                let height = text.size(withAttributes: style).height
+                text.draw(in: CGRect(x: item.expanded.minX + 5, y: item.expanded.midY - height / 2, width: item.expanded.width - 10, height: height),
+                          withAttributes: style)
+            } else {
+                text.draw(with: CGRect(x: item.expanded.minX + 3, y: item.expanded.minY + 4, width: item.expanded.width - 6, height: item.expanded.height - 4),
+                          options: [.usesLineFragmentOrigin], attributes: attributes(item.box, size: item.box.fontSize, wrapping: true))
+            }
         }
 
         /// A soft accent glow fading in from every edge: the screen is being translated.
