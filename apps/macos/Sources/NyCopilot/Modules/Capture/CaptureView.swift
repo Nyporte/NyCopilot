@@ -148,7 +148,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             if let textEditor { drawEditorFrame(textEditor.frame) }
         } else if let outlined, let hoverWindow {
             drawFrame(outlined, handles: false)
-            drawSizeLabel(for: outlined, measuring: hoverWindow, note: Self.detectsWindows ? "Window · Tab for element" : "Element · Tab for window")
+            drawSizeLabel(for: outlined, measuring: hoverWindow)
         }
         if showsMagnifier, let pointer { drawMagnifier(at: pointer) }
     }
@@ -245,15 +245,53 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private func drawMagnifier(at point: CGPoint) {
         let zoom: CGFloat = 8, span: CGFloat = 17
         let box = CGSize(width: span * zoom, height: span * zoom)
-        let panelHeight: CGFloat = isSizing ? 98 : 82
-        var origin = CGPoint(x: point.x + 20, y: point.y + 20)
-        if origin.x + box.width > bounds.maxX - 8 { origin.x = point.x - 20 - box.width }
-        if origin.y + box.height + panelHeight + 4 > bounds.maxY - 8 { origin.y = point.y - 20 - box.height - panelHeight - 4 }
-        let frame = CGRect(origin: origin, size: box)
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
         let scale = frozen.scale
         // Whole pixels around the pointer, so every cell in the grid is exactly one screen pixel.
         let center = CGPoint(x: floor(point.x * scale), y: floor(point.y * scale))
+
+        // The lines under the zoom, measured first so the panel fits the longest one.
+        let mono = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        let bold = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        let small = NSFont.systemFont(ofSize: 10.5), smallBold = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
+        let dim = NSColor.white.withAlphaComponent(0.55)
+        func text(_ parts: [(String, NSFont, NSColor)]) -> NSAttributedString {
+            let line = NSMutableAttributedString()
+            for (string, font, color) in parts { line.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color])) }
+            return line
+        }
+        var lines: [(text: NSAttributedString, swatch: NSColor?)] = []
+        lines.append((text([("X \(Int(center.x))   Y \(Int(center.y))", mono, .white)]), nil))
+        if isSizing, let selection {
+            lines.append((text([("\(Int((selection.width * scale).rounded())) × \(Int((selection.height * scale).rounded())) px", mono, .white)]), nil))
+        }
+        let swatch = color(at: point)
+        if let swatch {
+            lines.append((text([(swatch.hexString, copiesHex ? bold : mono, copiesHex ? .white : dim)]), swatch))
+            lines.append((text([(Self.rgb(swatch), copiesHex ? mono : bold, copiesHex ? dim : .white)]), nil))
+        }
+        if let copiedFlash {
+            lines.append((text([(copiedFlash, smallBold, .systemGreen)]), nil))
+        } else {
+            lines.append((text([("C", smallBold, .white), (" copy  ·  ", small, dim), ("⇧", smallBold, .white), (" switch format", small, dim)]), nil))
+        }
+        // While hovering: what's being outlined, and how to switch.
+        if selection == nil {
+            lines.append((text([(Self.detectsWindows ? "Windows" : "Elements", smallBold, .white),
+                                ("  ·  ", small, dim), ("Tab", smallBold, .white),
+                                (Self.detectsWindows ? " for elements" : " for windows", small, dim)]), nil))
+        }
+        let padding: CGFloat = 9, swatchIndent: CGFloat = 17, lineHeight: CGFloat = 15
+        let textWidth = lines.map { $0.text.size().width + ($0.swatch == nil ? 0 : swatchIndent) }.max() ?? 0
+        let panel = CGSize(width: max(box.width, ceil(textWidth) + padding * 2), height: CGFloat(lines.count) * lineHeight + 12)
+
+        // Beside the pointer, flipped to the other side near a screen edge.
+        let width = max(box.width, panel.width), height = box.height + 4 + panel.height
+        var origin = CGPoint(x: point.x + 20, y: point.y + 20)
+        if origin.x + width > bounds.maxX - 8 { origin.x = point.x - 20 - width }
+        if origin.y + height > bounds.maxY - 8 { origin.y = point.y - 20 - height }
+        origin.x = max(origin.x, bounds.minX + 8)
+        let frame = CGRect(origin: origin, size: box)
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
         let half = floor(span / 2)
         let source = CGRect(x: center.x - half, y: center.y - half, width: span, height: span)
         context.saveGState()
@@ -284,27 +322,20 @@ final class CaptureView: NSView, NSTextViewDelegate {
         ring.lineWidth = 2
         ring.stroke()
 
-        let plate = CGRect(x: frame.minX, y: frame.maxY + 4, width: frame.width, height: panelHeight)
+        let plate = CGRect(origin: CGPoint(x: frame.minX, y: frame.maxY + 4), size: panel)
         NSColor.black.withAlphaComponent(0.78).setFill()
         NSBezierPath(roundedRect: plate, xRadius: 7, yRadius: 7).fill()
-        let mono = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        let bold = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        let dim = NSColor.white.withAlphaComponent(0.55)
         var y = plate.minY + 6
-        func line(_ text: String, font: NSFont = mono, color: NSColor = .white, indent: CGFloat = 0) {
-            (text as NSString).draw(at: CGPoint(x: plate.minX + 9 + indent, y: y), withAttributes: [.font: font, .foregroundColor: color])
-            y += 15
+        for line in lines {
+            var x = plate.minX + padding
+            if let swatch = line.swatch {
+                swatch.setFill()
+                NSBezierPath(roundedRect: CGRect(x: x, y: y + 2, width: 11, height: 11), xRadius: 2, yRadius: 2).fill()
+                x += swatchIndent
+            }
+            line.text.draw(at: CGPoint(x: x, y: y))
+            y += lineHeight
         }
-        line("X \(Int(center.x))   Y \(Int(center.y))")
-        if isSizing, let selection { line("\(Int((selection.width * scale).rounded())) × \(Int((selection.height * scale).rounded())) px") }
-        if let swatch = color(at: point) {
-            swatch.setFill()
-            NSBezierPath(roundedRect: CGRect(x: plate.minX + 9, y: y + 2, width: 11, height: 11), xRadius: 2, yRadius: 2).fill()
-            line(swatch.hexString, font: copiesHex ? bold : mono, color: copiesHex ? .white : dim, indent: 17)
-            line(Self.rgb(swatch), font: copiesHex ? mono : bold, color: copiesHex ? dim : .white, indent: 17)
-        }
-        line(copiedFlash ?? "C copy  ·  ⇧ switch format", font: .systemFont(ofSize: 10.5, weight: copiedFlash == nil ? .regular : .semibold),
-             color: copiedFlash == nil ? dim : .systemGreen)
     }
 
     /// Dragging out or resizing a selection: the magnifier also shows its size.

@@ -143,7 +143,7 @@ dragging it to the edge of the screen.
 - **Select** by dragging, or hover and click to take something exactly. As in Snipaste, there are
   two modes, and **Tab** switches between them: **elements** (the default) outlines the element under
   the pointer — a button, a field, a sidebar, read through Accessibility — and **windows** outlines
-  the whole window, menu bar item, or the Dock. The label by the outline says which mode is on. One
+  the whole window, menu bar item, or the Dock. The magnifier's panel says which mode is on. One
   outline glides from place to place, and stays put while the next element is being looked up. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
