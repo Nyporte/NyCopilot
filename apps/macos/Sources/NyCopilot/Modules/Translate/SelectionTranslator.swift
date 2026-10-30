@@ -4,15 +4,18 @@ import MacPlatform
 
 /// Tap the translate shortcut with text selected outside a text field — on a web page, in a PDF, in
 /// a message — and its translation appears on a card beside it, in the language you read in (or,
-/// for text already in that language, the composer's language). ⌘C copies it; Esc, a click, or the
-/// shortcut again closes it.
+/// for text already in that language, the composer's language). Its text can be selected; ⌘C
+/// copies the selection, or all of it. Esc, a click elsewhere, switching apps, or the shortcut
+/// again closes it.
 @MainActor
 final class SelectionTranslator {
     private let services: CopilotServices
-    private let card = TranslationCard()
+    private let card = TranslationCard(interactive: true)
     /// Esc and ⌘C, held only while the card is up.
     private var keys: [GlobalHotKey] = []
+    /// Clicks in other apps (clicks on the card itself go to the card), and switching apps.
     private var clickMonitor: Any?
+    private var appSwitch: NSObjectProtocol?
     private var request: Task<Void, Never>?
     private var translation: String?
 
@@ -40,6 +43,12 @@ final class SelectionTranslator {
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             MainActor.assumeIsolated { self?.dismiss() }
         }
+        appSwitch = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                                     object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            MainActor.assumeIsolated { self?.dismiss() }
+        }
         request = Task { [weak self] in await self?.translate(text, into: language) }
     }
 
@@ -49,6 +58,8 @@ final class SelectionTranslator {
         keys = []
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         clickMonitor = nil
+        if let appSwitch { NSWorkspace.shared.notificationCenter.removeObserver(appSwitch) }
+        appSwitch = nil
         translation = nil
         card.orderOut(nil)
     }
@@ -76,11 +87,13 @@ final class SelectionTranslator {
         }
     }
 
-    /// ⌘C while the card is up: the translation, whole, onto the clipboard, and the card goes.
+    /// ⌘C while the card is up: what's selected on it — or, with nothing selected, the whole
+    /// translation — onto the clipboard. Copying a part keeps the card up for more.
     private func copy() {
         guard let translation else { return }
+        let part = card.selectedText
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(translation, forType: .string)
-        dismiss()
+        NSPasteboard.general.setString(part ?? translation, forType: .string)
+        if part == nil { dismiss() }
     }
 }

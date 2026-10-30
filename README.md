@@ -98,7 +98,8 @@ menu bar menu shows **Finish Setting Up…**.
 - **Translate a selection:** select text that isn't in a field you can type in — a web page, a PDF,
   a message — and tap the shortcut. Its translation appears on a card beside it, in the language you
   read in (screen translation's, which starts as your Mac's) or, for text already in that language,
-  the composer's. **⌘C** copies the translation; **Esc**, a click, or the shortcut again closes it.
+  the composer's. Click or drag on the card to select part of the translation; **⌘C** copies what's
+  selected, or all of it. **Esc**, a click elsewhere, switching apps, or the shortcut again closes it.
   Apps that don't describe their selection to Accessibility are asked to copy it, and your clipboard
   is put back right after.
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations

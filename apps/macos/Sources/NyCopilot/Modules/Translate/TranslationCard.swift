@@ -1,11 +1,14 @@
 import AppKit
 
 /// A translation on a frosted card just below its source — the block under the pointer, or the
-/// selection — or above it near the bottom of the screen. It never takes a click.
+/// selection — or above it near the bottom of the screen. A hover card lets every click through; an
+/// interactive one (for a selection) takes clicks, so its text can be selected and copied, without
+/// taking focus from the app you're in.
 @MainActor
 final class TranslationCard: NSPanel {
+    private let interactive: Bool
     private let caption = Design.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
-    private let text = NSTextField(wrappingLabelWithString: "")
+    private let text = SelectableLabel(wrappingLabelWithString: "")
     private let spinner = NSProgressIndicator()
     /// The keys that work while the card is up, when there are any.
     private let hint = Design.label("", size: 11, color: .tertiaryLabelColor)
@@ -16,15 +19,16 @@ final class TranslationCard: NSPanel {
     private static let width: (min: CGFloat, max: CGFloat) = (340, 640)
     private static let padding = (horizontal: CGFloat(16), top: CGFloat(12), bottom: CGFloat(14))
 
-    init() {
+    init(interactive: Bool = false) {
+        self.interactive = interactive
         column = Design.vstack([], spacing: 7, alignment: .leading)
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: true)
-        float(at: .screenOverlayControls, shadow: true, clickThrough: true, behavior: [.stationary, .ignoresCycle])
+        float(at: .screenOverlayControls, shadow: true, clickThrough: !interactive, behavior: [.stationary, .ignoresCycle])
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 12)
         text.font = .systemFont(ofSize: 15.5)
         text.textColor = .labelColor
-        text.isSelectable = false
+        text.isSelectable = interactive
         // A long selection stays a card; ⌘C still copies all of it.
         text.maximumNumberOfLines = 20
         text.cell?.truncatesLastVisibleLine = true
@@ -46,6 +50,15 @@ final class TranslationCard: NSPanel {
     }
 
     /// Where the card belongs: `source` is the block, in AppKit screen coordinates.
+    /// Selecting text needs keystrokes and a field editor; only an interactive card takes them.
+    override var canBecomeKey: Bool { interactive }
+
+    /// The part of the translation selected on the card, if any.
+    var selectedText: String? {
+        guard let editor = text.currentEditor(), editor.selectedRange.length > 0 else { return nil }
+        return (editor.string as NSString).substring(with: editor.selectedRange)
+    }
+
     func present(language: String, beside source: NSRect, on screen: NSScreen, hint: String? = nil) {
         self.source = source
         placedOn = screen
@@ -98,4 +111,9 @@ final class TranslationCard: NSPanel {
         setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
         orderFrontRegardless()
     }
+}
+
+/// Text that can be selected with the first click, even while another app is in front.
+private final class SelectableLabel: NSTextField {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
