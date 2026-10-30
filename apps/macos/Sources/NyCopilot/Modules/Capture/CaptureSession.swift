@@ -32,7 +32,9 @@ final class CaptureSession {
             container.addSubview(view)
             window.contentView = container
             view.onFinish = { [weak self, weak view] action in
-                guard let self, let view, let image = view.renderedImage(), let selection = view.selection else { return }
+                // A scrolling capture starts from the screen as it was; annotations don't scroll with it.
+                guard let self, let view, let image = action == .scroll ? view.screenImage() : view.renderedImage(),
+                      let selection = view.selection else { return }
                 let global = selection.offsetBy(dx: origin.x, dy: origin.y)
                 close()
                 onFinish?(action, image, global, screen.screen)

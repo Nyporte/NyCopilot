@@ -10,6 +10,8 @@ import ScreenCaptureKit
 final class ScrollCapture {
     var onFinish: ((CaptureAction, NSImage) -> Void)?
     var onCancel: (() -> Void)?
+    /// The stream couldn't start; the outline and panel are already gone.
+    var onFailure: ((Error) -> Void)?
 
     private let region: CGRect
     private let screen: NSScreen
@@ -17,6 +19,11 @@ final class ScrollCapture {
     private let panel: ScrollCapturePanel
     private let frames = FrameStitcher()
     private var stream: SCStream?
+    private var isOver = false
+    /// The stream's frame size, which a seed image must match.
+    private var pixelSize: (width: Int, height: Int) {
+        (Int((region.width * screen.backingScaleFactor).rounded()), Int((region.height * screen.backingScaleFactor).rounded()))
+    }
 
     /// `region` is in global top-left coordinates, on `screen`.
     init(region: CGRect, screen: NSScreen) {
@@ -30,19 +37,36 @@ final class ScrollCapture {
         frames.onUpdate = { [weak self] outcome, height, tail in self?.panel.show(outcome, height: height, tail: tail) }
     }
 
-    func start() async throws {
+    /// The outline and panel appear at once, starting from `seed` (the region as it was on screen);
+    /// the live stream joins a moment later and carries on from there.
+    func start(seed: CGImage?) {
+        border.orderFrontRegardless()
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        if let seed { frames.seed(seed, size: pixelSize) }
+        Task { [weak self] in
+            do { try await self?.startStream() } catch {
+                guard let self, !isOver else { return }
+                stop()
+                onFailure?(error)
+            }
+        }
+    }
+
+    private func startStream() async throws {
         guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             throw ScreenGrabber.Failure.captureFailed
         }
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        // F1 just looked this up; asking again would cost a noticeable moment.
+        let content = try await ScreenGrabber.shareableContent(reusingRecent: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
         // NyCopilot's own windows — this frame, the panel, pins — never appear in the image.
         let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         let origin = CaptureSession.globalOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = region.offsetBy(dx: -origin.x, dy: -origin.y)
-        configuration.width = Int((region.width * screen.backingScaleFactor).rounded())
-        configuration.height = Int((region.height * screen.backingScaleFactor).rounded())
+        configuration.width = pixelSize.width
+        configuration.height = pixelSize.height
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.showsCursor = false
@@ -51,10 +75,9 @@ final class ScrollCapture {
         let stream = SCStream(filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
                               configuration: configuration, delegate: nil)
         try stream.addStreamOutput(frames, type: .screen, sampleHandlerQueue: frames.queue)
-        border.orderFrontRegardless()
-        panel.orderFrontRegardless()
-        panel.makeKey()
         try await stream.startCapture()
+        // Finished or cancelled while the stream was starting.
+        if isOver { try? await stream.stopCapture(); return }
         self.stream = stream
     }
 
@@ -71,6 +94,7 @@ final class ScrollCapture {
     }
 
     private func stop() {
+        isOver = true
         if let stream { Task { try? await stream.stopCapture() } }
         stream = nil
         border.orderOut(nil)
@@ -115,12 +139,21 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
         if type == .screen { process(sampleBuffer) }
     }
 
+    /// The region as it was on screen, so the image starts before the stream does.
+    func seed(_ image: CGImage, size: (width: Int, height: Int)) {
+        queue.async { [self] in if let frame = Self.frame(from: image, size: size) { accept(frame) } }
+    }
+
     func process(_ sampleBuffer: CMSampleBuffer) {
         // Only frames with new content; idle frames repeat the last one.
         guard sampleBuffer.isValid,
               let info = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
               let raw = info.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
               let buffer = sampleBuffer.imageBuffer, let frame = Self.frame(from: buffer) else { return }
+        accept(frame)
+    }
+
+    private func accept(_ frame: PixelFrame) {
         let outcome = stitcher.add(frame)
         let changed: Bool
         switch outcome {
@@ -135,6 +168,22 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
     }
 
     func image() -> CGImage? { queue.sync { stitcher.makeImage() } }
+
+    /// An image redrawn as BGRA rows of exactly the stream's size.
+    private static func frame(from image: CGImage, size: (width: Int, height: Int)) -> PixelFrame? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var pixels = [UInt8](repeating: 0, count: size.width * size.height * 4)
+        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: size.width, height: size.height, bitsPerComponent: 8,
+                                          bytesPerRow: size.width * 4, space: space,
+                                          bitmapInfo: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue)
+            else { return false }
+            context.interpolationQuality = .none
+            context.draw(image, in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            return true
+        }
+        return drawn ? PixelFrame(width: size.width, height: size.height, pixels: pixels) : nil
+    }
 
     /// The pixel buffer's rows, without its row padding.
     private static func frame(from buffer: CVPixelBuffer) -> PixelFrame? {

@@ -27,19 +27,33 @@ enum ScreenGrabber {
     /// NyCopilot's windows (pins included) are left out of both the pixels and window detection.
     static func freezeAll(hidingOwnWindows: Bool) async throws -> [FrozenScreen] {
         let windows = visibleWindows(includingOwn: !hidingOwnWindows)
+        // One lookup serves every display.
+        var content: SCShareableContent?
+        if #available(macOS 14.0, *) { content = try await shareableContent(reusingRecent: false) }
         var frozen: [FrozenScreen] = []
         for screen in NSScreen.screens {
-            guard let image = try await capture(screen, hidingOwnWindows: hidingOwnWindows) else { continue }
+            guard let image = try await capture(screen, hidingOwnWindows: hidingOwnWindows, content: content) else { continue }
             frozen.append(FrozenScreen(screen: screen, image: image, windows: windows.compactMap { local($0, on: screen) }))
         }
         guard !frozen.isEmpty else { throw Failure.captureFailed }
         return frozen
     }
 
-    private static func capture(_ screen: NSScreen, hidingOwnWindows: Bool) async throws -> CGImage? {
+    /// The displays, apps, and windows ScreenCaptureKit can see. The lookup takes a noticeable moment,
+    /// so a scrolling capture started from F1 reuses the one F1 just made.
+    @MainActor private static var recentContent: SCShareableContent?
+
+    @MainActor
+    static func shareableContent(reusingRecent: Bool) async throws -> SCShareableContent {
+        if reusingRecent, let recentContent { return recentContent }
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        recentContent = content
+        return content
+    }
+
+    private static func capture(_ screen: NSScreen, hidingOwnWindows: Bool, content: SCShareableContent?) async throws -> CGImage? {
         guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
-        if #available(macOS 14.0, *) {
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        if #available(macOS 14.0, *), let content {
             guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
             let own = hidingOwnWindows
                 ? content.windows.filter { $0.owningApplication?.processID == ProcessInfo.processInfo.processIdentifier } : []

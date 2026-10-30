@@ -575,8 +575,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private func textAnalysis() -> Task<ImageAnalysis, Error>? {
         guard let selection else { return nil }
         if let analysis, analysis.rect == selection { return analysis.task }
-        guard let image = CaptureRenderer.render(frozen, selection: selection, annotations: [], pixelated: nil)?
-            .cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        guard let image = screenImage()?.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
         let task = Task { try await LiveText.analyze(image) }
         analysis = (selection, task)
         toolbar.recognizedLines = nil
@@ -659,6 +658,12 @@ final class CaptureView: NSView, NSTextViewDelegate {
     func renderedImage() -> NSImage? {
         guard let selection else { return nil }
         return CaptureRenderer.render(frozen, selection: selection, annotations: annotations, pixelated: pixelated)
+    }
+
+    /// The selection as the screen showed it, without annotations.
+    func screenImage() -> NSImage? {
+        guard let selection else { return nil }
+        return CaptureRenderer.render(frozen, selection: selection, annotations: [], pixelated: nil)
     }
 
     // MARK: Keyboard

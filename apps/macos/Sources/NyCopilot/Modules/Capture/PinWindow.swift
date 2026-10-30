@@ -421,6 +421,9 @@ final class PinBoard {
 
     func toggleVisibility() { areHidden ? showAll() : hideAll() }
 
+    /// Whether a visible pin overlaps `rect` (AppKit screen coordinates).
+    func covers(_ rect: NSRect) -> Bool { !areHidden && pins.contains { $0.isVisible && $0.frame.intersects(rect) } }
+
     private func hideAll() {
         pins.forEach { $0.orderOut(nil) }
         areHidden = true

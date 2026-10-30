@@ -128,7 +128,10 @@ final class CaptureShell: ModuleShell {
         switch action {
         case .scroll:
             end()
-            startScrolling(region, on: screen)
+            // The frozen pixels are exactly what was on screen, so they start the image at once —
+            // unless a pin covered the region, since the live stream leaves pins out.
+            let pinned = !services.core.setting(.hideOwnWindows, default: false) && board.covers(CaptureSession.appKitRect(region))
+            startScrolling(region, on: screen, seed: pinned ? nil : image.cgImage(forProposedRect: nil, context: nil, hints: nil))
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -158,20 +161,19 @@ final class CaptureShell: ModuleShell {
 
     /// The region stays live; whatever is scrolled under it is stitched into one tall image, which
     /// then goes through the same copy, save, and pin as any capture.
-    private func startScrolling(_ region: CGRect, on screen: NSScreen) {
+    private func startScrolling(_ region: CGRect, on screen: NSScreen, seed: CGImage?) {
         let capture = ScrollCapture(region: region, screen: screen)
         capture.onFinish = { [weak self] action, image in
             self?.scrolling = nil
             self?.finish(action, image: image, region: region, screen: screen)
         }
         capture.onCancel = { [weak self] in self?.scrolling = nil }
-        scrolling = capture
-        Task { [weak self] in
-            do { try await capture.start() } catch {
-                self?.scrolling = nil
-                self?.services.toast.show("Couldn’t start scrolling capture", detail: error.localizedDescription, style: .warning)
-            }
+        capture.onFailure = { [weak self] error in
+            self?.scrolling = nil
+            self?.services.toast.show("Couldn’t start scrolling capture", detail: error.localizedDescription, style: .warning)
         }
+        scrolling = capture
+        capture.start(seed: seed)
     }
 
     private func copy(_ image: NSImage) {
