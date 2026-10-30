@@ -107,12 +107,7 @@ final class SnapController {
 private final class Footprint {
     private lazy var panel: NSPanel = {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        panel.level = .floating
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        panel.float(at: .floating, shadow: false, clickThrough: true, behavior: [.transient, .ignoresCycle])
         let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 12)
         let tint = AppearanceView()
         tint.radius = 12

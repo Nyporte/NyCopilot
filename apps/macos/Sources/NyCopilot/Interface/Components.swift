@@ -96,6 +96,26 @@ class AppearanceView: NSView {
     }
 }
 
+extension NSWindow {
+    /// What every NyCopilot overlay shares: borderless and clear, floating over other apps' windows on
+    /// every Space and over full-screen apps, and kept when ordered out so it can come back.
+    func float(at level: NSWindow.Level, shadow: Bool, clickThrough: Bool = false, behavior: NSWindow.CollectionBehavior = []) {
+        self.level = level
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = shadow
+        ignoresMouseEvents = clickThrough
+        isReleasedWhenClosed = false
+        collectionBehavior = behavior.union([.canJoinAllSpaces, .fullScreenAuxiliary])
+    }
+}
+
+extension NSWindow.Level {
+    /// Screen translation's layers: the highlights just above the menu bar, its card and capsule above them.
+    static let screenOverlay = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+    static let screenOverlayControls = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)
+}
+
 extension NSVisualEffectView {
     /// A frosted background for borderless floating panels, rounded with a mask image.
     ///

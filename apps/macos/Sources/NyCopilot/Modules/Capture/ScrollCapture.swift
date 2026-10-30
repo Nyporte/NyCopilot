@@ -129,16 +129,13 @@ final class ScrollCapture {
             (kVK_Escape, 0, nil), (kVK_Return, 0, .copy), (kVK_ANSI_KeypadEnter, 0, .copy), (kVK_ANSI_C, command, .copy),
             (kVK_ANSI_S, command, .save), (kVK_ANSI_S, command | shift, .quickSave), (kVK_ANSI_T, command, .pin)
         ]
-        for (index, binding) in bindings.enumerated() {
-            guard let key = try? GlobalHotKey(identifier: 1000 + UInt32(index)) else { continue }
-            key.onPress = { [weak self] in
+        // Another app may own one of these; the panel still answers it when it has focus.
+        keys = bindings.compactMap { binding in
+            GlobalHotKey.claim(HotKeyCombination(keyCode: UInt32(binding.key), modifiers: binding.modifiers)) { [weak self] in
                 MainActor.assumeIsolated {
                     if let action = binding.action { self?.finish(action) } else { self?.cancel() }
                 }
             }
-            // Another app may own one of these; the panel still answers it when it has focus.
-            guard (try? key.register(HotKeyCombination(keyCode: UInt32(binding.key), modifiers: binding.modifiers))) != nil else { continue }
-            keys.append(key)
         }
     }
 
@@ -168,13 +165,7 @@ final class ScrollCapture {
     /// A dashed accent outline just outside the region; clicks and scrolls go through it.
     private static func makeBorder(around frame: NSRect) -> NSWindow {
         let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.level = .statusBar
-        window.isReleasedWhenClosed = false
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
         let view = BorderView()
         window.contentView = view
         return window
@@ -351,12 +342,7 @@ private final class ScrollCapturePanel: NSPanel {
         let height = min(max(region.height, 260), 420)
         super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        level = .statusBar
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        float(at: .statusBar, shadow: true)
         appearance = NSAppearance(named: .darkAqua)
         contentView = makeContent()
         setFrameOrigin(Self.origin(for: frame.size, beside: region, in: screen.visibleFrame))

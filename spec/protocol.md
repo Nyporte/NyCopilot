@@ -64,8 +64,7 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | --- | --- | --- |
 | `llm.complete` | `{system, user, api_key?}` | `{text}` |
 | `llm.test` | `{endpoint, model, api_key?}` | `{elapsed_ms}` |
-| `translate.run` | `{text, target_language?, api_key?, google_key?, volcengine_key?, request_id?}` | `{text, target_language, engine, notice?, record}` — tries the engines in `translate.engine_order`, skipping any that are off, not set up, or don't offer the language; the next takes over when one fails. `engine` is `"google"`, `"volcengine"`, or `"model"`; `notice` names the engines that failed and why. Saved to `translate.history` before returning |
-| `translate.batch` | `{texts, target_language?, api_key?, google_key?, volcengine_key?}` | `{texts, engine, notice?}` — many short texts (lines on a screen) at once, at most 400 and 64 KB, through the same engine order and fallback as `run`, with as few requests as each engine allows (Google 100, Volcengine 16, the model one JSON array); nothing is saved to history |
+| `translate.run` | `{text, target_language?, api_key?, google_key?, volcengine_key?, request_id?, save?}` | `{text, target_language, engine, notice?, record}` — tries the engines in `translate.engine_order`, skipping any that are off, not set up, or don't offer the language; the next takes over when one fails. `engine` is `"google"`, `"volcengine"`, or `"model"`; `notice` names the engines that failed and why. Saved to `translate.history` before returning, unless `save` is `false` (then `record` is `null`; screen translation uses this) |
 | `translate.test_google` | `{url, key?}` | `{text, elapsed_ms}` — translates a short sample through the web app |
 | `translate.test_volcengine` | `{app_id?, key}` | `{text, elapsed_ms}` — translates a short sample with Volcengine credentials |
 | `translate.languages` | — | `[{name, native, code}]` — suggested languages with their own names and badge codes |

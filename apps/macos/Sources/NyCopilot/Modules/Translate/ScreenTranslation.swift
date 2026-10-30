@@ -28,7 +28,6 @@ final class ScreenTranslator {
     private var hovered: (display: Display, paragraph: Paragraph)?
     private var pendingCard: DispatchWorkItem?
     private var language = "", nativeLanguage = ""
-    private var keys: [String: String] = [:]
     /// Blocks translated this session, by language and text, so switching back costs nothing.
     private var translations: [String: String] = [:]
     /// Blocks out for translation right now, so none is asked for twice.
@@ -56,8 +55,6 @@ final class ScreenTranslator {
         }
         let chosen: String = services.core.setting(.screenLanguage, default: "")
         choose(chosen.isEmpty ? ScreenText.deviceLanguage : chosen, remember: false)
-        keys = ["api_key": (try? services.apiKey()) ?? "", "google_key": (try? services.googleKey()) ?? "",
-                "volcengine_key": (try? services.volcengineKey()) ?? ""]
         displays = NSScreen.screens.map { Display(screen: $0, overlay: TranslationOverlay(screen: $0)) }
         bar.onPick = { [weak self] language in self?.choose(language, remember: true) }
         bar.onExit = { [weak self] in self?.stop() }
@@ -69,9 +66,9 @@ final class ScreenTranslator {
             NSAnimationContext.runAnimationGroup { $0.duration = 0.2; overlay.overlay.animator().alphaValue = 1 }
         }
         // Esc belongs to the overlay while it's up, whichever app is in front.
-        escape = try? GlobalHotKey(identifier: 3000)
-        escape?.onPress = { [weak self] in MainActor.assumeIsolated { self?.stop() } }
-        try? escape?.register(HotKeyCombination(keyCode: UInt32(kVK_Escape), modifiers: 0))
+        escape = GlobalHotKey.claim(HotKeyCombination(keyCode: UInt32(kVK_Escape), modifiers: 0)) { [weak self] in
+            MainActor.assumeIsolated { self?.stop() }
+        }
         let moved: (NSEvent?) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
         let kinds: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .scrollWheel]
         pointerMonitors = [NSEvent.addGlobalMonitorForEvents(matching: kinds) { moved($0) } as Any,
@@ -293,11 +290,13 @@ final class ScreenTranslator {
         guard translations[key] == nil, !requested.contains(key) else { return }
         requested.insert(key)
         defer { requested.remove(key) }
-        struct Batch: Decodable { let texts: [String] }
-        let params: [String: Any] = ["texts": [text], "target_language": language]
+        struct Result: Decodable { let text: String }
         do {
-            let result = try await services.core.perform("translate.batch", params.merging(keys) { _, key in key }, as: Batch.self)
-            guard isActive, let translation = result.texts.first else { return }
+            // Kept out of history: that's for what you translate on purpose, not what you glance at.
+            let params: [String: Any] = ["text": text, "target_language": language, "save": false]
+            let translation = try await services.core.perform("translate.run", params.merging(try services.translationKeys()) { _, key in key },
+                                                              as: Result.self).text
+            guard isActive else { return }
             if translations.count > 5000 { translations = [:] }
             translations[key] = translation
             if let hovered, hovered.paragraph.text == text, language == self.language, card.isVisible { card.show(translation) }
@@ -446,13 +445,7 @@ final class TranslationOverlay: NSWindow {
     init(screen: NSScreen) {
         canvas = Canvas()
         super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = false
-        ignoresMouseEvents = true
-        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        float(at: .screenOverlay, shadow: false, clickThrough: true, behavior: [.stationary, .ignoresCycle])
         contentView = canvas
         setFrame(screen.frame, display: false)
     }
@@ -652,13 +645,8 @@ final class ScreenTranslationBar: NSPanel {
         content = Design.hstack([], spacing: 6)
         super.init(contentRect: NSRect(x: 0, y: 0, width: 160, height: 30), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: true)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
+        float(at: .screenOverlayControls, shadow: true, behavior: [.stationary, .ignoresCycle])
         becomesKeyOnlyIfNeeded = true
-        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         appearance = NSAppearance(named: .darkAqua)
         spinner.style = .spinning
         spinner.controlSize = .small
@@ -772,13 +760,7 @@ final class TranslationCard: NSPanel {
         column = Design.vstack([], spacing: 5, alignment: .leading)
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: true)
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        ignoresMouseEvents = true
-        level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 2)
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        float(at: .screenOverlayControls, shadow: true, clickThrough: true, behavior: [.stationary, .ignoresCycle])
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 10)
         text.font = .systemFont(ofSize: 14)
         text.textColor = .labelColor

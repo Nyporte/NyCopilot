@@ -30,7 +30,7 @@ final class HotKeyCenter {
     func add(_ action: Action) {
         actions.append(action)
         do {
-            let key = try GlobalHotKey(identifier: UInt32(actions.count))
+            let key = try GlobalHotKey()
             if let longPress = action.longPress {
                 key.onPress = { [weak self] in
                     MainActor.assumeIsolated {

@@ -28,12 +28,7 @@ final class PinWindow: NSPanel {
         original = image
         pinView = PinView(frame: CGRect(origin: .zero, size: frame.size))
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        level = .floating
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = shadow
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        float(at: .floating, shadow: shadow)
         pinView.pin = self
         contentView = pinView
         redraw()

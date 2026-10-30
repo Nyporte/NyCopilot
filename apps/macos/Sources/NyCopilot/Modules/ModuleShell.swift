@@ -39,10 +39,12 @@ final class CopilotServices {
         self.hotKeys = hotKeys
     }
 
-    /// The API key from the Keychain; the core never stores secrets itself.
-    func apiKey() throws -> String { try KeychainStore.read() }
-    func googleKey() throws -> String { try KeychainStore.read(.google) }
-    func volcengineKey() throws -> String { try KeychainStore.read(.volcengine) }
+    /// Every translation engine's secret from the Keychain, as `translate.run` takes them; the core
+    /// never stores secrets itself.
+    func translationKeys() throws -> [String: String] {
+        ["api_key": try KeychainStore.read(), "google_key": try KeychainStore.read(.google),
+         "volcengine_key": try KeychainStore.read(.volcengine)]
+    }
 
     /// A menu item whose shortcut column mirrors the action's current global shortcut.
     func menuItem(_ title: String, symbol: String, hotKey actionID: String?, target: AnyObject, action: Selector) -> NSMenuItem {

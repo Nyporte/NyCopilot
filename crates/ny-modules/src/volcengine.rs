@@ -11,10 +11,10 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
-pub const ENDPOINT: &str = "https://openspeech.bytedance.com/api/v3/machine_translation/matx_translate";
+const ENDPOINT: &str = "https://openspeech.bytedance.com/api/v3/machine_translation/matx_translate";
 
 /// The service URL; tests point it at a loopback stand-in.
-pub fn endpoint() -> String {
+fn endpoint() -> String {
     #[cfg(test)]
     if let Some(url) = tests::ENDPOINT_OVERRIDE.with(|url| url.borrow().clone()) { return url; }
     ENDPOINT.into()
@@ -68,13 +68,13 @@ fn lines(text: &str) -> Vec<Line<'_>> {
 
 /// Each non-blank line becomes one text, so line breaks, blank lines, and indentation come back
 /// exactly. Longer text than 16 lines goes as a single text.
-pub fn texts(text: &str) -> Vec<String> {
+fn texts(text: &str) -> Vec<String> {
     let bodies: Vec<String> = lines(text).iter().filter(|l| !l.body.is_empty()).map(|l| l.body.to_string()).collect();
     if bodies.len() <= MAX_TEXTS { bodies } else { vec![text.trim().to_string()] }
 }
 
 /// Put translations back where their lines were.
-pub fn reassemble(text: &str, translations: Vec<String>) -> String {
+fn reassemble(text: &str, translations: Vec<String>) -> String {
     let lines = lines(text);
     if lines.iter().filter(|l| !l.body.is_empty()).count() > MAX_TEXTS {
         return translations.into_iter().next().unwrap_or_default();
@@ -87,37 +87,17 @@ pub fn reassemble(text: &str, translations: Vec<String>) -> String {
 }
 
 pub fn request_body(text: &str, target: &str) -> Result<Vec<u8>> {
-    if text.trim().is_empty() { return Err(NyError::new("empty_input", "Type something first.")); }
-    if text.len() > ny_llm::MAX_INPUT_BYTES {
-        return Err(NyError::new("input_too_large", "That’s more than 64 KB of text. Shorten it and try again."));
-    }
     Ok(serde_json::to_vec(&json!({ "target_language": target, "text_list": texts(text) }))?)
 }
 
 /// Run one translation. `app_id` empty means new-console credentials (`key` is the API key);
 /// otherwise `key` is the old console's access token.
-pub fn translate(endpoint: &str, app_id: &str, key: &str, text: &str, target: &str) -> Result<String> {
-    let (status, data) = post(endpoint, app_id, key, &request_body(text, target)?)?;
+pub fn translate(app_id: &str, key: &str, text: &str, target: &str) -> Result<String> {
+    let (status, data) = post(&endpoint(), app_id, key, &request_body(text, target)?)?;
     match decode_response(&data, text) {
         Err(error) if error.code == "invalid_response" && !(200..300).contains(&status) => Err(http_status(status)),
         result => result,
     }
-}
-
-/// Many short texts (lines on screen), 16 to a request; one translation each, in order.
-pub fn translate_batch(endpoint: &str, app_id: &str, key: &str, texts: &[String], target: &str) -> Result<Vec<String>> {
-    let mut out = Vec::with_capacity(texts.len());
-    for chunk in texts.chunks(MAX_TEXTS) {
-        let body = serde_json::to_vec(&json!({ "target_language": target, "text_list": chunk }))?;
-        let (status, data) = post(endpoint, app_id, key, &body)?;
-        match decode_list(&data) {
-            Ok(list) if list.len() == chunk.len() => out.extend(list),
-            Ok(_) => return Err(NyError::new("invalid_response", "Volcengine returned a different number of texts than it was sent.")),
-            Err(error) if error.code == "invalid_response" && !(200..300).contains(&status) => return Err(http_status(status)),
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(out)
 }
 
 /// Send a request with the credentials in headers; the status and body, whatever the status.
@@ -185,6 +165,7 @@ fn http_status(status: u16) -> NyError {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::stand_in::{http, serve};
 
     thread_local! {
         pub(crate) static ENDPOINT_OVERRIDE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
@@ -213,7 +194,6 @@ pub(crate) mod tests {
         let long = (1..=20).map(|n| format!("line {n}")).collect::<Vec<_>>().join("\n");
         assert_eq!(texts(&long).len(), 1);
         assert_eq!(reassemble(&long, vec!["全部".into()]), "全部");
-        assert_eq!(request_body(" \n ", "ja").unwrap_err().code, "empty_input");
     }
 
     #[test]
@@ -236,23 +216,24 @@ pub(crate) mod tests {
     #[test]
     fn credentials_travel_only_in_headers() {
         let reply = r#"{"code":20000000,"message":"ok","data":{"translation_list":[{"translation":"こんにちは"}]}}"#;
-        let (base, requests) = crate::google::tests::serve(vec![crate::google::tests::http("200 OK", "", reply); 2]);
-        let endpoint = format!("{base}/api/v3/machine_translation/matx_translate");
-        assert_eq!(translate(&endpoint, "", "new-key", "Hello", "ja").unwrap(), "こんにちは");
-        assert_eq!(translate(&endpoint, "5584102956", "old-token", "Hello", "ja").unwrap(), "こんにちは");
+        let (base, requests) = serve(vec![http("200 OK", "", reply); 2]);
+        ENDPOINT_OVERRIDE.with(|url| *url.borrow_mut() = Some(format!("{base}/api/v3/machine_translation/matx_translate")));
+        assert_eq!(translate("", "new-key", "Hello", "ja").unwrap(), "こんにちは");
+        assert_eq!(translate("5584102956", "old-token", "Hello", "ja").unwrap(), "こんにちは");
         let requests = requests.lock().unwrap();
         let (new, old) = (requests[0].to_lowercase(), requests[1].to_lowercase());
         assert!(new.contains("x-api-key: new-key") && new.contains("x-api-resource-id: volc.speech.mt") && new.contains("x-api-request-id: "));
         assert!(old.contains("x-api-app-key: 5584102956") && old.contains("x-api-access-key: old-token") && !old.contains("x-api-key:"));
         let body = &requests[0][requests[0].find("\r\n\r\n").unwrap() + 4..];
         assert!(!body.contains("new-key"));
-        assert_eq!(translate(&endpoint, "", " ", "Hello", "ja").unwrap_err().code, "invalid_key");
+        assert_eq!(translate("", " ", "Hello", "ja").unwrap_err().code, "invalid_key");
     }
 
     #[test]
     fn refused_credentials_without_an_envelope() {
-        let (base, _) = crate::google::tests::serve(vec![crate::google::tests::http("401 Unauthorized", "", "denied")]);
-        let error = translate(&format!("{base}/mt"), "", "k", "Hello", "ja").unwrap_err();
+        let (base, _) = serve(vec![http("401 Unauthorized", "", "denied")]);
+        ENDPOINT_OVERRIDE.with(|url| *url.borrow_mut() = Some(format!("{base}/mt")));
+        let error = translate("", "k", "Hello", "ja").unwrap_err();
         assert_eq!((error.code.as_str(), error.status), ("http_status", Some(401)));
         assert!(!error.message.contains("denied"));
     }

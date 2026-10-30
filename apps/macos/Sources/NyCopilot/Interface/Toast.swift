@@ -28,12 +28,7 @@ final class Toast {
     func show(_ title: String, detail: String? = nil, style: Style = .info, near anchor: NSRect? = nil) {
         dismiss(animated: false)
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        panel.level = .statusBar
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.ignoresMouseEvents = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.float(at: .statusBar, shadow: true, clickThrough: true, behavior: .transient)
 
         let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 12)
         let titleLabel = Design.label(title, size: 13, weight: .semibold)

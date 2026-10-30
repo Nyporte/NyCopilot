@@ -12,10 +12,12 @@ final class GlobalHotKey {
     private var handler: EventHandlerRef?
     private let identifier: UInt32
     private static let signature: OSType = 0x4E79436F // "NyCo" identifies our hotkey events.
+    private static var lastIdentifier: UInt32 = 0
 
     /// Each instance owns a distinct numeric ID so handlers never consume one another's events.
-    init(identifier: UInt32) throws {
-        self.identifier = identifier
+    init() throws {
+        Self.lastIdentifier &+= 1
+        identifier = Self.lastIdentifier
         var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
                           EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
@@ -30,6 +32,14 @@ final class GlobalHotKey {
             return noErr
         }, 2, &eventTypes, Unmanaged.passUnretained(self).toOpaque(), &handler)
         guard status == noErr else { throw Failure(status: status) }
+    }
+
+    /// A combination held only while something is on screen — Esc for an overlay — so it works
+    /// whichever app is in front. Released when the returned key goes; nil if another app holds it.
+    static func claim(_ combination: HotKeyCombination, onPress: @escaping () -> Void) -> GlobalHotKey? {
+        guard let key = try? GlobalHotKey() else { return nil }
+        key.onPress = onPress
+        return (try? key.register(combination)) == nil ? nil : key
     }
 
     /// Register a replacement before releasing the current combination, preserving it on error.

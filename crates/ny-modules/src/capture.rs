@@ -11,7 +11,6 @@ use serde_json::{json, Value};
 pub const HISTORY: &str = "capture.history";
 pub const FORMATS: &[&str] = &["png", "jpg"];
 pub const DEFAULT_PATTERN: &str = "NyCopilot {date} at {time}";
-/// Annotation colors offered in the toolbar, as `#RRGGBB`.
 /// Shape and text options, kept between captures. Missing keys fall back to these defaults.
 pub fn default_style() -> Value {
     json!({ "corner_radius": 0, "filled": false, "font": "", "text_size": 20,
@@ -36,6 +35,7 @@ pub fn validate_style(value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// Annotation colors offered in the toolbar, as `#RRGGBB`.
 pub const PALETTE: &[&str] = &["#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#0A84FF", "#AF52DE", "#FFFFFF", "#000000"];
 
 /// A captured area in points, in the platform's screen coordinates (top-left origin on macOS AX).

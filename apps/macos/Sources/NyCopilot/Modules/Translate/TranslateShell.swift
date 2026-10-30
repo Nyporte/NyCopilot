@@ -122,7 +122,7 @@ final class TranslateShell: ModuleShell {
     private func translate(_ text: String) {
         let keys: [String: String]
         do {
-            keys = ["api_key": try services.apiKey(), "google_key": try services.googleKey(), "volcengine_key": try services.volcengineKey()]
+            keys = try services.translationKeys()
         } catch {
             composer.showError(error.localizedDescription)
             return
