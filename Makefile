@@ -24,7 +24,7 @@ build: core
 	cp apps/macos/Resources/Info.plist "$(APP)/Contents/Info.plist"
 	cp apps/macos/Resources/AppIcon.icns "$(APP)/Contents/Resources/AppIcon.icns"
 	@if [ "$(SIGN_IDENTITY)" = "-" ]; then echo "warning: no signing certificate found; ad-hoc builds lose Accessibility and Keychain access on every rebuild"; fi
-	codesign --force --options runtime --sign "$(SIGN_IDENTITY)" "$(APP)"
+	codesign --force --options runtime --entitlements apps/macos/Resources/NyCopilot.entitlements --sign "$(SIGN_IDENTITY)" "$(APP)"
 	codesign --verify --strict "$(APP)"
 	@codesign -d -r- "$(APP)" 2>&1 | grep designated
 

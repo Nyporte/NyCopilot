@@ -29,6 +29,8 @@ enum SettingKey: String {
     case clipboardEnabled = "clipboard.enabled"
     case clipboardKeepDays = "clipboard.keep_days"
     case clipboardMaxItems = "clipboard.max_items"
+    case inboxMarkdownFolder = "inbox.markdown_folder"
+    case askSendImages = "ask.send_images"
     case welcomeCompleted = "client.welcome_completed"
     case migratedNyTranslate = "client.migrated_nytranslate"
     case rectangleImportChecked = "client.windows.rectangle_import_checked"
@@ -42,6 +44,7 @@ enum CoreCollection: String {
     case clipboardPinned = "clipboard.pinned"
     case inboxNotes = "inbox.notes"
     case inboxDone = "inbox.done"
+    case inboxSnoozed = "inbox.snoozed"
 }
 
 extension NyCore {

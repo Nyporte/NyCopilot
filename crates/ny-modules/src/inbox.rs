@@ -1,18 +1,20 @@
 //! Inbox: catch a thought in a second — typed, selected in any app, or a screenshot — and deal
 //! with it later. Notes wait in `inbox.notes`; marking one done moves it to `inbox.done`, where it
-//! stays 30 days (so nothing is lost by accident) and can be moved back.
+//! stays 30 days (so nothing is lost by accident) and can be moved back. Snoozing one moves it to
+//! `inbox.snoozed` until a time you choose; `wake` brings due notes back to the top of the inbox.
 //!
 //! Each note remembers where it came from — the app, its window's title, and the page or document
 //! address when there is one — so it can be traced back later. Screenshots are image files the client
 //! keeps beside the database; a note records only the file's name, which must be a UUID with `.png`,
 //! so a note can never point anywhere else.
 
-use ny_core::{now_millis, parse, CommandSpec, Core, Manifest, Module, NyError, Result};
+use ny_core::{now_millis, parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub const NOTES: &str = "inbox.notes";
 pub const DONE: &str = "inbox.done";
+pub const SNOOZED: &str = "inbox.snoozed";
 pub const MAX_TEXT_BYTES: usize = 64 * 1024;
 pub const SOURCES: &[&str] = &["typed", "selection", "screenshot"];
 /// How long a done note can still be brought back.
@@ -38,13 +40,18 @@ impl Module for InboxModule {
             name: "Inbox".into(),
             summary: "Catch a thought in a second; deal with it later.".into(),
             capabilities: vec!["hotkey".into(), "text.capture".into(), "window.overlay".into()],
-            collections: vec![NOTES.into(), DONE.into()],
-            settings: vec![],
+            collections: vec![NOTES.into(), DONE.into(), SNOOZED.into()],
+            settings: vec![
+                // A folder on this Mac (an Obsidian vault, say) that notes are sent to as Markdown files.
+                SettingSpec::new("inbox.markdown_folder", json!(""), Scope::Device, "Folder that notes are sent to as Markdown files."),
+            ],
             commands: vec![
                 CommandSpec::new("add", "Add a note: {text?, image?, app?, title?, url?, source?: typed|selection|screenshot} → {record}; it needs text or an image."),
                 CommandSpec::new("update", "Change a note's text, waiting or done: {id, text} → {record}; everything else stays."),
                 CommandSpec::new("done", "Mark a note done: {id} → {record} in inbox.done, kept 30 days."),
                 CommandSpec::new("undone", "Bring a done note back: {id} → {record} in inbox.notes."),
+                CommandSpec::new("snooze", "Put a waiting note away until a time: {id, until (ms)} → {record} in inbox.snoozed."),
+                CommandSpec::new("wake", "Bring snoozed notes back to the top of the inbox: {id?} → {woken: [record]}; without an id, every one that's due."),
                 CommandSpec::new("count", "Notes waiting → {count}."),
             ],
         }
@@ -65,6 +72,10 @@ impl Module for InboxModule {
         struct Update { id: String, text: String }
         #[derive(Deserialize)]
         struct Id { id: String }
+        #[derive(Deserialize)]
+        struct Snooze { id: String, until: i64 }
+        #[derive(Deserialize)]
+        struct Wake { id: Option<String> }
         match command {
             "add" => {
                 let p: Add = parse(params)?;
@@ -89,9 +100,9 @@ impl Module for InboxModule {
             "done" => {
                 let p: Id = parse(params)?;
                 let (collection, mut data, created) = note(core, &p.id)?;
-                if collection != NOTES { return Err(NyError::invalid_params("That note is already done.")); }
+                if collection != NOTES { return Err(NyError::invalid_params("That note isn't waiting.")); }
                 // Done notes are listed (and expire) by when they were done; the note keeps its own date.
-                data["created"] = json!(created);
+                data["created"] = json!(data["created"].as_i64().unwrap_or(created));
                 data["done_at"] = json!(now_millis());
                 let record = core.insert_record(DONE, data.clone(), &search_text(&data), None)?;
                 core.call("records.delete", json!({ "id": p.id }))?;
@@ -108,19 +119,61 @@ impl Module for InboxModule {
                 core.call("records.delete", json!({ "id": p.id }))?;
                 Ok(json!({ "record": record }))
             }
+            "snooze" => {
+                let p: Snooze = parse(params)?;
+                let (collection, mut data, created) = note(core, &p.id)?;
+                if collection != NOTES { return Err(NyError::invalid_params("Only a waiting note can be snoozed.")); }
+                if p.until <= now_millis() { return Err(NyError::invalid_params("Snooze until a time that's still to come.")); }
+                data["created"] = json!(data["created"].as_i64().unwrap_or(created));
+                data["until"] = json!(p.until);
+                let record = core.insert_record(SNOOZED, data.clone(), &search_text(&data), None)?;
+                core.call("records.delete", json!({ "id": p.id }))?;
+                Ok(json!({ "record": record }))
+            }
+            "wake" => {
+                let p: Wake = parse(params)?;
+                let due: Vec<(String, Value)> = match p.id {
+                    Some(id) => {
+                        let (collection, data, _) = note(core, &id)?;
+                        if collection != SNOOZED { return Err(NyError::invalid_params("That note isn't snoozed.")); }
+                        vec![(id, data)]
+                    }
+                    None => {
+                        let now = now_millis();
+                        let page = core.call("records.list", json!({ "collection": SNOOZED, "limit": 500 }))?;
+                        page["records"].as_array().into_iter().flatten()
+                            .filter(|record| record["data"]["until"].as_i64().is_some_and(|until| until <= now))
+                            .map(|record| (record["id"].as_str().unwrap_or_default().to_string(), record["data"].clone())).collect()
+                    }
+                };
+                let mut woken = Vec::new();
+                for (id, mut data) in due {
+                    if let Some(object) = data.as_object_mut() { object.remove("until"); }
+                    // Back on top as if it had just arrived; `created` still says when it was first kept.
+                    woken.push(core.insert_record(NOTES, data.clone(), &search_text(&data), None)?);
+                    core.call("records.delete", json!({ "id": id }))?;
+                }
+                Ok(json!({ "woken": woken }))
+            }
             "count" => Ok(json!({ "count": core.count_records(NOTES)? })),
             _ => Err(NyError::unknown_method(&format!("inbox.{command}"))),
         }
     }
 
-    fn validate_setting(&self, _key: &str, _value: &Value) -> Result<()> { Ok(()) }
+    fn validate_setting(&self, key: &str, value: &Value) -> Result<()> {
+        match key {
+            "inbox.markdown_folder" if !value.as_str().is_some_and(|path| path.is_empty() || (path.starts_with('/') && path.len() <= 1024)) =>
+                Err(NyError::invalid_setting("Choose a folder on this Mac.")),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// A note's collection, data, and creation time, from either list.
 fn note(core: &Core, id: &str) -> Result<(String, Value, i64)> {
     let record = core.call("records.get", json!({ "id": id }))?;
     let collection = record["collection"].as_str().unwrap_or_default().to_string();
-    if collection != NOTES && collection != DONE { return Err(NyError::not_found("That note no longer exists.")); }
+    if ![NOTES, DONE, SNOOZED].contains(&collection.as_str()) { return Err(NyError::not_found("That note no longer exists.")); }
     Ok((collection, record["data"].clone(), record["created_at"].as_i64().unwrap_or_else(now_millis)))
 }
 
@@ -187,6 +240,29 @@ mod tests {
         assert_eq!((back["created_at"].clone(), back["data"]["text"].clone()), (note["created_at"].clone(), json!("renew the domain (paid)")));
         assert!(back["data"].get("done_at").is_none());
         assert_eq!((list(&core, NOTES).len(), list(&core, DONE).len()), (1, 0));
+    }
+
+    #[test]
+    fn snoozed_notes_come_back_on_top_when_due() {
+        let core = core();
+        let early = core.call("inbox.add", json!({ "text": "call the bank" })).unwrap()["record"].clone();
+        core.call("inbox.add", json!({ "text": "later one" })).unwrap();
+        let later = now_millis() + 60_000;
+        let snoozed = core.call("inbox.snooze", json!({ "id": early["id"], "until": later })).unwrap()["record"].clone();
+        assert_eq!((list(&core, NOTES).len(), list(&core, SNOOZED).len()), (1, 1));
+        assert_eq!(snoozed["data"]["created"], early["created_at"]);
+        assert_eq!(core.call("inbox.count", json!({})).unwrap()["count"], 1);
+        // Not due yet: nothing comes back on its own.
+        assert!(core.call("inbox.wake", json!({})).unwrap()["woken"].as_array().unwrap().is_empty());
+        assert_eq!(core.call("inbox.snooze", json!({ "id": snoozed["id"], "until": later })).unwrap_err().code, "invalid_params");
+        let woken = core.call("inbox.wake", json!({ "id": snoozed["id"] })).unwrap()["woken"][0].clone();
+        assert_eq!(list(&core, NOTES)[0]["data"]["text"], "call the bank");
+        assert_eq!((woken["data"]["created"].clone(), woken["data"].get("until")), (early["created_at"].clone(), None));
+        // Done after waking keeps the date it was first kept.
+        let done = core.call("inbox.done", json!({ "id": woken["id"] })).unwrap()["record"].clone();
+        assert_eq!(done["data"]["created"], early["created_at"]);
+        let past = core.call("inbox.add", json!({ "text": "x" })).unwrap()["record"]["id"].clone();
+        assert_eq!(core.call("inbox.snooze", json!({ "id": past, "until": 1 })).unwrap_err().code, "invalid_params");
     }
 
     #[test]

@@ -23,6 +23,8 @@ final class InputTarget: @unchecked Sendable {
     private let sourceWindow: AXUIElement?
 
     var isVerified: Bool { original != nil }
+    /// Text is selected in a field that can be read, so pasting replaces it.
+    var hasSelection: Bool { (original?.range.length ?? 0) > 0 }
 
     /// Keep accessibility objects alive while the user composes without storing anything on disk.
     private init(pid: pid_t, element: AXUIElement?, window: AXUIElement?, original: (value: String, range: CFRange)?,
@@ -306,6 +308,19 @@ final class InputTarget: @unchecked Sendable {
         down.flags = .maskCommand
         up.flags = .maskCommand
         return (down, up)
+    }
+
+    /// The selection as the app would copy it — line breaks and list items intact (web content
+    /// reports its selection to Accessibility run together) — with the clipboard put back, and where
+    /// it is (AX coordinates) when the app says. Whether anything is selected is asked first, so
+    /// with nothing selected this returns at once.
+    @MainActor
+    static func selectedText(pid: pid_t) async -> (text: String, bounds: CGRect?)? {
+        switch await selection(pid: pid) {
+        case .text(let text, let bounds): return (await copiedSelection(pid: pid) ?? text, bounds)
+        case .nothing: return nil
+        case .unknown: return await copiedSelection(pid: pid).map { ($0, nil) }
+        }
     }
 
     /// The text selected in an app that doesn't describe its selection to Accessibility, read by

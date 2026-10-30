@@ -19,6 +19,9 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>© 2026 NyCopilot</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSRemindersUsageDescription</key><string>Inbox notes you send to Reminders are added to your default list.</string>
+    <key>NSRemindersFullAccessUsageDescription</key><string>Inbox notes you send to Reminders are added to your default list.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Inbox notes you send to Notes are created there for you.</string>
     <!-- User-configured endpoints may be local HTTP servers; the core validates URL schemes. -->
     <key>NSAppTransportSecurity</key>
     <dict><key>NSAllowsArbitraryLoads</key><true/></dict>

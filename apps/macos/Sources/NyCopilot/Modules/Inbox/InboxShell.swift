@@ -22,6 +22,7 @@ final class InboxShell: ModuleShell {
     static let images = ImageFolder("Inbox")
     private let bar = InboxCaptureBar()
     private var window: InboxWindow?
+    private var alarm: Timer?
 
     init(services: CopilotServices) {
         self.services = services
@@ -30,7 +31,13 @@ final class InboxShell: ModuleShell {
         }
         bar.onSave = { [weak self] text, context in self?.add(["text": text, "source": "typed"], context: context) }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
-        Self.images.removeUnused(core: services.core, collections: [.inboxNotes, .inboxDone])
+        Self.images.removeUnused(core: services.core, collections: [.inboxNotes, .inboxDone, .inboxSnoozed])
+        // Snoozed notes come back on time, or at launch when they fell due while NyCopilot was off.
+        wakeDueNotes()
+        alarm = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wakeDueNotes() }
+        }
+        alarm?.tolerance = 10
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
@@ -51,18 +58,27 @@ final class InboxShell: ModuleShell {
     func makeSettingsPane() -> SettingsPane? { InboxPane(services: services) }
 
     func shutdown() {
+        alarm?.invalidate()
         bar.close(returningFocus: false)
         window?.forgetUndo()
     }
 
     private var waiting: Int { (try? services.core.call("inbox.count") as? [String: Any])?["count"] as? Int ?? 0 }
 
+    private func wakeDueNotes() {
+        guard let woken = (try? services.core.call("inbox.wake") as? [String: Any])?["woken"] as? [[String: Any]], !woken.isEmpty else { return }
+        let first = ((woken[0]["data"] as? [String: Any])?["text"] as? String)?
+            .split(whereSeparator: \.isNewline).first.map { "“\($0.prefix(50))”" } ?? "A snoozed note"
+        services.toast.show(woken.count == 1 ? "Back in your inbox" : "\(woken.count) notes are back in your inbox",
+                            detail: woken.count == 1 ? first : "\(first) and more · ⇧F3 to open", style: .info)
+    }
+
     @objc private func captureFromMenu() { capture() }
     @objc private func openFromMenu() { openInbox() }
 
     private func openInbox() {
         bar.close(returningFocus: false)
-        if window == nil { window = InboxWindow(core: services.core, images: Self.images) }
+        if window == nil { window = InboxWindow(core: services.core, images: Self.images, toast: services.toast) }
         window?.present()
     }
 
@@ -73,22 +89,11 @@ final class InboxShell: ModuleShell {
         let foreign = app.flatMap { $0.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : $0 }
         Task {
             let context = await SourceContext.of(foreign)
-            if let foreign, Accessibility.isTrusted, let text = await Self.selectedText(in: foreign.processIdentifier) {
+            if let foreign, Accessibility.isTrusted, let text = await InputTarget.selectedText(pid: foreign.processIdentifier)?.text {
                 send(text: text, image: nil, context: context)
             } else {
                 bar.present(context: context, returningTo: foreign, waiting: waiting)
             }
-        }
-    }
-
-    /// The selection as the app would copy it — line breaks and list items intact (web content
-    /// reports its selection to Accessibility run together) — with the clipboard put back. Whether
-    /// anything is selected is asked first, so nothing selected opens the bar at once.
-    private static func selectedText(in pid: pid_t) async -> String? {
-        switch await InputTarget.selection(pid: pid) {
-        case .text(let text, _): return await InputTarget.copiedSelection(pid: pid) ?? text
-        case .nothing: return nil
-        case .unknown: return await InputTarget.copiedSelection(pid: pid)
         }
     }
 
@@ -126,6 +131,8 @@ final class InboxPane: SettingsPane {
     private let services: CopilotServices
     private lazy var shortcuts = ShortcutEditor(services: services)
     private let clearButton = Design.button("Clear Inbox…", target: nil, action: nil)
+    private let folderButton = Design.button("Choose…", target: nil, action: nil)
+    private let folderLabel = Design.label("", size: 12, color: .secondaryLabelColor)
 
     init(services: CopilotServices) {
         self.services = services
@@ -137,17 +144,39 @@ final class InboxPane: SettingsPane {
     override func makeSections() -> [NSView] {
         clearButton.target = self
         clearButton.action = #selector(clearAll)
+        folderButton.target = self
+        folderButton.action = #selector(chooseFolder)
+        folderLabel.lineBreakMode = .byTruncatingMiddle
+        folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        showFolder()
         return [
             shortcuts.section("Shortcuts", footer: "With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture.",
                               actions: [InboxShell.Action.capture, InboxShell.Action.open]),
             shortcuts.errorLabel,
+            FormSection("Send To", footer: "S on a note in the inbox sends it to Reminders, Notes, or this folder as a Markdown file (an Obsidian vault works well), then marks it done. L snoozes it until later.", rows: [
+                FormRow("Markdown folder", accessory: Design.hstack([folderLabel, folderButton], spacing: 8))
+            ]),
             FormSection("Notes", footer: "Notes and their screenshots stay on this Mac. Done notes are kept for 30 days.", rows: [
                 FormRow("Remove every note, waiting and done", accessory: clearButton)
             ])
         ]
     }
 
-    override func paneWillAppear() { shortcuts.refresh() }
+    override func paneWillAppear() {
+        shortcuts.refresh()
+        showFolder()
+    }
+
+    private func showFolder() {
+        let folder = NoteExport.markdownFolder(core: services.core, choosingIfNeeded: false)
+        folderLabel.stringValue = folder.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "Not chosen"
+        folderLabel.toolTip = folder?.path
+    }
+
+    @objc private func chooseFolder() {
+        NoteExport.chooseMarkdownFolder(core: services.core)
+        showFolder()
+    }
 
     @objc private func clearAll() {
         let alert = NSAlert()
@@ -161,6 +190,7 @@ final class InboxPane: SettingsPane {
             guard response == .alertFirstButtonReturn else { return }
             _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxNotes.rawValue])
             _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxDone.rawValue])
+            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxSnoozed.rawValue])
             InboxShell.images.removeAll()
         }
     }

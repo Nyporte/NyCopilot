@@ -2,8 +2,9 @@ import AppKit
 
 /// The inbox as a window, for working through notes: the list on the left, grouped by day, and
 /// the selected note on the right — its text (edited in place), its screenshot, where it came from.
-/// Inbox and Done switch at the top, with a search. Keys on the list: Space done (or back), ↩ edit,
-/// ⌘C copy, ⌘O open the source, ⌫ delete, ⌘Z undo, ⌘F search.
+/// Inbox, Later (snoozed), and Done switch at the top, with a search. Keys on the list: Space done
+/// (or back), S send to Reminders, Notes, or Markdown, L snooze, ↩ edit, ⌘C copy, ⌘O open the
+/// source, ⌫ delete, ⌘Z undo, ⌘F search.
 @MainActor
 final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTextViewDelegate {
     struct Note: Decodable {
@@ -15,18 +16,29 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         let source: String?
         let created: Int64?
         let doneAt: Int64?
+        let until: Int64?
     }
     typealias Item = CoreRecord<Note>
     private enum Row { case day(String), note(Item) }
+    private enum Tab: Int { case inbox, later, done }
 
     private let core: NyCore
     private let images: ImageFolder
-    private let tabs = NSSegmentedControl(labels: ["Inbox", "Done"], trackingMode: .selectOne, target: nil, action: nil)
+    private let toast: Toast
+    private let tabs = NSSegmentedControl(labels: ["Inbox", "Later", "Done"], trackingMode: .selectOne, target: nil, action: nil)
     private let search = NSSearchField()
     private let table = InboxTable()
     private let empty = EmptyStateView()
     private var rows: [Row] = []
-    private var showsDone: Bool { tabs.selectedSegment == 1 }
+    private var tab: Tab { Tab(rawValue: tabs.selectedSegment) ?? .inbox }
+    private var showsDone: Bool { tab == .done }
+    private var collection: CoreCollection {
+        switch tab {
+        case .inbox: .inboxNotes
+        case .later: .inboxSnoozed
+        case .done: .inboxDone
+        }
+    }
 
     // The selected note.
     private let detail = NSStackView()
@@ -36,6 +48,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     private let sourceLabel = Design.label("", size: 12, color: .secondaryLabelColor)
     private let timeLabel = Design.label("", size: 12, color: .secondaryLabelColor)
     private let doneButton = Design.button("Done", target: nil, action: nil)
+    private let sendButton = Design.button("Send To", target: nil, action: nil)
+    private let laterButton = Design.button("Later", target: nil, action: nil)
     private let copyButton = Design.button("Copy", target: nil, action: nil)
     private let openButton = Design.button("Open Source", target: nil, action: nil)
     private let deleteButton = Design.button("Delete", target: nil, action: nil)
@@ -55,9 +69,10 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         return formatter
     }()
 
-    init(core: NyCore, images: ImageFolder) {
+    init(core: NyCore, images: ImageFolder, toast: Toast) {
         self.core = core
         self.images = images
+        self.toast = toast
         let window = InboxWindowPanel(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
                                       styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
         window.title = "Inbox"
@@ -76,7 +91,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("Use init(core:images:)") }
+    required init?(coder: NSCoder) { fatalError("Use init(core:images:toast:)") }
 
     func present() {
         reload()
@@ -144,12 +159,26 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         editor.textContainer?.lineFragmentPadding = 0
         sourceLabel.lineBreakMode = .byTruncatingMiddle
         for (button, action) in [(doneButton, #selector(toggleDoneSelected)), (copyButton, #selector(copySelected)),
+                                 (sendButton, #selector(showSendMenu)), (laterButton, #selector(showLaterMenu)),
                                  (openButton, #selector(openSelectedSource)), (deleteButton, #selector(deleteSelected))] {
             button.target = self
             button.action = action
         }
-        let actions = Design.hstack([doneButton, copyButton, openButton, Design.spacer(), deleteButton], spacing: 8)
-        let hint = Design.label("Space done   ↩ edit   ⌘C copy   ⌘O open source   ⌫ delete   ⌘Z undo", size: 11, color: .tertiaryLabelColor)
+        sendButton.image = NSImage(systemSymbolName: "paperplane", accessibilityDescription: nil)
+        laterButton.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
+        for button in [sendButton, laterButton] { button.imagePosition = .imageLeading }
+        // The rarer actions are icons, so the row fits a narrow pane.
+        for (button, symbol, tip) in [(copyButton, "doc.on.doc", "Copy (⌘C)"), (openButton, "arrow.up.forward.app", "Open Source (⌘O)"),
+                                      (deleteButton, "trash", "Delete (⌫)")] {
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
+            button.imagePosition = .imageOnly
+            button.toolTip = tip
+        }
+        let actions = Design.hstack([doneButton, sendButton, laterButton, copyButton, openButton, Design.spacer(), deleteButton], spacing: 8)
+        let hint = Design.label("Space done   S send   L later   ↩ edit   ⌘C copy   ⌘O source   ⌫ delete   ⌘Z undo", size: 11, color: .tertiaryLabelColor)
+        hint.lineBreakMode = .byTruncatingTail
+        hint.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
+        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for view in [preview, editorScroll, sourceLabel, timeLabel, actions, hint] as [NSView] { detail.addArrangedSubview(view) }
         detail.orientation = .vertical
         detail.alignment = .leading
@@ -202,14 +231,16 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     private func reload() {
         let selectedID = selectedItem?.id
-        var params: [String: Any] = ["collection": showsDone ? CoreCollection.inboxDone.rawValue : CoreCollection.inboxNotes.rawValue, "limit": 500]
+        var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
         let query = search.stringValue.trimmingCharacters(in: .whitespaces)
         if !query.isEmpty { params["search"] = query }
         let items = (try? core.call("records.list", params, as: CorePage<Note>.self).records) ?? []
         rows = []
         var lastDay: String?
-        for item in items {
-            let day = Self.day(of: Date(timeIntervalSince1970: Double(item.createdAt) / 1000))
+        // Snoozed notes are listed by when they come back, soonest first.
+        let ordered = tab == .later ? items.sorted { ($0.data.until ?? 0) < ($1.data.until ?? 0) } : items
+        for item in ordered {
+            let day = Self.day(of: Date(timeIntervalSince1970: Double(tab == .later ? item.data.until ?? item.createdAt : item.createdAt) / 1000))
             if day != lastDay { rows.append(.day(day)); lastDay = day }
             rows.append(.note(item))
         }
@@ -219,11 +250,13 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         if let selectedID, let row = rows.firstIndex(where: { if case .note(let item) = $0 { item.id == selectedID } else { false } }) {
             table.selectRowIndexes([row], byExtendingSelection: false)
         }
-        empty.show(symbol: showsDone ? "checkmark.circle" : "tray",
-                   title: !query.isEmpty ? "No matches" : showsDone ? "Nothing done yet" : "All clear",
-                   message: !query.isEmpty ? "Nothing here mentions “\(query)”."
-                        : showsDone ? "Notes you mark done stay here for 30 days, in case you need one back."
-                                    : "Press F3 to jot something down, or select text and press F3 to keep it.")
+        let (symbol, title, message): (String, String, String) = switch tab {
+        case .inbox: ("tray", "All clear", "Press F3 to jot something down, or select text and press F3 to keep it.")
+        case .later: ("clock", "Nothing snoozed", "Press L on a note to put it away until later; it comes back to the top of the inbox.")
+        case .done: ("checkmark.circle", "Nothing done yet", "Notes you mark done stay here for 30 days, in case you need one back.")
+        }
+        empty.show(symbol: query.isEmpty ? symbol : "magnifyingglass", title: query.isEmpty ? title : "No matches",
+                   message: query.isEmpty ? message : "Nothing here mentions “\(query)”.")
         empty.isHidden = !items.isEmpty
         showSelected()
     }
@@ -289,12 +322,18 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         sourceLabel.isHidden = sourceLabel.stringValue.isEmpty
         let created = Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000)
         var when = "Added \(Self.day(of: created).lowercasedIfRelative) at \(clock.string(from: created))"
+        if let until = item.data.until {
+            let back = Date(timeIntervalSince1970: Double(until) / 1000)
+            when += " · back \(Self.day(of: back).lowercasedIfRelative) at \(clock.string(from: back))"
+        }
         if let doneAt = item.data.doneAt {
             let done = Date(timeIntervalSince1970: Double(doneAt) / 1000)
             when += " · done \(Self.day(of: done).lowercasedIfRelative) at \(clock.string(from: done))"
         }
         timeLabel.stringValue = when
-        doneButton.title = showsDone ? "Not Done" : "Done"
+        doneButton.title = switch tab { case .inbox: "Done"; case .later: "Back Now"; case .done: "Not Done" }
+        sendButton.isHidden = tab != .inbox
+        laterButton.isHidden = tab != .inbox
         openButton.isEnabled = address != nil || runningApp(named: item.data.app) != nil
     }
 
@@ -328,6 +367,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     private func handleKey(_ key: InboxTable.Key) -> Bool {
         switch key {
         case .space: toggleDoneSelected()
+        case .character("s") where tab == .inbox: showSendMenu()
+        case .character("l") where tab == .inbox: showLaterMenu()
         case .returnKey: editSelected()
         case .delete: deleteSelected()
         case .command("c"): copySelected()
@@ -339,18 +380,124 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         return true
     }
 
+    /// Inbox: done. Later: back to the inbox now. Done: back to the inbox.
     @objc private func toggleDoneSelected() {
         guard let item = selectedItem else { return }
         saveNow()
         let row = table.selectedRow
-        let (command, back) = showsDone ? ("inbox.undone", "inbox.done") : ("inbox.done", "inbox.undone")
-        guard let moved = (try? core.call(command, ["id": item.id]) as? [String: Any])?["record"] as? [String: Any],
+        let (command, params, back): (String, [String: Any], String?) = switch tab {
+        case .inbox: ("inbox.done", ["id": item.id], "inbox.undone")
+        case .later: ("inbox.wake", ["id": item.id], nil)
+        case .done: ("inbox.undone", ["id": item.id], "inbox.done")
+        }
+        guard let reply = try? core.call(command, params) as? [String: Any],
+              let moved = (reply["record"] ?? (reply["woken"] as? [Any])?.first) as? [String: Any],
               let movedID = moved["id"] as? String else { return }
-        remember(showsDone ? "Not done" : "Done") { [core] in
-            (try? core.call(back, ["id": movedID]) as? [String: Any]).flatMap { ($0["record"] as? [String: Any])?["id"] as? String }
+        let until = item.data.until
+        remember(command) { [core] in
+            let reply: [String: Any]?
+            if let back { reply = try? core.call(back, ["id": movedID]) as? [String: Any] }
+            else { reply = try? core.call("inbox.snooze", ["id": movedID, "until": until ?? 0]) as? [String: Any] }
+            return (reply?["record"] as? [String: Any])?["id"] as? String
         }
         reload()
         selectNear(row)
+    }
+
+    // MARK: Sending and snoozing
+
+    @objc private func showSendMenu() {
+        guard selectedItem != nil, tab == .inbox else { return }
+        let menu = NSMenu()
+        for destination in NoteExport.Destination.allCases {
+            let item = NSMenuItem(title: destination.title, action: #selector(sendSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = destination.rawValue
+            item.image = NSImage(systemSymbolName: destination.symbol, accessibilityDescription: nil)
+            menu.addItem(item)
+        }
+        if let folder = NoteExport.markdownFolder(core: core, choosingIfNeeded: false) {
+            menu.items.last?.toolTip = folder.path
+        }
+        menu.addItem(.separator())
+        let share = NSMenuItem(title: "Share…", action: #selector(shareSelected), keyEquivalent: "")
+        share.target = self
+        share.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)
+        menu.addItem(share)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sendButton.bounds.height + 4), in: sendButton)
+    }
+
+    @objc private func showLaterMenu() {
+        guard selectedItem != nil, tab == .inbox else { return }
+        let menu = NSMenu()
+        let format = DateFormatter()
+        format.setLocalizedDateFormatFromTemplate("EEEjmm")
+        for choice in SnoozeChoice.allCases {
+            guard let date = choice.date() else { continue }
+            let item = NSMenuItem(title: "\(choice.title)  —  \(format.string(from: date))", action: #selector(snoozeSelected(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = date
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: laterButton.bounds.height + 4), in: laterButton)
+    }
+
+    @objc private func snoozeSelected(_ sender: NSMenuItem) {
+        guard let item = selectedItem, let date = sender.representedObject as? Date else { return }
+        saveNow()
+        let row = table.selectedRow
+        do {
+            let reply = try core.call("inbox.snooze", ["id": item.id, "until": Int64(date.timeIntervalSince1970 * 1000)]) as? [String: Any]
+            if let snoozedID = (reply?["record"] as? [String: Any])?["id"] as? String {
+                remember("Snooze") { [core] in
+                    ((try? core.call("inbox.wake", ["id": snoozedID]) as? [String: Any])?["woken"] as? [[String: Any]])?.first?["id"] as? String
+                }
+            }
+        } catch {
+            NSSound.beep()
+        }
+        reload()
+        selectNear(row)
+    }
+
+    /// What a destination gets from the selected note.
+    private func exportContent(_ item: Item) -> NoteExport.Content {
+        let app = item.data.app ?? "", title = item.data.title ?? ""
+        let place = [app, title == app ? "" : title].filter { !$0.isEmpty }.joined(separator: " — ")
+        let address = item.data.url.flatMap { SourceContext.isMeaningful(address: $0) ? URL(string: $0) : nil }
+        return NoteExport.Content(text: editor.string, image: item.data.image.map(images.file), source: place, address: address,
+                                  created: Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000))
+    }
+
+    /// Sent notes are handed off, so they're marked done (⌘Z brings one back).
+    @objc private func sendSelected(_ sender: NSMenuItem) {
+        guard let item = selectedItem, let raw = sender.representedObject as? String,
+              let destination = NoteExport.Destination(rawValue: raw) else { return }
+        saveNow()
+        let content = exportContent(item)
+        Task {
+            do {
+                let done = try await NoteExport.send(content, to: destination, core: core)
+                if selectedItem?.id == item.id { toggleDoneSelected() }
+                else if (try? core.call("inbox.done", ["id": item.id])) != nil { reload() }
+                toast.show(done, detail: "Marked done · ⌘Z in the inbox brings it back", style: .success)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn’t send the note to \(destination.title)"
+                alert.informativeText = error.localizedDescription
+                if let window { alert.beginSheetModal(for: window, completionHandler: nil) } else { alert.runModal() }
+            }
+        }
+    }
+
+    @objc private func shareSelected() {
+        guard let item = selectedItem else { return }
+        let content = exportContent(item)
+        var things: [Any] = []
+        if !content.text.isEmpty { things.append(content.text) }
+        if let image = content.image.flatMap({ NSImage(contentsOf: $0) }) { things.append(image) }
+        if let address = content.address { things.append(address) }
+        NSSharingServicePicker(items: things).show(relativeTo: sendButton.bounds, of: sendButton, preferredEdge: .minY)
     }
 
     @objc private func deleteSelected() {
@@ -468,7 +615,7 @@ private extension String {
 
 /// The list: its keys go to the window's actions first.
 private final class InboxTable: NSTableView {
-    enum Key: Equatable { case space, returnKey, delete, command(String) }
+    enum Key: Equatable { case space, returnKey, delete, command(String), character(String) }
     var onKey: ((Key) -> Bool)?
 
     override func keyDown(with event: NSEvent) {
@@ -477,6 +624,7 @@ private final class InboxTable: NSTableView {
         case (49, []): .space
         case (36, []), (76, []): .returnKey
         case (51, []), (117, []), (51, [.command]): .delete
+        case (_, []), (_, [.shift]): event.charactersIgnoringModifiers.map { .character($0.lowercased()) }
         default: nil
         }
         if let key, onKey?(key) == true { return }
