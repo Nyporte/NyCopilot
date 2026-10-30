@@ -21,14 +21,17 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private(set) var annotations: [Annotation] = []
     private var redoStack: [Annotation] = []
     /// What a click would take: the element under the pointer and each container up to its window,
-    /// smallest first; scrolling picks a larger or smaller one.
-    private var hoverCandidates: [CGRect] = []
+    /// innermost first; scrolling picks a larger or smaller one.
+    private var hoverCandidates: [ElementFinder.Candidate] = []
     private var hoverLevel = 0
+    /// The depth chosen by scrolling, kept as the pointer moves: elsewhere the outline goes to an
+    /// element at the same depth, or else the nearest container above it.
+    private var pinnedDepth: Int?
     private var hoverPID: pid_t = 0
     private var scrollCredit: CGFloat = 0
     private var hoverWindow: CGRect? {
-        get { hoverCandidates.indices.contains(hoverLevel) ? hoverCandidates[hoverLevel] : nil }
-        set { hoverCandidates = newValue.map { [$0] } ?? []; hoverLevel = 0 }
+        get { hoverCandidates.indices.contains(hoverLevel) ? hoverCandidates[hoverLevel].rect : nil }
+        set { hoverCandidates = newValue.map { [ElementFinder.Candidate(rect: $0, depth: 0)] } ?? []; hoverLevel = 0 }
     }
     private var pointer: CGPoint?
     private var drag: Drag = .none
@@ -317,23 +320,33 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private func hover(at point: CGPoint) {
         guard let window = frozen.windows.first(where: { $0.rect.contains(point) }) else { hoverWindow = nil; return }
         // Moving within what's outlined keeps it until the app says otherwise; a new window shows at once.
-        if hoverPID != window.pid || !(hoverCandidates.last.map { $0 == window.rect } ?? false) || !(hoverWindow?.contains(point) ?? false) {
+        if hoverPID != window.pid || !(hoverCandidates.last.map { $0.rect == window.rect } ?? false) || !(hoverWindow?.contains(point) ?? false) {
             hoverWindow = window.rect
         }
         hoverPID = window.pid
         let origin = CaptureSession.globalOrigin(of: frozen.screen)
         let global = FrozenScreen.Window(rect: window.rect.offsetBy(dx: origin.x, dy: origin.y), pid: window.pid)
-        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global) { [weak self] rects in
+        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global) { [weak self] found in
             guard let self, selection == nil, !isPassive, let pointer, window.rect.contains(pointer) else { return }
-            let local = rects.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }.filter { $0.contains(pointer) || $0 == window.rect }
+            let local = found.map { ElementFinder.Candidate(rect: $0.rect.offsetBy(dx: -origin.x, dy: -origin.y), depth: $0.depth) }
+                .filter { $0.rect.contains(pointer) || $0.depth == 0 }
             guard !local.isEmpty else { return }
-            // Keep the size chosen by scrolling when it's still on offer; else the smallest real control.
             let shown = hoverWindow
             hoverCandidates = local
-            hoverLevel = shown.flatMap { previous in local.firstIndex { $0 == previous } }
-                ?? local.firstIndex { $0.width >= 20 && $0.height >= 14 } ?? local.count - 1
+            hoverLevel = Self.level(in: local, pinned: pinnedDepth, shown: shown)
             needsDisplay = true
         }
+    }
+
+    /// Which candidate to outline. After scrolling: one at the chosen depth, or else the nearest
+    /// container above it (candidates run innermost first). Otherwise what's outlined already, if
+    /// it's still there, or the innermost element big enough to be a real control.
+    static func level(in candidates: [ElementFinder.Candidate], pinned: Int?, shown: CGRect?) -> Int {
+        if let pinned {
+            return candidates.firstIndex { $0.depth == pinned } ?? candidates.firstIndex { $0.depth < pinned } ?? candidates.count - 1
+        }
+        return shown.flatMap { shown in candidates.firstIndex { $0.rect == shown } }
+            ?? candidates.firstIndex { $0.rect.width >= 20 && $0.rect.height >= 14 } ?? candidates.count - 1
     }
 
     /// Scrolling while nothing is selected: up for the containing element, down for a smaller one.
@@ -345,6 +358,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             let step = scrollCredit > 0 ? 1 : -1
             hoverLevel = min(max(hoverLevel + step, 0), hoverCandidates.count - 1)
             scrollCredit -= CGFloat(step) * 10
+            pinnedDepth = hoverCandidates[hoverLevel].depth
         }
         if event.phase == .ended || event.momentumPhase == .ended { scrollCredit = 0 }
         needsDisplay = true

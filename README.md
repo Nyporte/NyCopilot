@@ -143,7 +143,9 @@ dragging it to the edge of the screen.
 - **Select** by dragging, or hover and click to take something exactly: a button, a field, a sidebar,
   a toolbar, a window, a menu bar item, or the Dock. The part under the pointer is outlined (read
   through Accessibility); **scroll** up for what contains it — up to the whole window — or down for
-  something smaller. Drag the
+  something smaller. The level you scroll to stays as you move: elsewhere the outline goes to a part
+  at the same depth (another toolbar, another sidebar), or, where there's none, the nearest one
+  containing the pointer above it. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size

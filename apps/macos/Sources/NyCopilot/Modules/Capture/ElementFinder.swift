@@ -20,11 +20,17 @@ enum AccessibilityFrame {
 }
 
 /// The parts of a window under the pointer during a capture — a button, a text field, a sidebar, a
-/// toolbar — read from the app through Accessibility, smallest first and ending with the window
+/// toolbar — read from the app through Accessibility, innermost first and ending with the window
 /// itself, so a click can take any of them exactly. Lookups run off the main thread; while the
 /// pointer moves, only the newest one is answered.
 final class ElementFinder: @unchecked Sendable {
     static let shared = ElementFinder()
+
+    /// An element's frame (global top-left) and how deep it sits: the window is 0, its children 1…
+    struct Candidate: Equatable {
+        let rect: CGRect
+        let depth: Int
+    }
 
     private let queue = DispatchQueue(label: "dev.nycopilot.capture.elements", qos: .userInteractive)
     private let lock = NSLock()
@@ -33,7 +39,7 @@ final class ElementFinder: @unchecked Sendable {
     private var exposed: Set<pid_t> = []
 
     /// `point` and `window` are global top-left; `found` gets the candidates on the main thread.
-    func find(at point: CGPoint, in window: FrozenScreen.Window, found: @escaping @MainActor ([CGRect]) -> Void) {
+    func find(at point: CGPoint, in window: FrozenScreen.Window, found: @escaping @MainActor ([Candidate]) -> Void) {
         guard AXIsProcessTrusted(), window.pid > 0 else { return }
         lock.lock()
         generation += 1
@@ -41,9 +47,9 @@ final class ElementFinder: @unchecked Sendable {
         lock.unlock()
         queue.async { [self] in
             guard isCurrent(mine) else { return }
-            let rects = candidates(at: point, in: window)
+            let candidates = candidates(at: point, in: window)
             guard isCurrent(mine) else { return }
-            DispatchQueue.main.async { MainActor.assumeIsolated { found(rects) } }
+            DispatchQueue.main.async { MainActor.assumeIsolated { found(candidates) } }
         }
     }
 
@@ -54,8 +60,8 @@ final class ElementFinder: @unchecked Sendable {
     }
 
     /// The element under the point and each container up to the window: frames clipped to the
-    /// window, at least 6 points a side, without near-repeats.
-    private func candidates(at point: CGPoint, in window: FrozenScreen.Window) -> [CGRect] {
+    /// window, at least 6 points a side, without near-repeats (the innermost of those is kept).
+    private func candidates(at point: CGPoint, in window: FrozenScreen.Window) -> [Candidate] {
         let app = AXUIElementCreateApplication(window.pid)
         AXUIElementSetMessagingTimeout(app, 0.15)
         lock.lock()
@@ -63,27 +69,36 @@ final class ElementFinder: @unchecked Sendable {
         lock.unlock()
         if first { _ = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) }
         var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success else { return [window.rect] }
-        var rects: [CGRect] = []
+        guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success else {
+            return [Candidate(rect: window.rect, depth: 0)]
+        }
+        // Steps up from the element hit; depths are counted down from the window once it's reached.
+        var found: [(rect: CGRect, step: Int)] = []
         var current = hit
-        for _ in 0..<30 {
+        var steps = 0
+        for step in 0..<30 {
             guard let element = current else { break }
+            steps = step
             AXUIElementSetMessagingTimeout(element, 0.15)
             let role = Self.string(element, kAXRoleAttribute)
             if role == kAXApplicationRole { break }
             if let frame = AccessibilityFrame.of(element)?.intersection(window.rect).integral,
                frame.width >= 6, frame.height >= 6, frame.contains(point),
-               !rects.contains(where: { Self.resembles($0, frame) }) {
-                rects.append(frame)
+               !found.contains(where: { Self.resembles($0.rect, frame) }) {
+                found.append((frame, step))
             }
             if role == kAXWindowRole { break }
+            steps = step + 1
             var parent: CFTypeRef?
             guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parent) == .success,
                   let parent, CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
             current = unsafeBitCast(parent, to: AXUIElement.self)
         }
-        if !rects.contains(where: { Self.resembles($0, window.rect) }) { rects.append(window.rect) }
-        return rects.sorted { $0.width * $0.height < $1.width * $1.height }
+        var candidates = found.map { Candidate(rect: $0.rect, depth: max(steps - $0.step, 1)) }
+        // The window itself, always last, whether or not its own frame came back.
+        candidates.removeAll { Self.resembles($0.rect, window.rect) }
+        candidates.append(Candidate(rect: window.rect, depth: 0))
+        return candidates
     }
 
     private static func resembles(_ a: CGRect, _ b: CGRect) -> Bool {
