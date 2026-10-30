@@ -343,11 +343,24 @@ private final class PinView: NSView {
     override func mouseEntered(with event: NSEvent) { isHovered = true }
     override func mouseExited(with event: NSEvent) { isHovered = false }
 
+    /// The pointer and the pin's origin when a drag began, in screen coordinates.
+    private var dragStart: (pointer: NSPoint, origin: NSPoint)?
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 { pin?.close(); return }
         focus()
-        window?.performDrag(with: event)
+        // Dragged by hand rather than by the system, which won't take a window's top past the menu bar.
+        guard let window else { return }
+        dragStart = (window.convertPoint(toScreen: event.locationInWindow), window.frame.origin)
     }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window, let start = dragStart else { return }
+        let pointer = window.convertPoint(toScreen: event.locationInWindow)
+        window.setFrameOrigin(NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + pointer.y - start.pointer.y))
+    }
+
+    override func mouseUp(with event: NSEvent) { dragStart = nil }
 
     override func rightMouseDown(with event: NSEvent) {
         guard let pin else { return }
