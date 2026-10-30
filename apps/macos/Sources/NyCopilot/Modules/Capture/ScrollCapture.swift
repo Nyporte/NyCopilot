@@ -3,11 +3,12 @@ import Carbon
 import MacPlatform
 import ScreenCaptureKit
 
-/// Scrolling capture: the selected region is streamed live while you scroll whatever is under it,
-/// and each frame is stitched onto the image as it arrives. A frame marks the region (scrolling
-/// passes straight through it); a panel beside it shows the image growing and finishes it like any
-/// capture — copy, save, or pin. While it runs, scrolling over the region is held to a pace the
-/// capture can follow, and its keys work whichever window has focus.
+/// Scrolling capture. The selection stays outlined while you scroll whatever is under it, up or down.
+/// The whole scrollable area around it is streamed — not just the selection — so every frame can be
+/// placed exactly even after a fast scroll, and rows that went past the selection too quickly are
+/// read from elsewhere in the area. Only the selection ends up in the image. A panel beside it shows
+/// the image growing and finishes it like any capture: copy, save, or pin. While it runs, scrolling
+/// over the area is held to a pace the capture can follow, and its keys work whichever window has focus.
 @MainActor
 final class ScrollCapture {
     var onFinish: ((CaptureAction, NSImage) -> Void)?
@@ -16,68 +17,96 @@ final class ScrollCapture {
     var onFailure: ((Error) -> Void)?
 
     private let region: CGRect
-    private let screen: NSScreen
+    private let frozen: FrozenScreen
+    /// Whether the frozen pixels of a global rectangle can stand in for the live screen (no pin on it).
+    private let canSeed: (CGRect) -> Bool
     private let border: NSWindow
     private let panel: ScrollCapturePanel
-    private let frames = FrameStitcher()
+    private var frames: FrameStitcher?
     private var stream: SCStream?
     private var pace: ScrollPace?
     private var keys: [GlobalHotKey] = []
-    private var hasImage = false
+    /// The selection as the screen showed it: the image until the stream has added to it.
+    private var still: CGImage?
     private var isOver = false
-    /// The stream's frame size, which a seed image must match.
-    private var pixelSize: (width: Int, height: Int) {
-        (Int((region.width * screen.backingScaleFactor).rounded()), Int((region.height * screen.backingScaleFactor).rounded()))
-    }
+    private var screen: NSScreen { frozen.screen }
 
-    /// `region` is in global top-left coordinates, on `screen`.
-    init(region: CGRect, screen: NSScreen) {
+    /// `region` is in global top-left coordinates, on the frozen screen.
+    init(region: CGRect, frozen: FrozenScreen, canSeed: @escaping (CGRect) -> Bool) {
         self.region = region
-        self.screen = screen
+        self.frozen = frozen
+        self.canSeed = canSeed
         let frame = CaptureSession.appKitRect(region)
         border = Self.makeBorder(around: frame)
-        panel = ScrollCapturePanel(beside: frame, on: screen)
+        panel = ScrollCapturePanel(beside: frame, on: frozen.screen)
         panel.onAction = { [weak self] action in self?.finish(action) }
         panel.onCancel = { [weak self] in self?.cancel() }
-        frames.onUpdate = { [weak self] outcome, height, thumbnail in
-            self?.hasImage = height > 0
-            self?.panel.show(outcome, height: height, thumbnail: thumbnail)
-        }
     }
 
-    /// The outline and panel appear at once, starting from `seed` (the region as it was on screen);
-    /// the live stream joins a moment later and carries on from there.
-    func start(seed: CGImage?) {
+    /// The outline, panel, and selection appear at once; the scroll area is found and the live stream
+    /// joins a moment later, carrying on from what was on screen.
+    func start() {
         border.orderFrontRegardless()
         panel.orderFrontRegardless()
         panel.makeKey()
         claimKeys()
-        // A fifth of the region per scroll step: at 60 frames a second, consecutive frames always overlap.
-        pace = ScrollPace(region: region, maxStep: region.height * 0.2)
-        if let seed { frames.seed(seed, size: pixelSize) }
+        still = crop(region)
+        panel.show(.started, height: still?.height ?? 0, thumbnail: still)
+        let selection = region
         Task { [weak self] in
-            do { try await self?.startStream() } catch {
-                guard let self, !isOver else { return }
+            // Accessibility can take a moment in a busy app; keep it off the main thread.
+            let area = await Task.detached(priority: .userInitiated) { ScrollArea.around(selection) }.value
+            guard let self, !isOver else { return }
+            do { try await watch(area) } catch {
+                guard !isOver else { return }
                 stop()
                 onFailure?(error)
             }
         }
     }
 
-    private func startStream() async throws {
+    /// Streams the selection's columns from the top to the bottom of the scroll area.
+    private func watch(_ area: CGRect) async throws {
+        let display = CGRect(origin: CaptureSession.globalOrigin(of: screen), size: screen.frame.size)
+        let top = max(min(region.minY, area.minY), display.minY), bottom = min(max(region.maxY, area.maxY), display.maxY)
+        let watched = CGRect(x: region.minX, y: top, width: region.width, height: bottom - top)
+        let size = pixelSize(of: watched)
+        let first = Int(((region.minY - watched.minY) * frozen.scale).rounded())
+        let frames = FrameStitcher(selection: first..<min(size.height, first + pixelSize(of: region).height))
+        frames.onUpdate = { [weak self] outcome, height, thumbnail in self?.panel.show(outcome, height: height, thumbnail: thumbnail) }
+        self.frames = frames
+        if canSeed(watched), let seed = crop(watched) { frames.seed(seed, size: size) }
+        // Scroll steps of up to a third of the room above or below the selection: at 60 frames a
+        // second, every row that passes the selection is still in the area in the next frame.
+        pace = ScrollPace(region: watched, maxStep: 0.3 * min(region.maxY - watched.minY, watched.maxY - region.minY))
+        try await stream(watched, size: size, into: frames)
+    }
+
+    private func pixelSize(of rect: CGRect) -> (width: Int, height: Int) {
+        (Int((rect.width * frozen.scale).rounded()), Int((rect.height * frozen.scale).rounded()))
+    }
+
+    /// Part of the frozen screen, by global rectangle.
+    private func crop(_ rect: CGRect) -> CGImage? {
+        let origin = CaptureSession.globalOrigin(of: screen), size = pixelSize(of: rect)
+        return frozen.image.cropping(to: CGRect(x: ((rect.minX - origin.x) * frozen.scale).rounded(),
+                                                y: ((rect.minY - origin.y) * frozen.scale).rounded(), width: CGFloat(size.width), height: CGFloat(size.height)))
+    }
+
+    private func stream(_ watched: CGRect, size: (width: Int, height: Int), into frames: FrameStitcher) async throws {
         guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             throw ScreenGrabber.Failure.captureFailed
         }
         // F1 just looked this up; asking again would cost a noticeable moment.
         let content = try await ScreenGrabber.shareableContent(reusingRecent: true)
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
-        // NyCopilot's own windows — this frame, the panel, pins — never appear in the image.
+        // NyCopilot's own windows — the outline, the panel, pins — never appear in the image.
         let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         let origin = CaptureSession.globalOrigin(of: screen)
         let configuration = SCStreamConfiguration()
-        configuration.sourceRect = region.offsetBy(dx: -origin.x, dy: -origin.y)
-        configuration.width = pixelSize.width
-        configuration.height = pixelSize.height
+        configuration.sourceRect = watched.offsetBy(dx: -origin.x, dy: -origin.y)
+        configuration.width = size.width
+        configuration.height = size.height
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.showsCursor = false
@@ -114,9 +143,8 @@ final class ScrollCapture {
     }
 
     private func finish(_ action: CaptureAction) {
-        guard hasImage else { return }
+        guard let image = frames?.image() ?? still else { return }
         stop()
-        guard let image = frames.image() else { onCancel?(); return }
         onFinish?(action, NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / screen.backingScaleFactor,
                                                                height: CGFloat(image.height) / screen.backingScaleFactor)))
     }
@@ -229,7 +257,13 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
     /// Called on the main thread with the latest outcome, total height in pixels, and a thumbnail of
     /// the whole image when it changed.
     var onUpdate: (@MainActor (ScrollStitcher.Outcome, Int, CGImage?) -> Void)?
-    private let stitcher = ScrollStitcher()
+    private let stitcher: ScrollStitcher
+
+    /// `selection`: the rows of each frame that make up the image.
+    init(selection: Range<Int>) {
+        stitcher = ScrollStitcher(selection: selection)
+        super.init()
+    }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         if type == .screen { process(sampleBuffer) }
@@ -253,7 +287,7 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
         let outcome = stitcher.add(frame)
         let changed: Bool
         switch outcome {
-        case .started, .appended: changed = true
+        case .started, .added: changed = true
         default: changed = false
         }
         let thumbnail = changed ? stitcher.makeThumbnail() : nil
@@ -263,7 +297,8 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
         }
     }
 
-    func image() -> CGImage? { queue.sync { stitcher.makeImage() } }
+    /// Nil until the first frame.
+    func image() -> CGImage? { queue.sync { stitcher.height > 0 ? stitcher.makeImage() : nil } }
 
     /// An image redrawn as BGRA rows of exactly the stream's size.
     private static func frame(from image: CGImage, size: (width: Int, height: Int)) -> PixelFrame? {
@@ -308,7 +343,7 @@ private final class ScrollCapturePanel: NSPanel {
 
     private let preview = WholePreview()
     private let size = Design.label("", size: 12, weight: .semibold, color: .white)
-    private let hint = Design.wrapping("Scroll down in the outlined area.", size: 11.5)
+    private let hint = Design.wrapping("Scroll up or down in the outlined area.", size: 11.5)
     private let copyButton = NSButton(title: "Copy  ↩", target: nil, action: nil)
 
     init(beside region: NSRect, on screen: NSScreen) {
@@ -368,10 +403,9 @@ private final class ScrollCapturePanel: NSPanel {
         size.stringValue = height > 0 ? "\(height.formatted()) px tall" : "Starting…"
         copyButton.isEnabled = height > 0
         switch outcome {
-        case .lost: hint.stringValue = "Lost the place — scroll up a little to where it stopped."
-        case .behind: hint.stringValue = "Scroll back down to carry on."
+        case .lost: hint.stringValue = "Too fast — scroll back a little to fill the gap."
         case .full: hint.stringValue = "That’s the maximum length. Copy, save, or pin it."
-        case .appended: hint.stringValue = "Keep scrolling, or press Return to copy."
+        case .added: hint.stringValue = "Keep scrolling either way, or press Return to copy."
         default: break
         }
     }

@@ -105,6 +105,10 @@ final class CaptureShell: ModuleShell {
                 session.onFinish = { [weak self] action, image, region, screen in
                     self?.finish(action, image: image, region: region, screen: screen)
                 }
+                session.onScroll = { [weak self] region, frozen in
+                    self?.end()
+                    self?.startScrolling(region, frozen: frozen)
+                }
                 session.onTextCopied = { [weak self] lines, region, _ in
                     self?.end()
                     self?.services.toast.show("Copied \(lines) line\(lines == 1 ? "" : "s") of text", style: .success,
@@ -127,11 +131,7 @@ final class CaptureShell: ModuleShell {
     private func finish(_ action: CaptureAction, image: NSImage, region: CGRect, screen: NSScreen) {
         switch action {
         case .scroll:
-            end()
-            // The frozen pixels are exactly what was on screen, so they start the image at once —
-            // unless a pin covered the region, since the live stream leaves pins out.
-            let pinned = !services.core.setting(.hideOwnWindows, default: false) && board.covers(CaptureSession.appKitRect(region))
-            startScrolling(region, on: screen, seed: pinned ? nil : image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+            break // Handled by the session's onScroll.
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -161,8 +161,14 @@ final class CaptureShell: ModuleShell {
 
     /// The region stays live; whatever is scrolled under it is stitched into one tall image, which
     /// then goes through the same copy, save, and pin as any capture.
-    private func startScrolling(_ region: CGRect, on screen: NSScreen, seed: CGImage?) {
-        let capture = ScrollCapture(region: region, screen: screen)
+    private func startScrolling(_ region: CGRect, frozen: FrozenScreen) {
+        let screen = frozen.screen
+        // The frozen pixels are exactly what was on screen, so they start the image at once — unless
+        // a pin was on them, since the live stream leaves pins out.
+        let hidesPins = services.core.setting(.hideOwnWindows, default: false)
+        let capture = ScrollCapture(region: region, frozen: frozen) { [weak self] rect in
+            hidesPins || !(self?.board.covers(CaptureSession.appKitRect(rect)) ?? false)
+        }
         capture.onFinish = { [weak self] action, image in
             self?.scrolling = nil
             self?.finish(action, image: image, region: region, screen: screen)
@@ -173,7 +179,7 @@ final class CaptureShell: ModuleShell {
             self?.services.toast.show("Couldn’t start scrolling capture", detail: error.localizedDescription, style: .warning)
         }
         scrolling = capture
-        capture.start(seed: seed)
+        capture.start()
     }
 
     private func copy(_ image: NSImage) {

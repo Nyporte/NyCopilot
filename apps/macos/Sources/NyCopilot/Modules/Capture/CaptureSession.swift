@@ -6,6 +6,8 @@ import AppKit
 final class CaptureSession {
     /// The chosen action with the rendered image and the selection in global top-left coordinates.
     var onFinish: ((CaptureAction, NSImage, CGRect, NSScreen) -> Void)?
+    /// S: the selection (global top-left) and the frozen screen it's on, for a scrolling capture.
+    var onScroll: ((CGRect, FrozenScreen) -> Void)?
     /// Live Text's Copy All put this many lines on the clipboard.
     var onTextCopied: ((Int, CGRect, NSScreen) -> Void)?
     var onCancel: (() -> Void)?
@@ -32,10 +34,15 @@ final class CaptureSession {
             container.addSubview(view)
             window.contentView = container
             view.onFinish = { [weak self, weak view] action in
-                // A scrolling capture starts from the screen as it was; annotations don't scroll with it.
-                guard let self, let view, let image = action == .scroll ? view.screenImage() : view.renderedImage(),
-                      let selection = view.selection else { return }
+                guard let self, let view, let selection = view.selection else { return }
                 let global = selection.offsetBy(dx: origin.x, dy: origin.y)
+                // A scrolling capture starts from the screen as it was; annotations don't scroll with it.
+                if action == .scroll {
+                    close()
+                    onScroll?(global, screen)
+                    return
+                }
+                guard let image = view.renderedImage() else { return }
                 close()
                 onFinish?(action, image, global, screen.screen)
             }

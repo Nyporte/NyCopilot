@@ -129,14 +129,15 @@ dragging it to the edge of the screen.
   goes back to the toolbar. Recognition starts on its own as soon as you settle on a selection, on
   your Mac and offline, so T is instant; the button lights up when there's text. It reads the screen
   as it was, so your annotations don't get in the way.
-- **Scrolling capture** with **S** (or the tall-rectangle button). The selection stays live, outlined
-  on screen; scroll the page, document, or chat under it and a panel beside it shows the whole image
-  so far, shrinking to fit as it grows. Rows that stay put — toolbars, sticky headers, status bars —
-  appear once. While it runs, scrolling over the region is held to a pace the capture can follow (60
-  frames a second), so flicks don't skip content; scrolling back up is fine and carries on when you
-  come back down. Its keys work wherever the focus is: **Return** (copy), **⌘S**, **⇧⌘S**, **⌘T**
-  (pinned to fit the screen), or **Esc** to cancel. Up to 30,000 pixels tall; NyCopilot's own windows
-  are never in the picture.
+- **Scrolling capture** with **S** (or the tall-rectangle button). The selection stays outlined;
+  scroll the page, document, or chat under it — down, up, or both, starting anywhere — and a panel
+  beside it shows the whole image so far, shrinking to fit as it grows. Behind the scenes NyCopilot
+  watches the entire scroll area around the selection (found through Accessibility, or else the
+  window), so even a fast scroll is placed exactly and rows that rushed past the selection are read
+  from elsewhere in the area; only your selection ends up in the image. If a scroll is ever too big
+  to fill, scrolling back a little fills the gap. Toolbars and sticky headers appear once. Its keys
+  work wherever the focus is: **Return** (copy), **⌘S**, **⇧⌘S**, **⌘T** (pinned to fit the screen),
+  or **Esc** to cancel. Up to 30,000 pixels tall; NyCopilot's own windows are never in the picture.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 

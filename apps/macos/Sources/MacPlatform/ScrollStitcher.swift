@@ -15,50 +15,60 @@ public struct PixelFrame {
     }
 }
 
-/// Builds one tall image from frames of a region whose content is scrolled downward.
+/// Builds one tall image of a selection from frames of a larger area around it while its content is
+/// scrolled, either way.
 ///
-/// Each frame is compared with the last one it accepted: a band of rows from the new frame is found
-/// in the old one, which gives how far the content moved, and only the rows that came into view are
-/// appended. Rows that stay put at the top and bottom — a toolbar, a sticky header, a status bar —
-/// are recognized from the first scroll, kept once, and left out of matching. Matching works on
-/// per-row luminance signatures, so a frame costs a few milliseconds even on a large region.
+/// The frames cover the whole scrollable area; the selection is a band of rows within them. Tracking
+/// uses the whole frame: each frame is located against the last one by matching a band of rows, which
+/// gives the scroll position to the pixel. The image is kept in document coordinates, so rows that
+/// pass through the selection are added at whichever end they extend — even rows that went by too
+/// fast to cross the selection in a frame, since they are still visible elsewhere in the area. Rows
+/// that stay put at the top and bottom of the area (toolbars, sticky headers, status bars) are found
+/// on the first scroll; where the selection includes them they appear once, above and below the
+/// scrolled content. Matching works on per-row luminance signatures, a few milliseconds per frame.
 public final class ScrollStitcher {
     public enum Outcome: Equatable {
         /// The first frame.
         case started
-        /// New content came into view: this many rows.
-        case appended(Int)
+        /// The image grew by this many rows, at the top or the bottom.
+        case added(Int)
+        /// It scrolled over content already in the image.
+        case covered
         /// Nothing scrolled.
         case unchanged
-        /// Scrolled back up over content already in the image; scrolling down again carries on.
-        case behind
-        /// No overlap with the end of the image: scrolled too far at once, or far back up.
+        /// Rows went by that no frame showed, or the frame couldn't be placed at all. Scrolling back a
+        /// little fills the gap; nothing is lost.
         case lost
         /// The image reached `maxHeight`; later frames are ignored.
         case full
     }
 
     public let maxHeight: Int
+    /// The rows of each frame the user selected; the rest of the frame only helps tracking.
+    public let selection: Range<Int>
     public private(set) var width = 0
     /// Rows in the finished image so far.
-    public var height: Int { width == 0 ? 0 : (body.count + footer.count) / (width * 4) }
+    public var height: Int { rowBytes == 0 ? 0 : (header.count + above.count + below.count + footer.count) / rowBytes }
 
-    private var body: [UInt8] = []
-    /// The fixed rows at the bottom, taken from the latest frame.
+    private var rowBytes: Int { width * 4 }
+    /// Selected rows inside the fixed bands, from the frames that last extended the top and the
+    /// bottom: blank rows beside a real toolbar can pass for fixed ones, and this way they always
+    /// join the content around them.
+    private var header: [UInt8] = []
     private var footer: [UInt8] = []
-    private var previous: (frame: PixelFrame, signatures: Signatures)?
-    /// Fixed rows at the top and bottom, settled by the first scroll.
+    /// Scrolled content from the first frame down, and above it (nearest row first, so growing upward
+    /// is an append too).
+    private var below: [UInt8] = []
+    private var above: [UInt8] = []
+    /// The document rows the scrolled content covers, and where the latest frame's first row sits.
+    private var top = 0, bottom = 0, position = 0
+    private var previous: Signatures?
+    private var frameHeight = 0
     private var fixed: (top: Int, bottom: Int)?
     private var isFull = false
-    /// The image scaled down by `thumbnailFactor`, kept up to date as rows arrive.
-    private var thumbnailFactor = 1
-    private var thumbnailBody: [UInt8] = []
-    /// Body rows already in `thumbnailBody`, a multiple of `thumbnailFactor`.
-    private var thumbnailRows = 0
-    /// Previews fit the whole image in a narrow panel; this wide is plenty.
-    private static let thumbnailWidth = 360
 
-    public init(maxHeight: Int = 30_000) {
+    public init(selection: Range<Int>, maxHeight: Int = 30_000) {
+        self.selection = selection
         self.maxHeight = maxHeight
     }
 
@@ -66,60 +76,138 @@ public final class ScrollStitcher {
     public func add(_ frame: PixelFrame) -> Outcome {
         if isFull { return .full }
         let signatures = Signatures(frame)
-        guard let previous else {
+        guard let old = previous else {
+            precondition(selection.lowerBound >= 0 && selection.upperBound <= frame.height && !selection.isEmpty, "selection outside the frame")
             width = frame.width
-            thumbnailFactor = max(1, frame.width / Self.thumbnailWidth)
-            body = frame.pixels
-            self.previous = (frame, signatures)
+            frameHeight = frame.height
+            below = rows(frame, selection)
+            (top, bottom) = (selection.lowerBound, selection.upperBound)
+            previous = signatures
             return .started
         }
-        guard frame.width == previous.frame.width, frame.height == previous.frame.height else { return .lost }
-        let old = previous.signatures, height = frame.height
+        guard frame.width == width, frame.height == frameHeight else { return .lost }
         let bands = fixed ?? Self.fixedBands(old, signatures)
-        let band = bands.top..<(height - bands.bottom)
+        let band = bands.top..<(frame.height - bands.bottom)
         guard band.count >= 24 else { return .lost }
 
-        // Most of the band unchanged in place: no scroll (a blinking caret or a hover doesn't count).
+        // Most of the area unchanged in place: no scroll (a blinking caret or a hover doesn't count).
         if Self.meanDifference(old, signatures, offset: 0, rows: band) <= 3 { return .unchanged }
-        guard let offset = Self.offset(from: old, to: signatures, band: band) else {
-            // The other way round: the last accepted frame continues below this one.
-            return Self.offset(from: signatures, to: old, band: band) != nil ? .behind : .lost
+        let offset: Int
+        if let down = Self.offset(from: old, to: signatures, band: band) {
+            offset = down
+        } else if let up = Self.offset(from: signatures, to: old, band: band) {
+            offset = -up
+        } else {
+            return .lost
         }
+        if fixed == nil { settle(bands) }
+        position += offset
+        previous = signatures
 
-        // Rows that scrolled into view sit just above the fixed footer.
-        let rowBytes = frame.width * 4
-        if fixed == nil {
-            // The first frame's footer was part of the body until now.
-            body.removeLast(bands.bottom * rowBytes)
-            fixed = bands
+        let moving = max(selection.lowerBound, band.lowerBound)..<min(selection.upperBound, band.upperBound)
+        guard !moving.isEmpty else { return .covered }
+
+        var added = 0, gap = false
+        // Scrolled down: rows past the bottom, read from wherever they are in this frame.
+        if position + moving.upperBound > bottom {
+            let from = bottom - position
+            if from >= band.lowerBound {
+                below += rows(frame, from..<moving.upperBound)
+                added += moving.upperBound - from
+                bottom = position + moving.upperBound
+                footer = rows(frame, moving.upperBound..<selection.upperBound)
+            } else {
+                gap = true
+            }
         }
-        body.append(contentsOf: frame.pixels[((band.upperBound - offset) * rowBytes)..<(band.upperBound * rowBytes)])
-        footer = Array(frame.pixels[(band.upperBound * rowBytes)...])
-        self.previous = (frame, signatures)
-        if self.height >= maxHeight {
+        // Scrolled up: rows past the top, nearest first.
+        if position + moving.lowerBound < top {
+            let to = top - position
+            if to <= band.upperBound {
+                for row in stride(from: to - 1, through: moving.lowerBound, by: -1) { above += rows(frame, row..<(row + 1)) }
+                added += to - moving.lowerBound
+                top = position + moving.lowerBound
+                header = rows(frame, selection.lowerBound..<moving.lowerBound)
+            } else {
+                gap = true
+            }
+        }
+        if height >= maxHeight {
             isFull = true
             return .full
         }
-        return .appended(offset)
+        return added > 0 ? .added(added) : gap ? .lost : .covered
     }
 
-    /// The image so far.
-    public func makeImage() -> CGImage? { Self.image(width: width, pixels: body + footer) }
+    /// The first scroll shows which rows stay put; any the selection included leave the scrolled
+    /// content and become the header and footer.
+    private func settle(_ bands: (top: Int, bottom: Int)) {
+        fixed = bands
+        let moving = max(selection.lowerBound, bands.top)..<max(max(selection.lowerBound, bands.top), min(selection.upperBound, frameHeight - bands.bottom))
+        let start = (moving.lowerBound - selection.lowerBound) * rowBytes, end = start + moving.count * rowBytes
+        header = Array(below[..<start])
+        footer = Array(below[end...])
+        below = Array(below[start..<end])
+        (top, bottom) = (moving.lowerBound, moving.upperBound)
+        resetThumbnail()
+    }
 
-    /// The whole image, small: each call scales down only the rows that arrived since the last, so a
-    /// live preview stays cheap however long the image gets.
+    private func rows(_ frame: PixelFrame, _ range: Range<Int>) -> [UInt8] {
+        Array(frame.pixels[(range.lowerBound * rowBytes)..<(range.upperBound * rowBytes)])
+    }
+
+    /// The image so far: header, scrolled content top to bottom, footer.
+    public func makeImage() -> CGImage? {
+        Self.image(width: width, pixels: header + Self.reversedRows(above, rowBytes: rowBytes) + below + footer)
+    }
+
+    // MARK: Thumbnail
+
+    /// Previews fit the whole image in a narrow panel; this much is plenty.
+    private static let thumbnailWidth = 360, thumbnailHeight = 1600
+    private var thumbnailFactor = 0
+    private var thumbnailBelow: [UInt8] = [], thumbnailAbove: [UInt8] = []
+    /// Rows already scaled into the thumbnails, multiples of the factor.
+    private var scaledBelow = 0, scaledAbove = 0
+
+    private func resetThumbnail() {
+        thumbnailBelow = []; thumbnailAbove = []
+        scaledBelow = 0; scaledAbove = 0
+    }
+
+    /// The whole image, small. Each call scales down only rows that arrived since the last; when the
+    /// image outgrows the thumbnail, the scale halves once and starts over, so a preview stays cheap
+    /// however long the image gets.
     public func makeThumbnail() -> CGImage? {
         guard width > 0 else { return nil }
-        let factor = thumbnailFactor, rowBytes = width * 4, bodyRows = body.count / rowBytes
-        // The first scroll trims the first frame's footer from the body.
-        if thumbnailRows > bodyRows { thumbnailBody = []; thumbnailRows = 0 }
-        let complete = bodyRows / factor * factor
-        if complete > thumbnailRows {
-            thumbnailBody += Self.scaledDown(Array(body[(thumbnailRows * rowBytes)..<(complete * rowBytes)]), width: width, by: factor)
-            thumbnailRows = complete
+        var factor = max(1, thumbnailFactor, width / Self.thumbnailWidth)
+        while height / factor > Self.thumbnailHeight { factor *= 2 }
+        if factor != thumbnailFactor {
+            thumbnailFactor = factor
+            resetThumbnail()
         }
-        let rest = Self.scaledDown(Array(body[(complete * rowBytes)...]) + footer, width: width, by: factor)
-        return Self.image(width: width / factor, pixels: thumbnailBody + rest)
+        let bytes = rowBytes
+        func extend(_ thumbnail: inout [UInt8], _ scaled: inout Int, from source: [UInt8]) -> [UInt8] {
+            let complete = source.count / bytes / factor * factor
+            if complete > scaled {
+                thumbnail += Self.scaledDown(Array(source[(scaled * bytes)..<(complete * bytes)]), width: width, by: factor)
+                scaled = complete
+            }
+            return Self.scaledDown(Array(source[(complete * bytes)...]), width: width, by: factor)
+        }
+        let restBelow = extend(&thumbnailBelow, &scaledBelow, from: below)
+        let restAbove = extend(&thumbnailAbove, &scaledAbove, from: above)
+        let small = width / factor * 4
+        let pixels = Self.scaledDown(header, width: width, by: factor) + Self.reversedRows(thumbnailAbove + restAbove, rowBytes: small)
+            + thumbnailBelow + restBelow + Self.scaledDown(footer, width: width, by: factor)
+        return Self.image(width: width / factor, pixels: pixels)
+    }
+
+    static func reversedRows(_ pixels: [UInt8], rowBytes: Int) -> [UInt8] {
+        guard rowBytes > 0, pixels.count > rowBytes else { return pixels }
+        var out = [UInt8](); out.reserveCapacity(pixels.count)
+        for start in stride(from: pixels.count - rowBytes, through: 0, by: -rowBytes) { out += pixels[start..<(start + rowBytes)] }
+        return out
     }
 
     /// Averages `factor` × `factor` blocks; a last, shorter run of rows averages what it has.
@@ -154,9 +242,10 @@ public final class ScrollStitcher {
 
     // MARK: Matching
 
-    /// Rows identical in place at the top and bottom of two frames, up to a third of the height each.
+    /// Rows identical in place at the top and bottom of two frames. The area can include a window's
+    /// toolbar and status bar, so each band may take up to nearly half of it.
     static func fixedBands(_ old: Signatures, _ new: Signatures) -> (top: Int, bottom: Int) {
-        let limit = old.rows / 3
+        let limit = old.rows * 9 / 20
         let same = { (y: Int) in old.difference(y, new, y) <= old.groups }
         let top = (0..<limit).first { !same($0) } ?? limit
         let bottom = (0..<limit).first { !same(old.rows - 1 - $0) } ?? limit

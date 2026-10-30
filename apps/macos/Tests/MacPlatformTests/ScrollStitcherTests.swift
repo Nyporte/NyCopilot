@@ -41,19 +41,26 @@ final class ScrollStitcherTests: XCTestCase {
         func rows(_ range: Range<Int>) -> [UInt8] { Array(pixels[(range.lowerBound * width * 4)..<(range.upperBound * width * 4)]) }
     }
 
-    private let width = 240, viewport = 300, header = 40, footer = 24
-    private lazy var page = Page(width: width, height: 4000, seed: 7)
+    /// The tracked area: a fixed 40-row header, 330 rows of page, a fixed 30-row footer.
+    private let width = 240, area = 400, header = 40, footer = 30
+    private var content: Int { area - header - footer }
+    private lazy var page = Page(width: width, height: 6000, seed: 7)
     private lazy var chrome = Page(width: width, height: header + footer, seed: 99)
+    /// The selection: 100 rows in the middle of the scrolling part.
+    private let middle = 150..<250
 
-    /// What the region shows with the page scrolled by `offset`: a fixed header, the page, a fixed footer.
+    /// What the area shows with the page scrolled by `offset`.
     private func frame(at offset: Int) -> PixelFrame {
-        let content = viewport - header - footer
-        return PixelFrame(width: width, height: viewport,
-                          pixels: chrome.rows(0..<header) + page.rows(offset..<(offset + content)) + chrome.rows(header..<(header + footer)))
+        PixelFrame(width: width, height: area,
+                   pixels: chrome.rows(0..<header) + page.rows(offset..<(offset + content)) + chrome.rows(header..<(header + footer)))
     }
 
-    private func expected(through offset: Int) -> [UInt8] {
-        chrome.rows(0..<header) + page.rows(0..<(offset + viewport - header - footer)) + chrome.rows(header..<(header + footer))
+    /// Selected rows inside the scrolling part map to page rows `offset + row - header`.
+    private func expected(_ selection: Range<Int>, from first: Int, to last: Int) -> [UInt8] {
+        let moving = max(selection.lowerBound, header)..<min(selection.upperBound, area - footer)
+        let top = selection.lowerBound < header ? chrome.rows(selection.lowerBound..<header) : []
+        let bottom = selection.upperBound > area - footer ? chrome.rows(header..<(header + selection.upperBound - (area - footer))) : []
+        return top + page.rows((first + moving.lowerBound - header)..<(last + moving.upperBound - header)) + bottom
     }
 
     private func pixels(_ image: CGImage?) -> [UInt8] {
@@ -61,75 +68,100 @@ final class ScrollStitcherTests: XCTestCase {
         return Array(data as Data)
     }
 
-    func testStitchesScrollsAndKeepsFixedBarsOnce() {
-        let stitcher = ScrollStitcher()
+    func testJumpsLargerThanTheSelectionStillConnect() {
+        let stitcher = ScrollStitcher(selection: middle)
         XCTAssertEqual(stitcher.add(frame(at: 0)), .started)
         XCTAssertEqual(stitcher.add(frame(at: 0)), .unchanged)
-        XCTAssertEqual(stitcher.add(frame(at: 37)), .appended(37))
-        XCTAssertEqual(stitcher.add(frame(at: 38)), .appended(1))
-        XCTAssertEqual(stitcher.add(frame(at: 150)), .appended(112))
-        // Scrolling back up is recognized as such; jumping past everything seen can't be placed.
-        // Either way, scrolling on from where the image ends resumes.
-        XCTAssertEqual(stitcher.add(frame(at: 90)), .behind)
-        XCTAssertEqual(stitcher.add(frame(at: 900)), .lost)
-        XCTAssertEqual(stitcher.add(frame(at: 260)), .appended(110))
-        for offset in stride(from: 300, through: 2200, by: 95) { _ = stitcher.add(frame(at: offset)) }
-        XCTAssertEqual(stitcher.add(frame(at: 2250)), .appended(50))
-
-        let result = pixels(stitcher.makeImage())
-        XCTAssertEqual(stitcher.height, 2250 + viewport)
-        XCTAssertEqual(result.count, expected(through: 2250).count)
-        XCTAssertTrue(result == expected(through: 2250), "stitched pixels differ from the page")
+        XCTAssertEqual(stitcher.add(frame(at: 37)), .added(37))
+        // Twice the selection's height in one frame: the rows are read from above the selection.
+        XCTAssertEqual(stitcher.add(frame(at: 238)), .added(201))
+        XCTAssertEqual(stitcher.add(frame(at: 439)), .added(201))
+        XCTAssertEqual(stitcher.add(frame(at: 450)), .added(11))
+        XCTAssertTrue(pixels(stitcher.makeImage()) == expected(middle, from: 0, to: 450))
     }
 
-    func testFirstFrameAloneIsTheWholeRegion() {
-        let stitcher = ScrollStitcher()
+    func testAGapHealsWhenScrollingBackALittle() {
+        let stitcher = ScrollStitcher(selection: middle)
+        stitcher.add(frame(at: 0))
+        stitcher.add(frame(at: 200))
+        // 250 rows at once: some never showed in the area, so nothing is added yet…
+        XCTAssertEqual(stitcher.add(frame(at: 450)), .lost)
+        // …until scrolling back brings them into view: rows 70–250 of this frame.
+        XCTAssertEqual(stitcher.add(frame(at: 380)), .added(180))
+        XCTAssertEqual(stitcher.add(frame(at: 580)), .added(200))
+        XCTAssertTrue(pixels(stitcher.makeImage()) == expected(middle, from: 0, to: 580))
+    }
+
+    func testScrollsUpAndDownFromTheMiddle() {
+        let stitcher = ScrollStitcher(selection: middle)
+        stitcher.add(frame(at: 1500))
+        for offset in stride(from: 1350, through: 0, by: -150) { XCTAssertEqual(stitcher.add(frame(at: offset)), .added(150)) }
+        // Back down over what's already there, then on past the starting point.
+        for offset in stride(from: 180, through: 1440, by: 180) { XCTAssertEqual(stitcher.add(frame(at: offset)), .covered) }
+        for offset in stride(from: 1620, through: 1980, by: 180) { XCTAssertEqual(stitcher.add(frame(at: offset)), .added(offset == 1620 ? 120 : 180)) }
+        XCTAssertEqual(stitcher.add(frame(at: 1980)), .unchanged)
+        XCTAssertEqual(stitcher.height, 1980 + 100)
+        XCTAssertTrue(pixels(stitcher.makeImage()) == expected(middle, from: 0, to: 1980))
+    }
+
+    func testFixedBarsInsideTheSelectionAppearOnce() {
+        let selection = 20..<390
+        let stitcher = ScrollStitcher(selection: selection)
+        for offset in stride(from: 0, through: 960, by: 120) { stitcher.add(frame(at: offset)) }
+        XCTAssertEqual(stitcher.height, 960 + selection.count)
+        XCTAssertTrue(pixels(stitcher.makeImage()) == expected(selection, from: 0, to: 960))
+    }
+
+    func testFirstFrameAloneIsTheSelection() {
+        let stitcher = ScrollStitcher(selection: middle)
         stitcher.add(frame(at: 120))
-        XCTAssertEqual(stitcher.height, viewport)
-        XCTAssertEqual(pixels(stitcher.makeImage()), frame(at: 120).pixels)
-        XCTAssertEqual(stitcher.makeThumbnail()?.height, viewport)
+        XCTAssertEqual(stitcher.height, middle.count)
+        XCTAssertEqual(pixels(stitcher.makeImage()), Array(frame(at: 120).pixels[(middle.lowerBound * width * 4)..<(middle.upperBound * width * 4)]))
     }
 
     func testStopsAtTheMaximumHeight() {
-        let stitcher = ScrollStitcher(maxHeight: 700)
+        let stitcher = ScrollStitcher(selection: middle, maxHeight: 700)
         stitcher.add(frame(at: 0))
         var outcome = ScrollStitcher.Outcome.started
-        for offset in stride(from: 100, through: 1000, by: 100) where outcome != .full { outcome = stitcher.add(frame(at: offset)) }
+        for offset in stride(from: 150, through: 1500, by: 150) where outcome != .full { outcome = stitcher.add(frame(at: offset)) }
         XCTAssertEqual(outcome, .full)
-        XCTAssertEqual(stitcher.add(frame(at: 1100)), .full)
+        XCTAssertEqual(stitcher.add(frame(at: 1650)), .full)
         XCTAssertGreaterThanOrEqual(stitcher.height, 700)
     }
 
-    func testBlankRegionsAreNotGuessed() {
+    func testBlankAreasAreNotGuessed() {
         let blank = PixelFrame(width: 100, height: 200, pixels: [UInt8](repeating: 255, count: 100 * 200 * 4))
         var shifted = blank.pixels
         for p in stride(from: 100 * 4 * 150, to: 100 * 4 * 151, by: 4) { shifted[p] = 0 }
-        let stitcher = ScrollStitcher()
+        let stitcher = ScrollStitcher(selection: 50..<150)
         stitcher.add(blank)
-        XCTAssertNotEqual(stitcher.add(PixelFrame(width: 100, height: 200, pixels: shifted)), .appended(1))
+        XCTAssertFalse([.added(1), .covered].contains(stitcher.add(PixelFrame(width: 100, height: 200, pixels: shifted))))
     }
 
-    func testThumbnailFollowsTheWholeImage() {
-        let big = Page(width: 1440, height: 5000, seed: 5)
-        func bigFrame(_ offset: Int) -> PixelFrame { PixelFrame(width: 1440, height: 600, pixels: big.rows(offset..<(offset + 600))) }
-        let stitcher = ScrollStitcher()
+    func testThumbnailStaysSmallHoweverLongTheImage() {
+        let big = Page(width: 720, height: 9000, seed: 5)
+        func bigFrame(_ offset: Int) -> PixelFrame { PixelFrame(width: 720, height: 800, pixels: big.rows(offset..<(offset + 800))) }
+        let stitcher = ScrollStitcher(selection: 0..<800)
         stitcher.add(bigFrame(0))
-        XCTAssertEqual(stitcher.makeThumbnail().map { [$0.width, $0.height] }, [360, 150])
-        for offset in stride(from: 260, through: 2860, by: 260) { stitcher.add(bigFrame(offset)) }
-        // Built up a few rows at a time, it matches scaling the finished image down in one go.
+        XCTAssertEqual(stitcher.makeThumbnail().map { [$0.width, $0.height] }, [360, 400])
+        for offset in stride(from: 540, through: 8100, by: 540) {
+            stitcher.add(bigFrame(offset))
+            _ = stitcher.makeThumbnail()
+        }
         let thumbnail = stitcher.makeThumbnail()!
-        let full = Array(stitcher.makeImage()!.dataProvider!.data! as Data)
-        XCTAssertEqual([thumbnail.width, thumbnail.height], [360, (stitcher.height + 3) / 4])
-        XCTAssertEqual(Array(thumbnail.dataProvider!.data! as Data), ScrollStitcher.scaledDown(full, width: 1440, by: 4))
+        // 8,900 rows at a half or a quarter would be past the limit, so an eighth.
+        XCTAssertEqual(stitcher.height, 8900)
+        XCTAssertEqual(thumbnail.width, 90)
+        XCTAssertEqual(thumbnail.height, 8900 / 8, accuracy: 3)
     }
 
     func testMatchingIsFast() {
-        let stitcher = ScrollStitcher()
         let big = Page(width: 1600, height: 6000, seed: 3)
         func bigFrame(_ offset: Int) -> PixelFrame { PixelFrame(width: 1600, height: 1400, pixels: big.rows(offset..<(offset + 1400))) }
+        let stitcher = ScrollStitcher(selection: 400..<900)
         stitcher.add(bigFrame(0))
         let started = Date()
-        XCTAssertEqual(stitcher.add(bigFrame(180)), .appended(180))
+        XCTAssertEqual(stitcher.add(bigFrame(180)), .added(180))
         let elapsed = Date().timeIntervalSince(started)
         print(String(format: "1600×1400 frame matched in %.1f ms", elapsed * 1000))
         XCTAssertLessThan(elapsed, 0.5)
