@@ -32,7 +32,7 @@ final class ClipboardPane: SettingsPane {
         clearButton.action = #selector(clearHistory)
         return [
             FormSection("History", footer: "Copies — text and images — stay on this Mac. Pinned entries (⌘P in the list) are kept until you unpin them. Passwords and anything an app marks private are never kept, nor copies from password managers.", rows: [
-                FormRow("Keep clipboard history", subtitle: "Text you copy, newest first; copying it again moves it to the top.", accessory: enabledSwitch),
+                FormRow("Keep clipboard history", subtitle: "Text and images you copy, newest first; copying it again moves it to the top.", accessory: enabledSwitch),
                 FormRow("Keep entries for", accessory: keepFor),
                 FormRow("Keep at most", accessory: atMost),
                 FormRow("Forget everything", accessory: clearButton)

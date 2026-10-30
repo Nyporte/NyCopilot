@@ -71,27 +71,37 @@ pub struct ChatPrompt {
 
 /// Validate and serialize without touching the network.
 pub fn request_body(prompt: &ChatPrompt, config: &ProviderConfig, api_key: &str) -> Result<Vec<u8>> {
-    config.validate()?;
-    if !config.is_complete() {
-        return Err(NyError::new("provider_not_configured", "Connect a model provider in Settings first."));
-    }
     if prompt.user.trim().is_empty() { return Err(NyError::new("empty_input", "Type something first.")); }
     if prompt.user.len() > MAX_INPUT_BYTES {
         return Err(NyError::new("input_too_large", "That’s more than 64 KB of text. Shorten it and try again."));
     }
+    messages_body(&[json!({ "role": "system", "content": prompt.system }), json!({ "role": "user", "content": prompt.user })], config, api_key)
+}
+
+/// A whole conversation — Chat Completions messages, whose content may mix text and images —
+/// validated and serialized. Callers bound its size; this checks the provider and the key.
+pub fn messages_body(messages: &[Value], config: &ProviderConfig, api_key: &str) -> Result<Vec<u8>> {
+    config.validate()?;
+    if !config.is_complete() {
+        return Err(NyError::new("provider_not_configured", "Connect a model provider in Settings first."));
+    }
     if api_key.chars().any(char::is_control) {
         return Err(NyError::new("invalid_key", "The API key can’t contain line breaks or control characters."));
     }
-    Ok(serde_json::to_vec(&json!({
-        "model": config.model,
-        "messages": [{ "role": "system", "content": prompt.system }, { "role": "user", "content": prompt.user }],
-        "stream": false,
-    }))?)
+    Ok(serde_json::to_vec(&json!({ "model": config.model, "messages": messages, "stream": false }))?)
 }
 
 /// Send one request and return the first choice's text.
 pub fn complete(prompt: &ChatPrompt, config: &ProviderConfig, api_key: &str) -> Result<String> {
-    let body = request_body(prompt, config, api_key)?;
+    send(request_body(prompt, config, api_key)?, config, api_key)
+}
+
+/// Send a whole conversation and return the reply's text.
+pub fn complete_messages(messages: &[Value], config: &ProviderConfig, api_key: &str) -> Result<String> {
+    send(messages_body(messages, config, api_key)?, config, api_key)
+}
+
+fn send(body: Vec<u8>, config: &ProviderConfig, api_key: &str) -> Result<String> {
     let mut request = http::agent().post(endpoint_url(&config.endpoint)?.as_str())
         .header("Content-Type", "application/json")
         .header("Accept", "application/json");

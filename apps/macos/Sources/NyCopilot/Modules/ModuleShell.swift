@@ -38,6 +38,8 @@ final class CopilotServices {
     /// Files a note — text, a screenshot, or both — in the inbox, noting the app (and its window) it
     /// came from; Inbox provides it.
     var sendToInbox: (_ text: String?, _ image: NSImage?, _ from: NSRunningApplication?) -> Void = { _, _, _ in }
+    /// Opens Ask AI on a thing — a selection, a screenshot, a note; Ask AI provides it.
+    var askAI: (_ material: AskMaterial) -> Void = { _ in }
 
     init(core: NyCore, preferences: Preferences, hotKeys: HotKeyCenter) {
         self.core = core
