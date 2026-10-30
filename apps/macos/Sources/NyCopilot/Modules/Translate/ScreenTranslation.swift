@@ -233,7 +233,7 @@ final class ScreenTranslator {
     /// Regroups a display's blocks and redraws its highlights; the card follows if its block went away.
     private func update(_ display: Display) {
         display.paragraphs = Self.paragraphs(display.entries, language: ScreenText.code(for: language))
-        display.overlay.show(display.entries.map(\.line.rect))
+        display.overlay.show(display.paragraphs.map { $0.entries.map(\.line.rect) })
         pointerMoved()
     }
 
@@ -394,9 +394,10 @@ private extension NSColor {
     }
 }
 
-/// One display's overlay, in the manner of Live Text: the screen dimmed a little except for its lines
-/// of text, which glow; the block under the pointer outlined; a glow along the screen's edges; and a
-/// status pill. Every click and scroll goes through to what's underneath.
+/// One display's overlay, in the manner of Live Text: the screen dimmed a little except for its text,
+/// each block (a paragraph's lines together) one glowing shape; the block under the pointer outlined;
+/// a glow along the screen's edges; and a status pill. Every click and scroll goes through to what's
+/// underneath.
 @MainActor
 final class TranslationOverlay: NSWindow {
     enum Status: Equatable {
@@ -422,11 +423,11 @@ final class TranslationOverlay: NSWindow {
         setFrame(screen.frame, display: false)
     }
 
-    /// The lines to highlight, in this display's points (top-left).
-    func show(_ lines: [CGRect]) { canvas.lines = lines }
+    /// The blocks to highlight, each as its lines, in this display's points (top-left).
+    func show(_ blocks: [[CGRect]]) { canvas.blocks = blocks.map(Canvas.outline) }
 
     private final class Canvas: NSView {
-        var lines: [CGRect] = [] { didSet { needsDisplay = true } }
+        var blocks: [NSBezierPath] = [] { didSet { needsDisplay = true } }
         var hovered: [CGRect] = [] { didSet { needsDisplay = true } }
         var status: Status = .reading { didSet { needsDisplay = true } }
         private let language: String
@@ -443,37 +444,77 @@ final class TranslationOverlay: NSWindow {
 
         override var isFlipped: Bool { true }
 
-        private func shape(_ line: CGRect) -> NSBezierPath {
-            NSBezierPath(roundedRect: line.insetBy(dx: -3, dy: -2), xRadius: 4, yRadius: 4)
+        /// One shape around a block's lines: each line padded a little, neighbours meeting halfway between
+        /// them, the left edge running down the lines' starts and the right edge back up their ends, every
+        /// corner rounded (less on small steps). A single line is a rounded rectangle.
+        static func outline(of lines: [CGRect]) -> NSBezierPath {
+            let rows = lines.map { $0.insetBy(dx: -3, dy: -2) }.sorted { $0.minY < $1.minY }
+            guard let first = rows.first else { return NSBezierPath() }
+            guard rows.count > 1 else { return NSBezierPath(roundedRect: first, xRadius: 4, yRadius: 4) }
+            // Where each row starts and ends vertically, with no gaps between neighbours.
+            var edges = [first.minY]
+            for (upper, lower) in zip(rows, rows.dropFirst()) { edges.append((upper.maxY + lower.minY) / 2) }
+            edges.append(rows.last!.maxY)
+            // Around the shape clockwise (top-left origin): across the top, down the right, back along the
+            // bottom, up the left.
+            var corners = [CGPoint(x: first.minX, y: edges[0])]
+            for (index, row) in rows.enumerated() {
+                corners.append(CGPoint(x: row.maxX, y: edges[index]))
+                corners.append(CGPoint(x: row.maxX, y: edges[index + 1]))
+            }
+            for (index, row) in rows.enumerated().reversed() {
+                corners.append(CGPoint(x: row.minX, y: edges[index + 1]))
+                corners.append(CGPoint(x: row.minX, y: edges[index]))
+            }
+            // Drop repeats and points in the middle of a straight run.
+            var points: [CGPoint] = []
+            for point in corners where points.last.map({ hypot($0.x - point.x, $0.y - point.y) > 0.5 }) ?? true { points.append(point) }
+            if let last = points.last, hypot(last.x - points[0].x, last.y - points[0].y) <= 0.5 { points.removeLast() }
+            points = points.indices.compactMap { index in
+                let before = points[(index + points.count - 1) % points.count], point = points[index], after = points[(index + 1) % points.count]
+                let straight = (abs(before.x - point.x) < 0.5 && abs(point.x - after.x) < 0.5) || (abs(before.y - point.y) < 0.5 && abs(point.y - after.y) < 0.5)
+                return straight ? nil : point
+            }
+            guard points.count >= 3 else { return NSBezierPath(roundedRect: rows.reduce(first) { $0.union($1) }, xRadius: 4, yRadius: 4) }
+            let path = NSBezierPath()
+            let count = points.count
+            func middle(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
+            path.move(to: middle(points[count - 1], points[0]))
+            for index in 0..<count {
+                let point = points[index], before = points[(index + count - 1) % count], after = points[(index + 1) % count]
+                let room = min(hypot(point.x - before.x, point.y - before.y), hypot(after.x - point.x, after.y - point.y)) / 2
+                path.appendArc(from: point, to: middle(point, after), radius: min(4, room))
+            }
+            path.close()
+            return path
         }
 
         override func draw(_ dirtyRect: NSRect) {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
-            // Dim the screen, then cut every line back out, so the text stands out as with Live Text.
+            // Dim the screen, then cut every block back out, so the text stands out as with Live Text.
             NSColor.black.withAlphaComponent(0.2).setFill()
             bounds.fill()
             context.setBlendMode(.clear)
-            for line in lines { shape(line).fill() }
+            for block in blocks { block.fill() }
             context.setBlendMode(.normal)
-            // A soft white glow along each line's edge.
+            // A soft white glow along each block's edge.
             NSGraphicsContext.saveGraphicsState()
             let glow = NSShadow()
             glow.shadowColor = NSColor.white.withAlphaComponent(0.9)
             glow.shadowBlurRadius = 5
             glow.set()
             NSColor.white.withAlphaComponent(0.75).setStroke()
-            for line in lines {
-                let path = shape(line)
-                path.lineWidth = 1
-                path.stroke()
+            for block in blocks {
+                block.lineWidth = 1
+                block.stroke()
             }
             NSGraphicsContext.restoreGraphicsState()
-            // The block under the pointer, outlined line by line.
-            NSColor.controlAccentColor.setStroke()
-            for line in hovered {
-                let path = shape(line)
-                path.lineWidth = 2
-                path.stroke()
+            // The block under the pointer, outlined.
+            if !hovered.isEmpty {
+                let outline = Self.outline(of: hovered)
+                NSColor.controlAccentColor.setStroke()
+                outline.lineWidth = 2
+                outline.stroke()
             }
             drawEdges()
             drawPill()

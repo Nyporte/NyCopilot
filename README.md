@@ -75,7 +75,8 @@ menu bar menu shows **Finish Setting Up…**.
     line breaks and indentation come back exactly.
   - **Test** in each section translates a sample with the values on screen, before you save.
 - **Hold ⌥⌘T** (the translate shortcut — a tap still opens the composer) to translate what's on
-  screen. Like Live Text, the screen dims a little and every line of text on every display glows —
+  screen. Like Live Text, the screen dims a little and the text on every display glows, a paragraph's
+  lines as one shape —
   the page itself stays exactly as it is. Point at a block that isn't in your language and its lines
   are outlined and a card with its translation floats just below it. Lines wrapped from one paragraph are one block, so sentences are
   translated whole; sidebar labels, list items, and headings are their own blocks. Text is read on
