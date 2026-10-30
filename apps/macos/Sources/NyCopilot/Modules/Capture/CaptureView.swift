@@ -20,19 +20,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private(set) var selection: CGRect?
     private(set) var annotations: [Annotation] = []
     private var redoStack: [Annotation] = []
-    /// What a click would take: the element under the pointer and each container up to its window,
-    /// innermost first; scrolling picks a larger or smaller one.
-    private var hoverCandidates: [ElementFinder.Candidate] = []
-    private var hoverLevel = 0
-    /// The depth chosen by scrolling, kept as the pointer moves: elsewhere the outline goes to an
-    /// element at the same depth, or else the nearest container above it.
-    private var pinnedDepth: Int?
-    private var hoverPID: pid_t = 0
-    private var scrollCredit: CGFloat = 0
-    private var hoverWindow: CGRect? {
-        get { hoverCandidates.indices.contains(hoverLevel) ? hoverCandidates[hoverLevel].rect : nil }
-        set { hoverCandidates = newValue.map { [ElementFinder.Candidate(rect: $0, depth: 0)] } ?? []; hoverLevel = 0 }
-    }
+    /// What a click would take: the element under the pointer, or — in window mode — its window.
+    private var hoverWindow: CGRect?
+    /// Tab switches between outlining elements and whole windows, as in Snipaste. Shared by every
+    /// display's overlay, and back to elements with each new capture.
+    static var detectsWindows = false
     private var pointer: CGPoint?
     private var drag: Drag = .none
     private var current: Annotation?
@@ -156,7 +148,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             if let textEditor { drawEditorFrame(textEditor.frame) }
         } else if let outlined, let hoverWindow {
             drawFrame(outlined, handles: false)
-            drawSizeLabel(for: outlined, measuring: hoverWindow, note: hoverCandidates.count > 1 ? "scroll ↕ to resize" : nil)
+            drawSizeLabel(for: outlined, measuring: hoverWindow, note: Self.detectsWindows ? "Window · Tab for element" : "Element · Tab for window")
         }
         if showsMagnifier, let pointer { drawMagnifier(at: pointer) }
     }
@@ -367,52 +359,29 @@ final class CaptureView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
-    /// The window under the pointer at once, then the element within it once the app answers.
+    /// In window mode, the window under the pointer. Otherwise the element under it, once its app
+    /// answers; meanwhile the outline stays where it is rather than flashing the whole window.
     private func hover(at point: CGPoint) {
         guard let window = frozen.windows.first(where: { $0.rect.contains(point) }) else { hoverWindow = nil; return }
-        // Moving within what's outlined keeps it until the app says otherwise; a new window shows at once.
-        if hoverPID != window.pid || !(hoverCandidates.last.map { $0.rect == window.rect } ?? false) || !(hoverWindow?.contains(point) ?? false) {
-            hoverWindow = window.rect
-        }
-        hoverPID = window.pid
+        guard !Self.detectsWindows, AXIsProcessTrusted() else { hoverWindow = window.rect; return }
+        if hoverWindow == nil { hoverWindow = window.rect }
         let origin = CaptureSession.globalOrigin(of: frozen.screen)
         let global = FrozenScreen.Window(rect: window.rect.offsetBy(dx: origin.x, dy: origin.y), pid: window.pid)
-        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global) { [weak self] found in
-            guard let self, selection == nil, !isPassive, let pointer, window.rect.contains(pointer) else { return }
-            let local = found.map { ElementFinder.Candidate(rect: $0.rect.offsetBy(dx: -origin.x, dy: -origin.y), depth: $0.depth) }
-                .filter { $0.rect.contains(pointer) || $0.depth == 0 }
-            guard !local.isEmpty else { return }
-            let shown = hoverWindow
-            hoverCandidates = local
-            hoverLevel = Self.level(in: local, pinned: pinnedDepth, shown: shown)
+        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global) { [weak self] element in
+            guard let self, selection == nil, !isPassive, !Self.detectsWindows, let pointer, window.rect.contains(pointer) else { return }
+            let local = element.offsetBy(dx: -origin.x, dy: -origin.y)
+            hoverWindow = local.contains(pointer) ? local : window.rect
             needsDisplay = true
         }
     }
 
-    /// Which candidate to outline. After scrolling: one at the chosen depth, or else the nearest
-    /// container above it (candidates run innermost first). Otherwise what's outlined already, if
-    /// it's still there, or the innermost element big enough to be a real control.
-    static func level(in candidates: [ElementFinder.Candidate], pinned: Int?, shown: CGRect?) -> Int {
-        if let pinned {
-            return candidates.firstIndex { $0.depth == pinned } ?? candidates.firstIndex { $0.depth < pinned } ?? candidates.count - 1
+    /// Tab: elements ⇄ windows, on every display at once.
+    private func toggleDetection() {
+        Self.detectsWindows.toggle()
+        for view in NSApp.windows.compactMap({ $0.contentView?.subviews.first as? CaptureView }) {
+            if let pointer = view.pointer, view.selection == nil, !view.isPassive { view.hover(at: pointer) }
+            view.needsDisplay = true
         }
-        return shown.flatMap { shown in candidates.firstIndex { $0.rect == shown } }
-            ?? candidates.firstIndex { $0.rect.width >= 20 && $0.rect.height >= 14 } ?? candidates.count - 1
-    }
-
-    /// Scrolling while nothing is selected: up for the containing element, down for a smaller one.
-    override func scrollWheel(with event: NSEvent) {
-        guard selection == nil, !isPassive, hoverCandidates.count > 1 else { super.scrollWheel(with: event); return }
-        let delta = event.scrollingDeltaY * (event.isDirectionInvertedFromDevice ? -1 : 1)
-        scrollCredit += event.hasPreciseScrollingDeltas ? delta : delta * 10
-        while abs(scrollCredit) >= 10 {
-            let step = scrollCredit > 0 ? 1 : -1
-            hoverLevel = min(max(hoverLevel + step, 0), hoverCandidates.count - 1)
-            scrollCredit -= CGFloat(step) * 10
-            pinnedDepth = hoverCandidates[hoverLevel].depth
-        }
-        if event.phase == .ended || event.momentumPhase == .ended { scrollCredit = 0 }
-        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -801,6 +770,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags) {
         case (53, _): onCancel?()
+        case (48, []) where selection == nil: toggleDetection()
         case (36, _), (76, _): finish(.copy)
         case (123...126, _): nudge(event.keyCode, resize: flags.contains(.shift))
         default:

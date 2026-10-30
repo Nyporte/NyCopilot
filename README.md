@@ -140,12 +140,11 @@ dragging it to the edge of the screen.
 
 **F1** freezes your screens for capturing:
 
-- **Select** by dragging, or hover and click to take something exactly: a button, a field, a sidebar,
-  a toolbar, a window, a menu bar item, or the Dock. The part under the pointer is outlined (read
-  through Accessibility); **scroll** up for what contains it — up to the whole window — or down for
-  something smaller. The level you scroll to stays as you move: elsewhere the outline goes to a part
-  at the same depth (another toolbar, another sidebar), or, where there's none, the nearest one
-  containing the pointer above it. There's one outline, and it glides from part to part. Drag the
+- **Select** by dragging, or hover and click to take something exactly. As in Snipaste, there are
+  two modes, and **Tab** switches between them: **elements** (the default) outlines the element under
+  the pointer — a button, a field, a sidebar, read through Accessibility — and **windows** outlines
+  the whole window, menu bar item, or the Dock. The label by the outline says which mode is on. One
+  outline glides from place to place, and stays put while the next element is being looked up. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size
