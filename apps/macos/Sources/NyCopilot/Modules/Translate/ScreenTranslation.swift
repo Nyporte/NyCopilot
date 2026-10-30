@@ -7,8 +7,9 @@ import MacPlatform
 /// floats beside it. The page itself is left exactly as it is. The overlay lets every click and scroll
 /// through, so the computer works as usual underneath, and it keeps up as the screen changes. Esc ends it.
 ///
-/// Keeping up cheaply: each display is glanced at five times a second at an eighth of its resolution.
-/// Where it changed, the highlights there are taken down at once — nothing stale stays up — and once
+/// Keeping up cheaply: each display is glanced at ten times a second at an eighth of its resolution.
+/// Where it changed, every block touching the change is taken down at once — nothing stale stays up —
+/// and once
 /// it has settled, only the changed band of the screen is read again, at full resolution. Only a block
 /// you point at is translated, once the pointer rests on it, and never twice in a session.
 @MainActor
@@ -56,7 +57,12 @@ final class ScreenTranslator {
         keys = ["api_key": (try? services.apiKey()) ?? "", "google_key": (try? services.googleKey()) ?? "",
                 "volcengine_key": (try? services.volcengineKey()) ?? ""]
         displays = NSScreen.screens.map { Display(screen: $0, overlay: TranslationOverlay(screen: $0, language: nativeLanguage)) }
-        displays.forEach { $0.overlay.orderFrontRegardless() }
+        displays.forEach { overlay in
+            // The dimming eases in rather than dropping over the screen.
+            overlay.overlay.alphaValue = 0
+            overlay.overlay.orderFrontRegardless()
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.2; overlay.overlay.animator().alphaValue = 1 }
+        }
         // Esc belongs to the overlay while it's up, whichever app is in front.
         escape = try? GlobalHotKey(identifier: 3000)
         escape?.onPress = { [weak self] in MainActor.assumeIsolated { self?.stop() } }
@@ -160,6 +166,15 @@ final class ScreenTranslator {
         return true
     }
 
+    /// The lines left once every block touching a change is taken down whole, and the areas of those
+    /// blocks (to read again).
+    static func removing(blocksTouching changed: [CGRect], from entries: [Entry], in blocks: [Paragraph]) -> (kept: [Entry], touched: [CGRect]) {
+        let touched = blocks.filter { block in block.entries.contains { entry in changed.contains { $0.intersects(entry.line.rect) } } }
+        let gone = touched.flatMap { $0.entries.map(\.line.rect) }
+        let kept = entries.filter { entry in !gone.contains(entry.line.rect) && !changed.contains { $0.intersects(entry.line.rect) } }
+        return (kept, touched.map(\.rect))
+    }
+
     // MARK: Watching
 
     private static let glanceScale: CGFloat = 1.0 / 8
@@ -168,7 +183,7 @@ final class ScreenTranslator {
     private func watch() async {
         while !Task.isCancelled {
             for display in displays { await glance(at: display) }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
 
@@ -178,10 +193,11 @@ final class ScreenTranslator {
         if let last = display.glance, last.width == grey.width, last.height == grey.height {
             let changed = Self.changes(from: last, to: grey)
             if !changed.isEmpty {
-                // Take down what's no longer true at once; read it again once it settles.
-                display.entries.removeAll { entry in changed.contains { $0.intersects(entry.line.rect) } }
+                // Take down every block the change touches, whole, at once; read it all again once it settles.
+                let (kept, touched) = Self.removing(blocksTouching: changed, from: display.entries, in: display.paragraphs)
+                display.entries = kept
                 update(display)
-                display.pending = changed.reduce(display.pending ?? changed[0]) { $0.union($1) }
+                display.pending = (changed + touched).reduce(display.pending ?? changed[0]) { $0.union($1) }
                 display.changedAt = Date()
                 if display.reading { display.changedDuringRead += changed }
             }
@@ -414,10 +430,14 @@ final class TranslationOverlay: NSWindow {
     }
 
     /// The blocks to highlight, each as its lines, in this display's points (top-left).
-    func show(_ blocks: [[CGRect]]) { canvas.blocks = blocks.map(Canvas.outline) }
+    func show(_ blocks: [[CGRect]]) { canvas.show(blocks) }
 
     private final class Canvas: NSView {
-        var blocks: [NSBezierPath] = [] { didSet { needsDisplay = true } }
+        /// Each block's shape, keyed by where it is, and when it appeared — new blocks fade in.
+        private var blocks: [(key: String, outline: NSBezierPath)] = []
+        private var appeared: [String: CFTimeInterval] = [:]
+        private var fading: Timer?
+        private static let fadeIn: CFTimeInterval = 0.25
         var hovered: [CGRect] = [] { didSet { needsDisplay = true } }
         var status: Status = .reading { didSet { needsDisplay = true } }
         private let language: String
@@ -503,26 +523,59 @@ final class TranslationOverlay: NSWindow {
             return rows.indices.map { CGRect(x: starts[$0], y: rows[$0].minY, width: ends[$0] - starts[$0], height: rows[$0].height) }
         }
 
+        /// New blocks fade in; blocks still there keep their place in the fade; blocks gone are gone at once.
+        func show(_ lines: [[CGRect]]) {
+            let now = CACurrentMediaTime()
+            blocks = lines.map { block in
+                let box = block.reduce(block[0]) { $0.union($1) }
+                return ("\(Int(box.minX)),\(Int(box.minY)),\(Int(box.width)),\(Int(box.height))", Self.outline(of: block))
+            }
+            appeared = Dictionary(blocks.map { ($0.key, appeared[$0.key] ?? now) }, uniquingKeysWith: { first, _ in first })
+            needsDisplay = true
+            guard fading == nil, appeared.values.contains(where: { now - $0 < Self.fadeIn }) else { return }
+            fading = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
+                MainActor.assumeIsolated {
+                    guard let self else { return timer.invalidate() }
+                    self.needsDisplay = true
+                    if !self.appeared.values.contains(where: { CACurrentMediaTime() - $0 < Self.fadeIn }) {
+                        timer.invalidate()
+                        self.fading = nil
+                    }
+                }
+            }
+        }
+
+        /// How far a block has faded in, eased.
+        private func opacity(_ key: String, at now: CFTimeInterval) -> CGFloat {
+            let progress = min(1, max(0, (now - (appeared[key] ?? 0)) / Self.fadeIn))
+            return CGFloat(progress * progress * (3 - 2 * progress))
+        }
+
         override func draw(_ dirtyRect: NSRect) {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
+            let now = CACurrentMediaTime()
             // Dim the screen, then cut every block back out, so the text stands out as with Live Text.
             NSColor.black.withAlphaComponent(0.2).setFill()
             bounds.fill()
-            context.setBlendMode(.clear)
-            for block in blocks { block.fill() }
+            context.setBlendMode(.destinationOut)
+            for block in blocks {
+                NSColor.black.withAlphaComponent(opacity(block.key, at: now)).setFill()
+                block.outline.fill()
+            }
             context.setBlendMode(.normal)
             // A soft white glow along each block's edge.
-            NSGraphicsContext.saveGraphicsState()
-            let glow = NSShadow()
-            glow.shadowColor = NSColor.white.withAlphaComponent(0.9)
-            glow.shadowBlurRadius = 5
-            glow.set()
-            NSColor.white.withAlphaComponent(0.75).setStroke()
             for block in blocks {
-                block.lineWidth = 1
-                block.stroke()
+                let shown = opacity(block.key, at: now)
+                NSGraphicsContext.saveGraphicsState()
+                let glow = NSShadow()
+                glow.shadowColor = NSColor.white.withAlphaComponent(0.9 * shown)
+                glow.shadowBlurRadius = 5
+                glow.set()
+                NSColor.white.withAlphaComponent(0.75 * shown).setStroke()
+                block.outline.lineWidth = 1
+                block.outline.stroke()
+                NSGraphicsContext.restoreGraphicsState()
             }
-            NSGraphicsContext.restoreGraphicsState()
             // The block under the pointer, outlined.
             if !hovered.isEmpty {
                 let outline = Self.outline(of: hovered)

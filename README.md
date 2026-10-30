@@ -83,8 +83,9 @@ menu bar menu shows **Finish Setting Up…**.
   your Mac; only a block you rest the pointer on is sent for translation (nothing is spent on text you
   don't look at), and each is translated once a session, so coming back to it is instant.
   You keep using the computer as usual: clicks and scrolling go straight through. It keeps up as the
-  screen changes: highlights disappear the moment what's under them changes, and once things settle,
-  only the changed part is read again. A glow around the screen edges and a pill at the bottom show it's on; **Esc** ends it
+  screen changes: when anything under a block changes, the whole block's highlight disappears at once
+  (within a tenth of a second), and once things settle that part of the screen is read again and its
+  highlights fade back in. A glow around the screen edges and a pill at the bottom show it's on; **Esc** ends it
   (or hold the shortcut again, or **Translate Screen** in the menu bar menu).
 - **⌥⌘H** opens **History**: search, copy (Return, ⌘C, double-click), delete (⌫). Only translations
   are stored, never your source text.
