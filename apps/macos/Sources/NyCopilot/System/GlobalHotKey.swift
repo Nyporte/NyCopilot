@@ -5,6 +5,8 @@ import MacPlatform
 /// Carbon registers one combination with the OS, without a keyboard hook or event polling.
 final class GlobalHotKey {
     var onPress: (() -> Void)?
+    /// The key came back up; for telling a tap from a hold.
+    var onRelease: (() -> Void)?
     private(set) var current: HotKeyCombination?
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
@@ -14,7 +16,8 @@ final class GlobalHotKey {
     /// Each instance owns a distinct numeric ID so handlers never consume one another's events.
     init(identifier: UInt32) throws {
         self.identifier = identifier
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventTypes = [EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+                          EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))]
         let status = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
             var received = EventHotKeyID()
@@ -23,9 +26,9 @@ final class GlobalHotKey {
             guard status == noErr, received.signature == GlobalHotKey.signature else { return OSStatus(eventNotHandledErr) }
             let owner = Unmanaged<GlobalHotKey>.fromOpaque(context).takeUnretainedValue()
             guard received.id == owner.identifier else { return OSStatus(eventNotHandledErr) }
-            owner.onPress?()
+            if GetEventKind(event) == UInt32(kEventHotKeyReleased) { owner.onRelease?() } else { owner.onPress?() }
             return noErr
-        }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), &handler)
+        }, 2, &eventTypes, Unmanaged.passUnretained(self).toOpaque(), &handler)
         guard status == noErr else { throw Failure(status: status) }
     }
 

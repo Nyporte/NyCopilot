@@ -19,6 +19,7 @@ final class TranslateShell: ModuleShell {
     }
 
     private let services: CopilotServices
+    private lazy var screen = ScreenTranslator(services: services)
     private let composer = ComposerPanel()
     private var historyWindow: HistoryWindow?
     private var target: InputTarget?
@@ -37,7 +38,9 @@ final class TranslateShell: ModuleShell {
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.compose, title: "Translate as you type",
                defaultCombination: .init(keyCode: 17, modifiers: HotKeyCombination.option | HotKeyCombination.command),
-               handler: { [weak self] in self?.beginComposition() }),
+               handler: { [weak self] in self?.beginComposition() },
+               // Held: the whole screen, translated in place.
+               longPress: { [weak self] in self?.screen.toggle() }),
          .init(id: Action.history, title: "Open translation history",
                defaultCombination: .init(keyCode: 4, modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.showHistory() })]
@@ -45,6 +48,7 @@ final class TranslateShell: ModuleShell {
 
     func menuItems() -> [NSMenuItem] {
         [services.menuItem("Translate…", symbol: "character.bubble", hotKey: Action.compose, target: self, action: #selector(beginFromMenu)),
+         services.menuItem("Translate Screen", symbol: "rectangle.and.text.magnifyingglass", hotKey: nil, target: self, action: #selector(toggleScreen)),
          services.menuItem("Translation History", symbol: "clock.arrow.circlepath", hotKey: Action.history, target: self, action: #selector(showHistory))]
     }
 
@@ -52,7 +56,10 @@ final class TranslateShell: ModuleShell {
         TranslatePane(services: services, openHistory: { [weak self] in self?.showHistory() })
     }
 
-    func shutdown() { cancelOperation() }
+    func shutdown() {
+        cancelOperation()
+        screen.stop()
+    }
 
     private var language: String { services.core.setting(.targetLanguage, default: "English") }
 
@@ -78,6 +85,7 @@ final class TranslateShell: ModuleShell {
 
     /// Opening from the menu bar happens while the source app is still frontmost, just like a shortcut.
     @objc private func beginFromMenu() { beginComposition() }
+    @objc private func toggleScreen() { screen.toggle() }
 
     /// Capture the focused field before NyCopilot activates. Fields that can't be read still get the
     /// composer, in copy mode, so the shortcut always does something useful.

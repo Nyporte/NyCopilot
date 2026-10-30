@@ -97,7 +97,31 @@ pub fn request_body(text: &str, target: &str) -> Result<Vec<u8>> {
 /// Run one translation. `app_id` empty means new-console credentials (`key` is the API key);
 /// otherwise `key` is the old console's access token.
 pub fn translate(endpoint: &str, app_id: &str, key: &str, text: &str, target: &str) -> Result<String> {
-    let body = request_body(text, target)?;
+    let (status, data) = post(endpoint, app_id, key, &request_body(text, target)?)?;
+    match decode_response(&data, text) {
+        Err(error) if error.code == "invalid_response" && !(200..300).contains(&status) => Err(http_status(status)),
+        result => result,
+    }
+}
+
+/// Many short texts (lines on screen), 16 to a request; one translation each, in order.
+pub fn translate_batch(endpoint: &str, app_id: &str, key: &str, texts: &[String], target: &str) -> Result<Vec<String>> {
+    let mut out = Vec::with_capacity(texts.len());
+    for chunk in texts.chunks(MAX_TEXTS) {
+        let body = serde_json::to_vec(&json!({ "target_language": target, "text_list": chunk }))?;
+        let (status, data) = post(endpoint, app_id, key, &body)?;
+        match decode_list(&data) {
+            Ok(list) if list.len() == chunk.len() => out.extend(list),
+            Ok(_) => return Err(NyError::new("invalid_response", "Volcengine returned a different number of texts than it was sent.")),
+            Err(error) if error.code == "invalid_response" && !(200..300).contains(&status) => return Err(http_status(status)),
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(out)
+}
+
+/// Send a request with the credentials in headers; the status and body, whatever the status.
+fn post(endpoint: &str, app_id: &str, key: &str, body: &[u8]) -> Result<(u16, Vec<u8>)> {
     if key.trim().is_empty() {
         return Err(NyError::new("invalid_key", "Add a Volcengine API key in Settings → Translate."));
     }
@@ -110,17 +134,23 @@ pub fn translate(endpoint: &str, app_id: &str, key: &str, text: &str, target: &s
         .header("X-Api-Request-Id", &Uuid::new_v4().to_string());
     request = if app_id.trim().is_empty() { request.header("X-Api-Key", key.trim()) }
               else { request.header("X-Api-App-Key", app_id.trim()).header("X-Api-Access-Key", key.trim()) };
-    let mut response = request.send(&body[..]).map_err(http::transport_error)?;
-    let status = response.status().as_u16();
+    let mut response = request.send(body).map_err(http::transport_error)?;
     // Failures usually still carry the JSON envelope, which says more than the status.
-    let data = http::read_body(&mut response)?;
-    match decode_response(&data, text) {
-        Err(error) if error.code == "invalid_response" && !(200..300).contains(&status) => Err(http_status(status)),
-        result => result,
-    }
+    Ok((response.status().as_u16(), http::read_body(&mut response)?))
 }
 
 pub fn decode_response(data: &[u8], source: &str) -> Result<String> {
+    let list = decode_list(data)?;
+    if list.len() != texts(source).len() {
+        return Err(NyError::new("invalid_response", "Volcengine returned a different number of lines than it was sent."));
+    }
+    let text = reassemble(source, list);
+    if text.trim().is_empty() { return Err(NyError::new("empty_response", "Volcengine returned an empty translation.")); }
+    Ok(text)
+}
+
+/// The translations in a reply, or its business error.
+fn decode_list(data: &[u8]) -> Result<Vec<String>> {
     #[derive(Deserialize)]
     struct Reply { code: i64, #[serde(default)] message: String, data: Option<Data> }
     #[derive(Deserialize)]
@@ -131,15 +161,7 @@ pub fn decode_response(data: &[u8], source: &str) -> Result<String> {
         .map_err(|_| NyError::new("invalid_response", "Unexpected response from Volcengine."))?;
     let detail = reply.message.chars().take(200).collect::<String>();
     match reply.code {
-        SUCCESS => {
-            let list: Vec<String> = reply.data.map(|d| d.translation_list.into_iter().map(|i| i.translation).collect()).unwrap_or_default();
-            if list.len() != texts(source).len() {
-                return Err(NyError::new("invalid_response", "Volcengine returned a different number of lines than it was sent."));
-            }
-            let text = reassemble(source, list);
-            if text.trim().is_empty() { return Err(NyError::new("empty_response", "Volcengine returned an empty translation.")); }
-            Ok(text)
-        }
+        SUCCESS => Ok(reply.data.map(|d| d.translation_list.into_iter().map(|i| i.translation).collect()).unwrap_or_default()),
         // A wrong key is reported as a generic 55000000 with the header named in the message.
         _ if ["api-key", "access-key", "app-key"].iter().any(|header| detail.to_lowercase().contains(header)) =>
             Err(NyError::new("invalid_key", format!("Volcengine rejected the credentials ({detail}). Check the key — and the App ID, for old-console credentials — in Settings → Translate."))),

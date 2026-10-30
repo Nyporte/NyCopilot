@@ -57,13 +57,45 @@ pub fn request_body(text: &str, target: &str, key: &str) -> Result<Vec<u8>> {
 
 /// Run one translation through the web app.
 pub fn translate(url: &str, key: &str, text: &str, target: &str) -> Result<String> {
-    let body = request_body(text, target, key)?;
+    decode_response(&post(url, &request_body(text, target, key)?)?, text)
+}
+
+/// The script takes up to this many texts per request.
+const BATCH: usize = 100;
+
+/// Many short texts (lines on screen), as few requests as the script allows; one translation each, in order.
+pub fn translate_batch(url: &str, key: &str, texts: &[String], target: &str) -> Result<Vec<String>> {
+    let mut out = Vec::with_capacity(texts.len());
+    for chunk in texts.chunks(BATCH) {
+        let body = serde_json::to_vec(&json!({ "key": key, "text": chunk, "source": "auto", "target": target }))?;
+        out.extend(decode_batch(&post(url, &body)?, chunk)?);
+    }
+    Ok(out)
+}
+
+/// One translations array for `sources`, in order; the script returns non-text items unchanged.
+pub fn decode_batch(data: &[u8], sources: &[String]) -> Result<Vec<String>> {
+    #[derive(Deserialize)]
+    struct Reply { code: u16, translated: Option<Vec<serde_json::Value>>, error: Option<String> }
+    let reply: Reply = serde_json::from_slice(data).map_err(|_| unexpected())?;
+    let detail = reply.error.unwrap_or_default().chars().take(200).collect::<String>();
+    match (reply.code, reply.translated) {
+        (200, Some(items)) if items.len() == sources.len() => Ok(items.into_iter().zip(sources)
+            .map(|(item, source)| item.as_str().map_or_else(|| source.clone(), |text| unescape(text.to_string(), source))).collect()),
+        (200, _) => Err(unexpected()),
+        (401, _) => Err(NyError::new("invalid_key", "The web app rejected the access key. Check it in Settings → Translate.")),
+        (_, _) => Err(NyError::new("google_error", format!("Google Translate failed: {detail}"))),
+    }
+}
+
+/// POST to the web app and follow its one redirect to the output, returning the body.
+fn post(url: &str, body: &[u8]) -> Result<Vec<u8>> {
     let start = ny_llm::endpoint_url(url)?;
     let agent = http::agent();
     let mut response = agent.post(start.as_str())
         .header("Content-Type", "application/json")
         .header("Accept", "application/json")
-        .send(&body[..]).map_err(http::transport_error)?;
+        .send(body).map_err(http::transport_error)?;
     let mut status = response.status().as_u16();
     if matches!(status, 301 | 302 | 303) {
         let location = response.headers().get("location").and_then(|value| value.to_str().ok()).unwrap_or_default();
@@ -75,7 +107,7 @@ pub fn translate(url: &str, key: &str, text: &str, target: &str) -> Result<Strin
         status = response.status().as_u16();
     }
     match status {
-        200..=299 => decode_response(&http::read_body(&mut response)?, text),
+        200..=299 => http::read_body(&mut response),
         401 | 403 => Err(access_denied()),
         404 => Err(NyError { code: "http_status".into(), status: Some(404),
                              message: "Web app not found (HTTP 404). Check the URL — it ends in /exec.".into() }),
@@ -270,6 +302,53 @@ pub(crate) mod tests {
             assert!(core.call("settings.set", json!({ "key": "translate.engine_order", "value": bad })).is_err(), "{bad}");
         }
         ENDPOINT_OVERRIDE.with(|url| *url.borrow_mut() = None);
+    }
+
+    #[test]
+    fn batches_go_through_every_engine() {
+        use crate::translate::{parse_batch_reply, translate_batch, Keys};
+        use crate::volcengine::tests::ENDPOINT_OVERRIDE;
+        let texts: Vec<String> = (1..=20).map(|n| format!("line {n}")).collect();
+
+        // Google: one request for all 20 (non-text items come back unchanged), through the redirect.
+        let reply = format!(r#"{{"code":200,"is_batch":true,"translated":[{}]}}"#,
+                            (1..=20).map(|n| format!("\"行 {n}\"")).collect::<Vec<_>>().join(","));
+        let (google, google_requests) = serve(vec![http("302 Found", "Location: /macros/echo?k=1\r\n", ""), http("200 OK", "", &reply)]);
+        let out = translate_batch_google(&google, &texts);
+        assert_eq!(out.len(), 20);
+        assert_eq!(out[19], "行 20");
+        assert!(google_requests.lock().unwrap()[0].contains(r#""text":["line 1","line 2""#));
+        assert_eq!(decode_batch(br#"{"code":200,"translated":["a", 5]}"#, &["x".into(), "keep".into()]).unwrap(), vec!["a", "keep"]);
+        assert_eq!(decode_batch(br#"{"code":200,"translated":["a"]}"#, &["x".into(), "y".into()]).unwrap_err().code, "invalid_response");
+
+        // Volcengine: 16 to a request.
+        let list = |n: usize| format!(r#"{{"code":20000000,"data":{{"translation_list":[{}]}}}}"#,
+                                      (0..n).map(|i| format!(r#"{{"translation":"t{i}"}}"#)).collect::<Vec<_>>().join(","));
+        let (volc, volc_requests) = serve(vec![http("200 OK", "", &list(16)), http("200 OK", "", &list(4))]);
+        let out = crate::volcengine::translate_batch(&format!("{volc}/mt"), "", "k", &texts, "zh").unwrap();
+        assert_eq!((out.len(), volc_requests.lock().unwrap().len()), (20, 2));
+
+        // A model's reply, fenced or not, must have one translation per text.
+        assert_eq!(parse_batch_reply("Sure!\n```json\n[\"一\", \"二\"]\n```", 2).unwrap(), vec!["一", "二"]);
+        assert_eq!(parse_batch_reply("[\"一\"]", 2).unwrap_err().code, "invalid_response");
+
+        // The chain: Google down, so the model translates the batch, and the notice says why.
+        let core = ny_core::Core::new(ny_core::Store::open_in_memory().unwrap(), crate::all(), "test", Box::new(|_| {})).unwrap();
+        let set = |key: &str, value: serde_json::Value| { core.call("settings.set", json!({ "key": key, "value": value })).unwrap(); };
+        let content = serde_json::to_string(&serde_json::to_string(&(1..=20).map(|n| format!("第{n}行")).collect::<Vec<_>>()).unwrap()).unwrap();
+        let (model, _) = serve(vec![http("200 OK", "", &format!(r#"{{"choices":[{{"message":{{"content":{content}}},"finish_reason":"stop"}}]}}"#))]);
+        set("translate.google_url", json!("http://127.0.0.1:9/exec"));
+        set("llm.endpoint", json!(format!("{model}/v1/chat/completions")));
+        set("llm.model", json!("m"));
+        ENDPOINT_OVERRIDE.with(|url| *url.borrow_mut() = None);
+        let batch = translate_batch(&core, &texts, "Simplified Chinese", &Keys { google_key: "k".into(), ..Default::default() }).unwrap();
+        assert_eq!((batch.engine, batch.texts[2].as_str()), ("model", "第3行"));
+        assert!(batch.notice.unwrap().starts_with("Google Translate failed, so the model translated this."));
+        assert_eq!(translate_batch(&core, &[], "Simplified Chinese", &Keys::default()).unwrap().texts.len(), 0);
+    }
+
+    fn translate_batch_google(base: &str, texts: &[String]) -> Vec<String> {
+        translate_batch(&format!("{base}/macros/s/x/exec"), "k", texts, "zh-CN").unwrap()
     }
 
     #[test]
