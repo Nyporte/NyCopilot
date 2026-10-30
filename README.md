@@ -140,20 +140,12 @@ dragging it to the edge of the screen.
 
 **F1** freezes your screens for capturing:
 
-- **Select** by dragging, or hover and click to take something exactly: a button, a card, a sidebar,
-  a list row, a toolbar, a window, a menu bar item, or the Dock. Apps build their interface out of
-  many nested layers, most of them invisible. When the capture opens, NyCopilot maps each window
-  once (the one under the pointer first): it reads the window's layers, keeps only the parts you can
-  see — a layer counts when its edges are drawn (or it's an image, list, table, web page, control,
-  or similar) — snaps each side onto the edge actually drawn, border included, merges near-identical
-  ones, and nests what's left into a fixed tree: window → panes → cards and bars → controls. Hovering
-  looks the pointer up in that tree, so the same spot always gives the same outline and parts side by
-  side sit at the same level; dots by the size show the levels under the pointer. The first outline
-  sets a level, and only scrolling changes it: **scroll** up for the part containing it, down for a
-  smaller one. As you move, the outline stays at that level — other cards, other rows — and where
-  there's nothing that deep, the nearest part containing the pointer is outlined. Hold **⌥** for the whole window. There's one outline, gliding from part to part, and it
-  grows to a much larger part only once the pointer rests there, so crossing the gap between two
-  buttons doesn't flash the bar they sit in. Drag the
+- **Select** by dragging, or hover and click to take something exactly: a button, a field, a sidebar,
+  a toolbar, a window, a menu bar item, or the Dock. The part under the pointer is outlined (read
+  through Accessibility); **scroll** up for what contains it — up to the whole window — or down for
+  something smaller. The level you scroll to stays as you move: elsewhere the outline goes to a part
+  at the same depth (another toolbar, another sidebar), or, where there's none, the nearest one
+  containing the pointer above it. There's one outline, and it glides from part to part. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size
