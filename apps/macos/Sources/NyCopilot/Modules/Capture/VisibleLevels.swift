@@ -60,19 +60,11 @@ final class GreyPixels: @unchecked Sendable {
     }
 }
 
-/// What the accessibility hierarchy under the pointer looks like to the eye. An app nests its
-/// interface in many layers, most of them invisible groups a few points apart; people screenshot
-/// what they see. So each layer is checked against the frozen pixels: its sides are snapped to the
-/// edges actually drawn nearby, layers that aren't visibly a box (and aren't the kind of thing people
-/// capture — an image, a list, web content…) are dropped, and near-duplicates become one level.
+/// What an app's accessibility layers look like to the eye. An app nests its interface in many
+/// layers, most of them invisible groups a few points apart; people screenshot what they see. So
+/// each layer is checked against the frozen pixels: its sides are snapped to the edges actually
+/// drawn nearby, and it counts only if it's visibly a box (or the kind of thing people capture).
 enum VisibleLevels {
-    /// One layer as the app reports it, innermost first.
-    struct Layer {
-        let rect: CGRect
-        let depth: Int
-        let role: String?
-    }
-
     /// Kinds of element worth a level of their own even without visible edges.
     static let meaningfulRoles: Set<String> = [
         kAXImageRole, kAXListRole, kAXTableRole, kAXOutlineRole, kAXBrowserRole, kAXScrollAreaRole, kAXTextAreaRole,
@@ -83,27 +75,6 @@ enum VisibleLevels {
     static let reach: CGFloat = 6
     /// A brightness jump (0–255, averaged along a side) that counts as a drawn edge.
     static let visibleJump = 7.0
-
-    /// The layers (innermost first, without the window) as the levels to offer, innermost first and
-    /// ending with the window. Without pixels, every layer counts as visible.
-    static func levels(from layers: [Layer], window: CGRect, pixels: GreyPixels?) -> [ElementFinder.Candidate] {
-        var kept: [(rect: CGRect, depth: Int, score: Int)] = []
-        for layer in layers {
-            guard layer.rect.width >= 12, layer.rect.height >= 12 else { continue }
-            let (rect, sides) = pixels.map { snapped(layer.rect, in: $0, window: window) } ?? (layer.rect, 4)
-            let meaningful = layer.role.map(meaningfulRoles.contains) ?? false
-            // The innermost layer stays, so small controls can still be taken on their own.
-            guard sides >= 3 || meaningful || (kept.isEmpty && min(rect.width, rect.height) >= 16) else { continue }
-            let score = sides * 2 + (meaningful ? 1 : 0)
-            if let last = kept.last, resembles(last.rect, rect) {
-                if score > last.score { kept[kept.count - 1] = (rect, layer.depth, score) }
-                continue
-            }
-            kept.append((rect, layer.depth, score))
-        }
-        if let last = kept.last, resembles(last.rect, window) { kept.removeLast() }
-        return kept.map { ElementFinder.Candidate(rect: $0.rect, depth: $0.depth) } + [ElementFinder.Candidate(rect: window, depth: 0)]
-    }
 
     /// The rectangle with each side moved (independently, up to `reach`) onto the strongest drawn edge
     /// near it, and how many of its sides are visible edges — a side along the window's own edge counts.

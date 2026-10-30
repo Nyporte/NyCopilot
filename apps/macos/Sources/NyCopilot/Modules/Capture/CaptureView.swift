@@ -20,23 +20,29 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private(set) var selection: CGRect?
     private(set) var annotations: [Annotation] = []
     private var redoStack: [Annotation] = []
-    /// What a click would take: the element under the pointer and each container up to its window,
-    /// innermost first; scrolling picks a larger or smaller one.
-    private var hoverCandidates: [ElementFinder.Candidate] = []
+    /// One visible part a click could take, and how deep it sits in its window's region tree.
+    struct Outline: Equatable {
+        let rect: CGRect
+        let depth: Int
+    }
+
+    /// What a click would take: the smallest visible part under the pointer and each one containing
+    /// it, out to the window (innermost first); scrolling picks a larger or smaller one.
+    private var hoverCandidates: [Outline] = []
     private var hoverLevel = 0
-    /// What scrolling chose — its size and depth — kept as the pointer moves: elsewhere the outline
-    /// goes to the element nearest that size, leaning toward containers.
-    private var pinned: (area: CGFloat, depth: Int)?
+    /// The depth scrolling chose, kept as the pointer moves: elsewhere the outline goes to the part
+    /// at that depth, or, where there's none so deep, the nearest one containing the pointer.
+    private var pinned: Int?
     /// An outline much larger than the current one waits for the pointer to stay put, so crossing
     /// the gap between two buttons doesn't flash the bar they sit in.
-    private var pendingGrowth: (candidates: [ElementFinder.Candidate], level: Int, work: DispatchWorkItem)?
+    private var pendingGrowth: (candidates: [Outline], level: Int, work: DispatchWorkItem)?
     private static let growthDelay: TimeInterval = 0.15
-    /// The frozen display in grey, for matching outlines to what's drawn; ready a moment after opening.
-    private var greyPixels: GreyPixels?
+    /// Every window's visible parts on this display, mapped in the background as the capture opens.
+    private let regions: RegionMap
     private var scrollCredit: CGFloat = 0
     private var hoverWindow: CGRect? {
         get { hoverCandidates.indices.contains(hoverLevel) ? hoverCandidates[hoverLevel].rect : nil }
-        set { hoverCandidates = newValue.map { [ElementFinder.Candidate(rect: $0, depth: 0)] } ?? []; hoverLevel = 0 }
+        set { hoverCandidates = newValue.map { [Outline(rect: $0, depth: 0)] } ?? []; hoverLevel = 0 }
     }
     private var pointer: CGPoint?
     private var drag: Drag = .none
@@ -95,11 +101,19 @@ final class CaptureView: NSView, NSTextViewDelegate {
         self.style = style
         self.onStyleChange = onStyleChange
         toolbar = CaptureToolbar(palette: palette)
+        let origin = CaptureSession.globalOrigin(of: frozen.screen)
+        regions = RegionMap(windows: frozen.windows.map { .init(rect: $0.rect.offsetBy(dx: origin.x, dy: origin.y), pid: $0.pid) })
         super.init(frame: CGRect(origin: .zero, size: frozen.screen.frame.size))
-        let image = frozen.image, scale = frozen.scale, origin = CaptureSession.globalOrigin(of: frozen.screen)
+        regions.onReady = { [weak self] index in
+            // Its window just got mapped: outline the part under the pointer now.
+            guard let self, let pointer, selection == nil, !isPassive, frozen.windows[index].rect.contains(pointer) else { return }
+            hover(at: pointer)
+            needsDisplay = true
+        }
+        let image = frozen.image, scale = frozen.scale
         Task { [weak self] in
             let pixels = await Task.detached(priority: .userInitiated) { GreyPixels(image, scale: scale, origin: origin) }.value
-            self?.greyPixels = pixels
+            self?.regions.start(with: pixels)
         }
         toolbar.isHidden = true
         toolbar.selectedColor = color
@@ -379,45 +393,38 @@ final class CaptureView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
-    /// The window under the pointer at once, then the element within it once the app answers.
+    /// The parts under the pointer, looked up in its window's region tree; until that window is
+    /// mapped (a moment after opening), the window itself.
     private func hover(at point: CGPoint) {
-        guard let window = frozen.windows.first(where: { $0.rect.contains(point) }) else { hoverWindow = nil; return }
-        // What's outlined stays until the app says what's under the pointer now — a few hundredths of
-        // a second — rather than flashing the whole window in between, even into another window.
-        // Without Accessibility, or with nothing outlined yet, the window shows at once.
-        if hoverWindow == nil || !AXIsProcessTrusted() {
-            pendingGrowth?.work.cancel()
-            pendingGrowth = nil
-            hoverWindow = window.rect
+        guard let index = frozen.windows.firstIndex(where: { $0.rect.contains(point) }) else { hoverWindow = nil; return }
+        let window = frozen.windows[index]
+        guard let tree = regions.tree(for: index) else {
+            regions.prioritize(index)
+            if hoverCandidates.last?.rect != window.rect { hoverWindow = window.rect }
+            return
         }
         let origin = CaptureSession.globalOrigin(of: frozen.screen)
-        let global = FrozenScreen.Window(rect: window.rect.offsetBy(dx: origin.x, dy: origin.y), pid: window.pid)
-        ElementFinder.shared.find(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y), in: global, pixels: greyPixels) { [weak self] found in
-            guard let self, selection == nil, !isPassive, let pointer, window.rect.contains(pointer) else { return }
-            let local = found.map { ElementFinder.Candidate(rect: $0.rect.offsetBy(dx: -origin.x, dy: -origin.y), depth: $0.depth) }
-                .filter { $0.rect.contains(pointer) || $0.depth == 0 }
-            guard !local.isEmpty else { return }
-            let shown = hoverWindow
-            let level = Self.level(in: local, pinned: pinned, shown: shown)
-            let next = local[level].rect
-            if let shown, Self.area(next) > Self.area(shown) * 2.5, !NSEvent.modifierFlags.contains(.option) {
-                // Growing a lot: only once the pointer has stayed on it a moment.
-                if let pending = pendingGrowth, pending.candidates[pending.level].rect == next {
-                    pendingGrowth = (local, level, pending.work)
-                    return
-                }
-                pendingGrowth?.work.cancel()
-                let work = DispatchWorkItem { [weak self] in self?.applyPendingGrowth() }
-                pendingGrowth = (local, level, work)
-                DispatchQueue.main.asyncAfter(deadline: .now() + Self.growthDelay, execute: work)
+        let path = tree.path(at: CGPoint(x: point.x + origin.x, y: point.y + origin.y))
+            .map { Outline(rect: $0.rect.offsetBy(dx: -origin.x, dy: -origin.y), depth: $0.depth) }
+        guard path != hoverCandidates || pendingGrowth != nil else { return }
+        let level = Self.level(in: path, pinned: pinned)
+        let next = path[level].rect
+        if let shown = hoverWindow, shown != next, Self.area(next) > Self.area(shown) * 2.5, !NSEvent.modifierFlags.contains(.option) {
+            // Growing a lot: only once the pointer has stayed on it a moment.
+            if let pending = pendingGrowth, pending.candidates[pending.level].rect == next {
+                pendingGrowth = (path, level, pending.work)
                 return
             }
             pendingGrowth?.work.cancel()
-            pendingGrowth = nil
-            hoverCandidates = local
-            hoverLevel = level
-            needsDisplay = true
+            let work = DispatchWorkItem { [weak self] in self?.applyPendingGrowth() }
+            pendingGrowth = (path, level, work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.growthDelay, execute: work)
+            return
         }
+        pendingGrowth?.work.cancel()
+        pendingGrowth = nil
+        hoverCandidates = path
+        hoverLevel = level
     }
 
     private func applyPendingGrowth() {
@@ -431,23 +438,13 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     private static func area(_ rect: CGRect) -> CGFloat { max(rect.width * rect.height, 1) }
 
-    /// Which candidate to outline. After scrolling: the one nearest the chosen size. Otherwise what's
-    /// outlined already, if it's still there, or the innermost element big enough to be a real control.
-    static func level(in candidates: [ElementFinder.Candidate], pinned: (area: CGFloat, depth: Int)?, shown: CGRect?) -> Int {
-        // ⌥ held: the whole window, the most common thing to capture.
+    /// Which part to outline (`candidates` run innermost first). With ⌥, the window. After
+    /// scrolling, the part at the chosen depth, or the nearest one out from it. Otherwise the
+    /// smallest part big enough to be a real control.
+    static func level(in candidates: [Outline], pinned: Int?) -> Int {
         if NSEvent.modifierFlags.contains(.option) { return candidates.count - 1 }
-        if let pinned {
-            // Apps nest invisible groups unevenly, so the same kind of part can sit at different depths;
-            // size is the steadier guide. Ratios count alike either way (twice as big, half as big),
-            // smaller ones a little more, so it leans toward containers; depth settles near ties.
-            func cost(_ candidate: ElementFinder.Candidate) -> Double {
-                let ratio = log(Double(area(candidate.rect) / max(pinned.area, 1)))
-                return (ratio < 0 ? -ratio * 1.5 : ratio) + 0.15 * Double(abs(candidate.depth - pinned.depth))
-            }
-            return candidates.indices.min { cost(candidates[$0]) < cost(candidates[$1]) } ?? candidates.count - 1
-        }
-        return shown.flatMap { shown in candidates.firstIndex { $0.rect == shown } }
-            ?? candidates.firstIndex { $0.rect.width >= 20 && $0.rect.height >= 14 } ?? candidates.count - 1
+        if let pinned { return candidates.firstIndex { $0.depth <= pinned } ?? candidates.count - 1 }
+        return candidates.firstIndex { $0.rect.width >= 20 && $0.rect.height >= 14 } ?? candidates.count - 1
     }
 
     /// Scrolling while nothing is selected: up for the containing element, down for a smaller one.
@@ -459,7 +456,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             let step = scrollCredit > 0 ? 1 : -1
             hoverLevel = min(max(hoverLevel + step, 0), hoverCandidates.count - 1)
             scrollCredit -= CGFloat(step) * 10
-            pinned = (Self.area(hoverCandidates[hoverLevel].rect), hoverCandidates[hoverLevel].depth)
+            pinned = hoverCandidates[hoverLevel].depth
             pendingGrowth?.work.cancel()
             pendingGrowth = nil
         }
@@ -975,7 +972,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         if selection == nil, !isPassive, hoverCandidates.count > 1 {
             pendingGrowth?.work.cancel()
             pendingGrowth = nil
-            hoverLevel = Self.level(in: hoverCandidates, pinned: pinned, shown: nil)
+            hoverLevel = Self.level(in: hoverCandidates, pinned: pinned)
             needsDisplay = true
         }
         let shiftDown = event.modifierFlags.contains(.shift)

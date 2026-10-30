@@ -141,16 +141,19 @@ dragging it to the edge of the screen.
 **F1** freezes your screens for capturing:
 
 - **Select** by dragging, or hover and click to take something exactly: a button, a card, a sidebar,
-  a list, a toolbar, a window, a menu bar item, or the Dock. Apps build their interface out of many
-  nested layers, most of them invisible; NyCopilot checks each against the frozen screen and offers
-  only the levels you can see — a layer counts when its edges are drawn (or it's an image, list,
-  table, web page, or similar) — with each side snapped onto the edge actually drawn, border
-  included, and near-identical layers merged. Typically that's three or four levels, from a control
-  out to the window; dots by the size show how many and which one is outlined. **Scroll** up for the
-  next one out, down for the next one in; hold **⌥** for the whole window. The size you scroll to
-  stays as you move (the outline goes to the level nearest it), there's one outline that glides
-  from part to part, and it grows to a much larger part only once the pointer rests there, so
-  crossing the gap between two buttons doesn't flash the bar they sit in. Drag the
+  a list row, a toolbar, a window, a menu bar item, or the Dock. Apps build their interface out of
+  many nested layers, most of them invisible. When the capture opens, NyCopilot maps each window
+  once (the one under the pointer first): it reads the window's layers, keeps only the parts you can
+  see — a layer counts when its edges are drawn (or it's an image, list, table, web page, control,
+  or similar) — snaps each side onto the edge actually drawn, border included, merges near-identical
+  ones, and nests what's left into a fixed tree: window → panes → cards and bars → controls. Hovering
+  looks the pointer up in that tree, so the same spot always gives the same outline and parts side by
+  side sit at the same level; dots by the size show the levels under the pointer. **Scroll** up for
+  the part containing it, down for a smaller one; the level you scroll to stays as you move — other
+  cards, other rows — and where there's nothing that deep, the nearest part containing the pointer is
+  outlined. Hold **⌥** for the whole window. There's one outline, gliding from part to part, and it
+  grows to a much larger part only once the pointer rests there, so crossing the gap between two
+  buttons doesn't flash the bar they sit in. Drag the
   selection or its handles to adjust; arrows nudge it by a point and ⇧ arrows resize it; ⌘A takes the
   whole screen; `,` and `.` recall regions you captured before.
 - **Inspect** with the magnifier: a pixel grid around the pointer, its position in pixels, the size
