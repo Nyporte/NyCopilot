@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import IOKit.ps
 import MacPlatform
 
 /// Screen translation: hold the translate shortcut and every line of text on every display is
@@ -27,6 +28,8 @@ final class ScreenTranslator {
     /// The block under the pointer, and the card about to show for it.
     private var hovered: (display: Display, paragraph: Paragraph)?
     private var pendingCard: DispatchWorkItem?
+    /// The last pointer movement or screen change: glances come quickly after it and ease off later.
+    private var lastActivity = Date()
     private var language = "", nativeLanguage = ""
     /// Blocks translated this session, by language and text, so switching back costs nothing.
     private var translations: [String: String] = [:]
@@ -68,7 +71,12 @@ final class ScreenTranslator {
         escape = GlobalHotKey.claim(HotKeyCombination(keyCode: UInt32(kVK_Escape), modifiers: 0)) { [weak self] in
             MainActor.assumeIsolated { self?.stop() }
         }
-        let moved: (NSEvent?) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.pointerMoved() } }
+        let moved: (NSEvent?) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.lastActivity = Date()
+                self?.pointerMoved()
+            }
+        }
         let kinds: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .scrollWheel]
         pointerMonitors = [NSEvent.addGlobalMonitorForEvents(matching: kinds) { moved($0) } as Any,
                            NSEvent.addLocalMonitorForEvents(matching: kinds) { moved($0); return $0 } as Any]
@@ -224,8 +232,21 @@ final class ScreenTranslator {
     private func watch() async {
         while !Task.isCancelled {
             for display in displays { await glance(at: display) }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            // Checked often, so moving the pointer after a still spell brings the next glance at once.
+            let started = Date()
+            while !Task.isCancelled, Date().timeIntervalSince(started) < glanceInterval {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
         }
+    }
+
+    /// The wait between glances: a tenth of a second while the screen or pointer moves, easing to
+    /// half a second once both have been still a while, and twice that on battery or in Low Power Mode.
+    private var glanceInterval: TimeInterval {
+        let still = Date().timeIntervalSince(lastActivity)
+        let base = still < 2 ? 0.1 : still < 10 ? 0.25 : 0.5
+        let onBattery = IOPSGetProvidingPowerSourceType(nil)?.takeUnretainedValue() as String? == kIOPMBatteryPowerKey
+        return onBattery || ProcessInfo.processInfo.isLowPowerModeEnabled ? base * 2 : base
     }
 
     private func glance(at display: Display) async {
@@ -240,6 +261,7 @@ final class ScreenTranslator {
                 update(display)
                 display.pending = (changed + touched).reduce(display.pending ?? changed[0]) { $0.union($1) }
                 display.changedAt = Date()
+                lastActivity = display.changedAt
                 if display.reading { display.changedDuringRead += changed }
             }
         }
