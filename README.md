@@ -130,11 +130,13 @@ dragging it to the edge of the screen.
   your Mac and offline, so T is instant; the button lights up when there's text. It reads the screen
   as it was, so your annotations don't get in the way.
 - **Scrolling capture** with **S** (or the tall-rectangle button). The selection stays live, outlined
-  on screen; scroll the page, document, or chat under it at a steady pace and a panel beside it shows
-  the image growing. Rows that stay put — toolbars, sticky headers, status bars — appear once. If you
-  scroll too fast or back up, it says so; scroll back a little and carry on. Finish with **Return**
-  (copy), **⌘S**, **⇧⌘S**, or **⌘T** (pinned to fit the screen), or **Esc** to cancel. Up to 30,000
-  pixels tall; NyCopilot's own windows are never in the picture.
+  on screen; scroll the page, document, or chat under it and a panel beside it shows the whole image
+  so far, shrinking to fit as it grows. Rows that stay put — toolbars, sticky headers, status bars —
+  appear once. While it runs, scrolling over the region is held to a pace the capture can follow (60
+  frames a second), so flicks don't skip content; scrolling back up is fine and carries on when you
+  come back down. Its keys work wherever the focus is: **Return** (copy), **⌘S**, **⇧⌘S**, **⌘T**
+  (pinned to fit the screen), or **Esc** to cancel. Up to 30,000 pixels tall; NyCopilot's own windows
+  are never in the picture.
 - **Finish** with **Return** or ⌘C to copy, **⌘T** to pin, **⌘S** to save with a dialog, **⇧⌘S** to save
   straight to your folder, or **Esc** (or right-click) to cancel.
 

@@ -30,7 +30,9 @@ public final class ScrollStitcher {
         case appended(Int)
         /// Nothing scrolled.
         case unchanged
-        /// No overlap with the last accepted frame: scrolled up, or too far at once.
+        /// Scrolled back up over content already in the image; scrolling down again carries on.
+        case behind
+        /// No overlap with the end of the image: scrolled too far at once, or far back up.
         case lost
         /// The image reached `maxHeight`; later frames are ignored.
         case full
@@ -48,6 +50,13 @@ public final class ScrollStitcher {
     /// Fixed rows at the top and bottom, settled by the first scroll.
     private var fixed: (top: Int, bottom: Int)?
     private var isFull = false
+    /// The image scaled down by `thumbnailFactor`, kept up to date as rows arrive.
+    private var thumbnailFactor = 1
+    private var thumbnailBody: [UInt8] = []
+    /// Body rows already in `thumbnailBody`, a multiple of `thumbnailFactor`.
+    private var thumbnailRows = 0
+    /// Previews fit the whole image in a narrow panel; this wide is plenty.
+    private static let thumbnailWidth = 360
 
     public init(maxHeight: Int = 30_000) {
         self.maxHeight = maxHeight
@@ -59,6 +68,7 @@ public final class ScrollStitcher {
         let signatures = Signatures(frame)
         guard let previous else {
             width = frame.width
+            thumbnailFactor = max(1, frame.width / Self.thumbnailWidth)
             body = frame.pixels
             self.previous = (frame, signatures)
             return .started
@@ -71,7 +81,10 @@ public final class ScrollStitcher {
 
         // Most of the band unchanged in place: no scroll (a blinking caret or a hover doesn't count).
         if Self.meanDifference(old, signatures, offset: 0, rows: band) <= 3 { return .unchanged }
-        guard let offset = Self.offset(from: old, to: signatures, band: band) else { return .lost }
+        guard let offset = Self.offset(from: old, to: signatures, band: band) else {
+            // The other way round: the last accepted frame continues below this one.
+            return Self.offset(from: signatures, to: old, band: band) != nil ? .behind : .lost
+        }
 
         // Rows that scrolled into view sit just above the fixed footer.
         let rowBytes = frame.width * 4
@@ -93,12 +106,50 @@ public final class ScrollStitcher {
     /// The image so far.
     public func makeImage() -> CGImage? { Self.image(width: width, pixels: body + footer) }
 
-    /// The last `rows` rows, for a live preview that stays cheap however long the image gets.
-    public func makeTail(rows: Int) -> CGImage? {
-        let all = body + footer, rowBytes = width * 4
-        guard rowBytes > 0 else { return nil }
-        let start = max(0, all.count - rows * rowBytes)
-        return Self.image(width: width, pixels: Array(all[start...]))
+    /// The whole image, small: each call scales down only the rows that arrived since the last, so a
+    /// live preview stays cheap however long the image gets.
+    public func makeThumbnail() -> CGImage? {
+        guard width > 0 else { return nil }
+        let factor = thumbnailFactor, rowBytes = width * 4, bodyRows = body.count / rowBytes
+        // The first scroll trims the first frame's footer from the body.
+        if thumbnailRows > bodyRows { thumbnailBody = []; thumbnailRows = 0 }
+        let complete = bodyRows / factor * factor
+        if complete > thumbnailRows {
+            thumbnailBody += Self.scaledDown(Array(body[(thumbnailRows * rowBytes)..<(complete * rowBytes)]), width: width, by: factor)
+            thumbnailRows = complete
+        }
+        let rest = Self.scaledDown(Array(body[(complete * rowBytes)...]) + footer, width: width, by: factor)
+        return Self.image(width: width / factor, pixels: thumbnailBody + rest)
+    }
+
+    /// Averages `factor` × `factor` blocks; a last, shorter run of rows averages what it has.
+    static func scaledDown(_ pixels: [UInt8], width: Int, by factor: Int) -> [UInt8] {
+        let rows = pixels.count / (width * 4), outWidth = width / factor
+        guard factor > 1 else { return pixels }
+        guard rows > 0, outWidth > 0 else { return [] }
+        let outRows = (rows + factor - 1) / factor
+        var out = [UInt8](repeating: 0, count: outRows * outWidth * 4)
+        pixels.withUnsafeBufferPointer { source in
+            out.withUnsafeMutableBufferPointer { target in
+                for outY in 0..<outRows {
+                    let firstRow = outY * factor, lastRow = min(firstRow + factor, rows)
+                    for outX in 0..<outWidth {
+                        var b = 0, g = 0, r = 0, a = 0
+                        for y in firstRow..<lastRow {
+                            var p = (y * width + outX * factor) * 4
+                            for _ in 0..<factor {
+                                b &+= Int(source[p]); g &+= Int(source[p + 1]); r &+= Int(source[p + 2]); a &+= Int(source[p + 3])
+                                p += 4
+                            }
+                        }
+                        let count = (lastRow - firstRow) * factor, q = (outY * outWidth + outX) * 4
+                        target[q] = UInt8(b / count); target[q + 1] = UInt8(g / count)
+                        target[q + 2] = UInt8(r / count); target[q + 3] = UInt8(a / count)
+                    }
+                }
+            }
+        }
+        return out
     }
 
     // MARK: Matching

@@ -1,11 +1,13 @@
 import AppKit
+import Carbon
 import MacPlatform
 import ScreenCaptureKit
 
 /// Scrolling capture: the selected region is streamed live while you scroll whatever is under it,
 /// and each frame is stitched onto the image as it arrives. A frame marks the region (scrolling
 /// passes straight through it); a panel beside it shows the image growing and finishes it like any
-/// capture — copy, save, or pin.
+/// capture — copy, save, or pin. While it runs, scrolling over the region is held to a pace the
+/// capture can follow, and its keys work whichever window has focus.
 @MainActor
 final class ScrollCapture {
     var onFinish: ((CaptureAction, NSImage) -> Void)?
@@ -19,6 +21,9 @@ final class ScrollCapture {
     private let panel: ScrollCapturePanel
     private let frames = FrameStitcher()
     private var stream: SCStream?
+    private var pace: ScrollPace?
+    private var keys: [GlobalHotKey] = []
+    private var hasImage = false
     private var isOver = false
     /// The stream's frame size, which a seed image must match.
     private var pixelSize: (width: Int, height: Int) {
@@ -34,7 +39,10 @@ final class ScrollCapture {
         panel = ScrollCapturePanel(beside: frame, on: screen)
         panel.onAction = { [weak self] action in self?.finish(action) }
         panel.onCancel = { [weak self] in self?.cancel() }
-        frames.onUpdate = { [weak self] outcome, height, tail in self?.panel.show(outcome, height: height, tail: tail) }
+        frames.onUpdate = { [weak self] outcome, height, thumbnail in
+            self?.hasImage = height > 0
+            self?.panel.show(outcome, height: height, thumbnail: thumbnail)
+        }
     }
 
     /// The outline and panel appear at once, starting from `seed` (the region as it was on screen);
@@ -43,6 +51,9 @@ final class ScrollCapture {
         border.orderFrontRegardless()
         panel.orderFrontRegardless()
         panel.makeKey()
+        claimKeys()
+        // A fifth of the region per scroll step: at 60 frames a second, consecutive frames always overlap.
+        pace = ScrollPace(region: region, maxStep: region.height * 0.2)
         if let seed { frames.seed(seed, size: pixelSize) }
         Task { [weak self] in
             do { try await self?.startStream() } catch {
@@ -70,7 +81,7 @@ final class ScrollCapture {
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.showsCursor = false
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         configuration.queueDepth = 4
         let stream = SCStream(filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
                               configuration: configuration, delegate: nil)
@@ -81,7 +92,29 @@ final class ScrollCapture {
         self.stream = stream
     }
 
+    /// The capture's keys, claimed system-wide while it runs: clicking the page being scrolled
+    /// moves the focus there, but Return, Esc, ⌘C, ⌘S, ⇧⌘S, and ⌘T still come here.
+    private func claimKeys() {
+        let command = HotKeyCombination.command, shift = HotKeyCombination.shift
+        let bindings: [(key: Int, modifiers: UInt32, action: CaptureAction?)] = [
+            (kVK_Escape, 0, nil), (kVK_Return, 0, .copy), (kVK_ANSI_KeypadEnter, 0, .copy), (kVK_ANSI_C, command, .copy),
+            (kVK_ANSI_S, command, .save), (kVK_ANSI_S, command | shift, .quickSave), (kVK_ANSI_T, command, .pin)
+        ]
+        for (index, binding) in bindings.enumerated() {
+            guard let key = try? GlobalHotKey(identifier: 1000 + UInt32(index)) else { continue }
+            key.onPress = { [weak self] in
+                MainActor.assumeIsolated {
+                    if let action = binding.action { self?.finish(action) } else { self?.cancel() }
+                }
+            }
+            // Another app may own one of these; the panel still answers it when it has focus.
+            guard (try? key.register(HotKeyCombination(keyCode: UInt32(binding.key), modifiers: binding.modifiers))) != nil else { continue }
+            keys.append(key)
+        }
+    }
+
     private func finish(_ action: CaptureAction) {
+        guard hasImage else { return }
         stop()
         guard let image = frames.image() else { onCancel?(); return }
         onFinish?(action, NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / screen.backingScaleFactor,
@@ -97,6 +130,9 @@ final class ScrollCapture {
         isOver = true
         if let stream { Task { try? await stream.stopCapture() } }
         stream = nil
+        pace?.stop()
+        pace = nil
+        keys = []
         border.orderOut(nil)
         panel.orderOut(nil)
     }
@@ -108,7 +144,7 @@ final class ScrollCapture {
         window.backgroundColor = .clear
         window.hasShadow = false
         window.ignoresMouseEvents = true
-        window.level = .floating
+        window.level = .statusBar
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         let view = BorderView()
@@ -127,11 +163,71 @@ final class ScrollCapture {
     }
 }
 
+/// Holds scrolling that starts over the region to a pace the capture can follow — no step larger
+/// than `maxStep` points — so nothing slips past between frames. Everywhere else, scrolling is left
+/// alone. It needs Accessibility, which NyCopilot already has for Translate; without it, nothing changes.
+private final class ScrollPace {
+    private var tap: CFMachPort?
+    private var source: CFRunLoopSource?
+    private let region: CGRect
+    private let maxStep: Double
+
+    /// `region` is in global top-left coordinates, the same as scroll events' locations.
+    init(region: CGRect, maxStep: Double) {
+        self.region = region
+        self.maxStep = maxStep
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+                                          eventsOfInterest: CGEventMask(1 << CGEventType.scrollWheel.rawValue),
+                                          callback: { _, type, event, info in
+            if let info {
+                let pace = Unmanaged<ScrollPace>.fromOpaque(info).takeUnretainedValue()
+                switch type {
+                case .tapDisabledByTimeout, .tapDisabledByUserInput:
+                    if let tap = pace.tap { CGEvent.tapEnable(tap: tap, enable: true) }
+                case .scrollWheel where pace.region.contains(event.location):
+                    ScrollPace.limit(event, to: pace.maxStep)
+                default: break
+                }
+            }
+            return Unmanaged.passUnretained(event)
+        }, userInfo: Unmanaged.passUnretained(self).toOpaque()) else { return }
+        self.tap = tap
+        source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    /// Scales every delta field together, so trackpads, mice, and momentum all slow the same way.
+    static func limit(_ event: CGEvent, to maxStep: Double) {
+        let points = Double(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1))
+        guard abs(points) > maxStep else { return }
+        let factor = maxStep / abs(points)
+        event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: Int64((points * factor).rounded()))
+        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1,
+                                  value: event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1) * factor)
+        let lines = event.getIntegerValueField(.scrollWheelEventDeltaAxis1)
+        if lines != 0 {
+            event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: lines.signum() * max(1, Int64((Double(abs(lines)) * factor).rounded())))
+        }
+    }
+
+    func stop() {
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let source { CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes) }
+        tap = nil
+        source = nil
+    }
+}
+
 /// Receives stream frames on its own queue and stitches them there, so the main thread only ever
 /// sees a small preview.
 private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable {
     let queue = DispatchQueue(label: "dev.nycopilot.scroll-capture", qos: .userInitiated)
-    /// Called on the main thread with the latest outcome, total height in pixels, and the newest rows.
+    /// Called on the main thread with the latest outcome, total height in pixels, and a thumbnail of
+    /// the whole image when it changed.
     var onUpdate: (@MainActor (ScrollStitcher.Outcome, Int, CGImage?) -> Void)?
     private let stitcher = ScrollStitcher()
 
@@ -160,10 +256,10 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
         case .started, .appended: changed = true
         default: changed = false
         }
-        let tail = changed ? stitcher.makeTail(rows: frame.height * 2) : nil
+        let thumbnail = changed ? stitcher.makeThumbnail() : nil
         let height = stitcher.height
         DispatchQueue.main.async { [weak self] in
-            MainActor.assumeIsolated { self?.onUpdate?(outcome, height, tail) }
+            MainActor.assumeIsolated { self?.onUpdate?(outcome, height, thumbnail) }
         }
     }
 
@@ -203,16 +299,16 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
     }
 }
 
-/// Beside the region: the image growing as you scroll, its height, a hint, and the actions.
-/// It takes keys without activating NyCopilot, so the app being scrolled stays in front.
+/// Beside the region: the whole image so far, its height, a hint, and the actions. It never
+/// activates NyCopilot, so the app being scrolled stays in front.
 @MainActor
 private final class ScrollCapturePanel: NSPanel {
     var onAction: ((CaptureAction) -> Void)?
     var onCancel: (() -> Void)?
 
-    private let preview = TailPreview()
+    private let preview = WholePreview()
     private let size = Design.label("", size: 12, weight: .semibold, color: .white)
-    private let hint = Design.wrapping("Scroll down in the outlined area. Go at a steady pace.", size: 11.5)
+    private let hint = Design.wrapping("Scroll down in the outlined area.", size: 11.5)
     private let copyButton = NSButton(title: "Copy  ↩", target: nil, action: nil)
 
     init(beside region: NSRect, on screen: NSScreen) {
@@ -220,7 +316,7 @@ private final class ScrollCapturePanel: NSPanel {
         let height = min(max(region.height, 260), 420)
         super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        level = .floating
+        level = .statusBar
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
@@ -229,7 +325,7 @@ private final class ScrollCapturePanel: NSPanel {
         appearance = NSAppearance(named: .darkAqua)
         contentView = makeContent()
         setFrameOrigin(Self.origin(for: frame.size, beside: region, in: screen.visibleFrame))
-        show(.started, height: 0, tail: nil)
+        show(.started, height: 0, thumbnail: nil)
     }
 
     override var canBecomeKey: Bool { true }
@@ -267,12 +363,13 @@ private final class ScrollCapturePanel: NSPanel {
         return material
     }
 
-    func show(_ outcome: ScrollStitcher.Outcome, height: Int, tail: CGImage?) {
-        if let tail { preview.image = tail }
+    func show(_ outcome: ScrollStitcher.Outcome, height: Int, thumbnail: CGImage?) {
+        if let thumbnail { preview.image = thumbnail }
         size.stringValue = height > 0 ? "\(height.formatted()) px tall" : "Starting…"
         copyButton.isEnabled = height > 0
         switch outcome {
-        case .lost: hint.stringValue = "Lost the place — scroll back up a little, then on."
+        case .lost: hint.stringValue = "Lost the place — scroll up a little to where it stopped."
+        case .behind: hint.stringValue = "Scroll back down to carry on."
         case .full: hint.stringValue = "That’s the maximum length. Copy, save, or pin it."
         case .appended: hint.stringValue = "Keep scrolling, or press Return to copy."
         default: break
@@ -309,8 +406,8 @@ private final class ScrollCapturePanel: NSPanel {
     @objc private func cancelTapped() { onCancel?() }
 }
 
-/// The newest rows, fitted to the width and anchored at the bottom, where new content arrives.
-private final class TailPreview: NSView {
+/// The whole image, fitted inside: as it grows taller it shrinks, so its full length is always in view.
+private final class WholePreview: NSView {
     var image: CGImage? { didSet { needsDisplay = true } }
 
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 120) }
@@ -320,13 +417,14 @@ private final class TailPreview: NSView {
         NSColor.black.withAlphaComponent(0.3).setFill()
         frame.fill()
         guard let image, let context = NSGraphicsContext.current?.cgContext else { return }
-        let scale = bounds.width / CGFloat(image.width)
-        let height = CGFloat(image.height) * scale
-        context.saveGState()
-        frame.addClip()
+        let inner = bounds.insetBy(dx: 6, dy: 6)
+        let scale = min(inner.width / CGFloat(image.width), inner.height / CGFloat(image.height))
+        let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+        // Centered across, top-aligned: the image grows downward, as the page does.
+        let rect = CGRect(x: inner.midX - size.width / 2, y: inner.maxY - size.height, width: size.width, height: size.height)
         context.interpolationQuality = .high
-        // Short images hug the top; taller ones keep their newest rows in view at the bottom.
-        context.draw(image, in: CGRect(x: 0, y: max(0, bounds.height - height), width: bounds.width, height: height))
-        context.restoreGState()
+        context.draw(image, in: rect)
+        NSColor.white.withAlphaComponent(0.25).setStroke()
+        NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5)).stroke()
     }
 }

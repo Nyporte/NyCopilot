@@ -68,8 +68,9 @@ final class ScrollStitcherTests: XCTestCase {
         XCTAssertEqual(stitcher.add(frame(at: 37)), .appended(37))
         XCTAssertEqual(stitcher.add(frame(at: 38)), .appended(1))
         XCTAssertEqual(stitcher.add(frame(at: 150)), .appended(112))
-        // Scrolling back up, or jumping past everything seen, can't be placed; scrolling on resumes.
-        XCTAssertEqual(stitcher.add(frame(at: 90)), .lost)
+        // Scrolling back up is recognized as such; jumping past everything seen can't be placed.
+        // Either way, scrolling on from where the image ends resumes.
+        XCTAssertEqual(stitcher.add(frame(at: 90)), .behind)
         XCTAssertEqual(stitcher.add(frame(at: 900)), .lost)
         XCTAssertEqual(stitcher.add(frame(at: 260)), .appended(110))
         for offset in stride(from: 300, through: 2200, by: 95) { _ = stitcher.add(frame(at: offset)) }
@@ -86,7 +87,7 @@ final class ScrollStitcherTests: XCTestCase {
         stitcher.add(frame(at: 120))
         XCTAssertEqual(stitcher.height, viewport)
         XCTAssertEqual(pixels(stitcher.makeImage()), frame(at: 120).pixels)
-        XCTAssertEqual(stitcher.makeTail(rows: 50)?.height, 50)
+        XCTAssertEqual(stitcher.makeThumbnail()?.height, viewport)
     }
 
     func testStopsAtTheMaximumHeight() {
@@ -106,6 +107,20 @@ final class ScrollStitcherTests: XCTestCase {
         let stitcher = ScrollStitcher()
         stitcher.add(blank)
         XCTAssertNotEqual(stitcher.add(PixelFrame(width: 100, height: 200, pixels: shifted)), .appended(1))
+    }
+
+    func testThumbnailFollowsTheWholeImage() {
+        let big = Page(width: 1440, height: 5000, seed: 5)
+        func bigFrame(_ offset: Int) -> PixelFrame { PixelFrame(width: 1440, height: 600, pixels: big.rows(offset..<(offset + 600))) }
+        let stitcher = ScrollStitcher()
+        stitcher.add(bigFrame(0))
+        XCTAssertEqual(stitcher.makeThumbnail().map { [$0.width, $0.height] }, [360, 150])
+        for offset in stride(from: 260, through: 2860, by: 260) { stitcher.add(bigFrame(offset)) }
+        // Built up a few rows at a time, it matches scaling the finished image down in one go.
+        let thumbnail = stitcher.makeThumbnail()!
+        let full = Array(stitcher.makeImage()!.dataProvider!.data! as Data)
+        XCTAssertEqual([thumbnail.width, thumbnail.height], [360, (stitcher.height + 3) / 4])
+        XCTAssertEqual(Array(thumbnail.dataProvider!.data! as Data), ScrollStitcher.scaledDown(full, width: 1440, by: 4))
     }
 
     func testMatchingIsFast() {
