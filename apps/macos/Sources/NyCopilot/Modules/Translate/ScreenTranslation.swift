@@ -448,7 +448,7 @@ final class TranslationOverlay: NSWindow {
         /// them, the left edge running down the lines' starts and the right edge back up their ends, every
         /// corner rounded (less on small steps). A single line is a rounded rectangle.
         static func outline(of lines: [CGRect]) -> NSBezierPath {
-            let rows = lines.map { $0.insetBy(dx: -3, dy: -2) }.sorted { $0.minY < $1.minY }
+            let rows = smoothed(lines.map { $0.insetBy(dx: -3, dy: -2) }.sorted { $0.minY < $1.minY })
             guard let first = rows.first else { return NSBezierPath() }
             guard rows.count > 1 else { return NSBezierPath(roundedRect: first, xRadius: 4, yRadius: 4) }
             // Where each row starts and ends vertically, with no gaps between neighbours.
@@ -487,6 +487,30 @@ final class TranslationOverlay: NSWindow {
             }
             path.close()
             return path
+        }
+
+        /// Edges evened out: consecutive lines whose starts (or ends) lie within about two characters of
+        /// each other share one edge, at the outermost of them so no text is cut — only real differences,
+        /// like a short last line or an indent, make a step.
+        static func smoothed(_ rows: [CGRect]) -> [CGRect] {
+            guard rows.count > 1 else { return rows }
+            let heights = rows.map(\.height).sorted()
+            let tolerance = heights[heights.count / 2] * 1.4
+            func even(_ values: [CGFloat], outermost: (CGFloat, CGFloat) -> CGFloat) -> [CGFloat] {
+                var result = values, start = 0
+                while start < values.count {
+                    var end = start + 1, edge = values[start]
+                    while end < values.count, abs(values[end] - edge) <= tolerance {
+                        edge = outermost(edge, values[end])
+                        end += 1
+                    }
+                    for index in start..<end { result[index] = edge }
+                    start = end
+                }
+                return result
+            }
+            let starts = even(rows.map(\.minX), outermost: min), ends = even(rows.map(\.maxX), outermost: max)
+            return rows.indices.map { CGRect(x: starts[$0], y: rows[$0].minY, width: ends[$0] - starts[$0], height: rows[$0].height) }
         }
 
         override func draw(_ dirtyRect: NSRect) {
