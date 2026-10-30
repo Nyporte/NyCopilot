@@ -271,7 +271,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
             parts += ["⌘C copy", "⌘I inbox", "⌘P pin"]
             if material.replaceable != nil { parts.append("⌘↩ replace selection") }
         }
-        parts.append("esc close")
+        parts.append("⌘/ keys")
         hint.stringValue = parts.joined(separator: "   ")
     }
 
@@ -291,6 +291,9 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
             guard let text else { return false }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+            return true
+        case "/":
+            KeySheet.shared.toggle("Ask AI keys", groups: KeyGuide.ask, over: panel)
             return true
         case "i":
             guard let lastAnswer else { return true }

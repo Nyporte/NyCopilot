@@ -29,7 +29,13 @@ final class InboxShell: ModuleShell {
         services.sendToInbox = { [weak self] text, image, app in
             Task { await self?.send(text: text, image: image, context: SourceContext.of(app)) }
         }
-        bar.onSave = { [weak self] text, context in self?.add(["text": text, "source": "typed"], context: context) }
+        bar.onSave = { [weak self] text, context in
+            guard let self, add(["text": text, "source": "typed"], context: context) else { return }
+            if Tips.due("inbox.selection", after: 3, times: 2) {
+                let key = services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? "the shortcut"
+                services.toast.show("Saved to Inbox", detail: "Tip: select text in any app and press \(key) to keep it without typing.", style: .success)
+            }
+        }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
         Self.images.removeUnused(core: services.core, collections: [.inboxNotes, .inboxDone, .inboxSnoozed])
         // Snoozed notes come back on time, or at launch when they fell due while NyCopilot was off.

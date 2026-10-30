@@ -410,6 +410,7 @@ private final class PinView: NSView {
     override func keyDown(with event: NSEvent) {
         guard let pin else { return }
         if readingTextKeyDown(event) { return }
+        if event.characters == "?" { KeySheet.shared.toggle("Pin keys", groups: KeyGuide.pin, over: pin); return }
         let command = event.modifierFlags.contains(.command)
         switch (event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
         case ("c", true): pin.copyImage()

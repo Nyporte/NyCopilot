@@ -25,6 +25,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     /// Tab switches between outlining whole windows and elements, as in Snipaste. Shared by every
     /// display's overlay, and back to windows with each new capture.
     static var detectsWindows = true
+    /// The first few captures show where the rest of the keys are.
+    static var showsKeysTip = false
     private var pointer: CGPoint?
     private var drag: Drag = .none
     private var current: Annotation?
@@ -279,6 +281,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
             lines.append((text([(Self.detectsWindows ? "Windows" : "Elements", smallBold, .white),
                                 ("  ·  ", small, dim), ("Tab", smallBold, .white),
                                 (Self.detectsWindows ? " for elements" : " for windows", small, dim)]), nil))
+            if Self.showsKeysTip {
+                lines.append((text([("?", smallBold, .white), (" all keys  ·  then ", small, dim), ("A", smallBold, .white), (" asks AI", small, dim)]), nil))
+            }
         }
         let padding: CGFloat = 9, swatchIndent: CGFloat = 17, lineHeight: CGFloat = 15
         let textWidth = lines.map { $0.text.size().width + ($0.swatch == nil ? 0 : swatchIndent) }.max() ?? 0
@@ -797,6 +802,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     override func keyDown(with event: NSEvent) {
         if isReadingText { readingTextKeyDown(event); return }
+        if event.characters == "?" { KeySheet.shared.toggle("Screenshot keys", groups: KeyGuide.capture, over: window); return }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags) {

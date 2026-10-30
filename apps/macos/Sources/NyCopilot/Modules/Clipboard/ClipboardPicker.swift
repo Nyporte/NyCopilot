@@ -34,6 +34,8 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let search = NSSearchField()
     private let table = NSTableView()
     private let empty = Design.label("", size: 12.5, color: .tertiaryLabelColor)
+    private let hint = Design.label("", size: 10.5, color: .tertiaryLabelColor)
+    private static let keysHint = "↩ paste   ⌘P pin   ⌘R translate   ⌘I inbox   ⌘A ask   ⌘/ keys"
     private var items: [Item] = []
     /// The first `pinnedCount` items are pinned.
     private var pinnedCount = 0
@@ -78,7 +80,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
 
-        let hint = Design.label("↩ paste   ⌘C copy   ⌘P pin   ⌘R translate   ⌘I inbox   ⌘A ask", size: 10.5, color: .tertiaryLabelColor)
+        hint.stringValue = Self.keysHint
         for view in [search, scroll, hint, empty] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             material.addSubview(view)
@@ -106,6 +108,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         self.target = target
         self.source = source
         search.stringValue = ""
+        hint.stringValue = Tips.due("clipboard.pin", after: 3, times: 2) ? "Tip: ⌘P keeps an entry at the top, for good" : Self.keysHint
         reload()
         let pointer = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
@@ -178,6 +181,9 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
                 NSSound.beep()
                 empty.stringValue = error.localizedDescription
             }
+            return true
+        case "/":
+            KeySheet.shared.toggle("Clipboard keys", groups: KeyGuide.clipboard, over: panel)
             return true
         case "r", "i", "a":
             // ⌘A selects the search text while there is some.

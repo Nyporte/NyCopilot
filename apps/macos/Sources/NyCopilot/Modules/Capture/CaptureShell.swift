@@ -93,6 +93,7 @@ final class CaptureShell: ModuleShell {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             previousApp = NSWorkspace.shared.frontmostApplication
         }
+        CaptureView.showsKeysTip = Tips.due("capture.keys", after: 2, times: 3)
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -176,7 +177,14 @@ final class CaptureShell: ModuleShell {
             }
             record(image, region: region, screen: screen, path: nil)
             end()
+            tipAboutPins(near: pin.frame)
         }
+    }
+
+    private func tipAboutPins(near frame: NSRect) {
+        guard Tips.due("pin.keys", times: 2) else { return }
+        services.toast.show("Pinned", detail: "Scroll to zoom, ⌥-scroll for opacity. Click it and press ? for all its keys.", style: .info,
+                            near: frame)
     }
 
     /// The region stays live; whatever is scrolled under it is stitched into one tall image, which
@@ -302,6 +310,7 @@ final class CaptureShell: ModuleShell {
         let frame = NSRect(x: mouse.x - picture.size.width / 2, y: mouse.y - picture.size.height / 2,
                            width: picture.size.width, height: picture.size.height)
         self.board.pin(picture, at: frame, shadow: services.core.setting(.pinShadow, default: true))
+        tipAboutPins(near: frame)
     }
 
     private static func card(_ text: String) -> NSImage {

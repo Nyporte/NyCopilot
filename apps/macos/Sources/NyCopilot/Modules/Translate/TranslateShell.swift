@@ -217,6 +217,11 @@ final class TranslateShell: ModuleShell {
         do {
             try await target.insert(text, prepareForPaste: { self.composer.hideForInsertion() })
             Diagnostics.note("paste", target.isVerified ? "pasted" : "pasted unverified (also on the clipboard)")
+            if Tips.due("translate.screen", after: 5, times: 2) {
+                let key = services.hotKeys.combination(for: Action.compose).map(KeyNames.display) ?? "the shortcut"
+                services.toast.show("Tip: hold \(key) to translate the whole screen", detail: "Point at any text to read it in your language.",
+                                    style: .info, near: anchor)
+            }
         } catch is CancellationError {
         } catch TemporaryPasteboard.Failure.restoreFailed {
             services.toast.show("Pasted", detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)

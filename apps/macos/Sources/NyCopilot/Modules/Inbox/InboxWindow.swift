@@ -177,10 +177,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             button.toolTip = tip
         }
         let actions = Design.hstack([doneButton, sendButton, laterButton, copyButton, openButton, Design.spacer(), deleteButton], spacing: 8)
-        let hint = Design.label("Space done   S send   L later   R translate   A ask   P pin   ↩ edit   ⌫ delete   ⌘Z undo", size: 11, color: .tertiaryLabelColor)
+        let hint = Design.label("Space done   S send   L later   R translate   A ask   P pin   ? all keys", size: 11, color: .tertiaryLabelColor)
         hint.lineBreakMode = .byTruncatingTail
-        hint.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
-        hint.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for view in [preview, editorScroll, sourceLabel, timeLabel, actions, hint] as [NSView] { detail.addArrangedSubview(view) }
         detail.orientation = .vertical
         detail.alignment = .leading
@@ -189,7 +187,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 14, right: 18)
         for view in [editorScroll, actions] as [NSView] { view.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -36).isActive = true }
         // A long address is cut in the middle (the whole of it shows on hover), never past the pane.
-        for label in [sourceLabel, timeLabel] {
+        for label in [sourceLabel, timeLabel, hint] {
             label.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
@@ -370,6 +368,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         switch key {
         case .space: toggleDoneSelected()
         case .character("s") where tab == .inbox: showSendMenu()
+        case .character("?"): KeySheet.shared.toggle("Inbox keys", groups: KeyGuide.inbox, over: window)
         case .character("r"): verb(.translate)
         case .character("a"): verb(.ask)
         case .character("p"): verb(.pin)

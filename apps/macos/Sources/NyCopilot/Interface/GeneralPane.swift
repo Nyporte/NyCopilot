@@ -12,6 +12,7 @@ final class GeneralPane: SettingsPane {
     private let loginSwitch = NSSwitch()
     private let loginNote = Design.wrapping("", size: 11.5)
     private var poll: Timer?
+    private lazy var shortcuts = ShortcutEditor(services: services)
 
     init(services: CopilotServices) {
         self.services = services
@@ -43,6 +44,9 @@ final class GeneralPane: SettingsPane {
         var sections: [NSView] = [
             FormSection("Permissions", rows: [access, recording]),
             FormSection("Startup", rows: [login]),
+            shortcuts.section("Shortcuts", footer: "Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys.",
+                              actions: [AppDelegate.showShortcutsAction]),
+            shortcuts.errorLabel,
             FormSection("Troubleshooting", rows: [diagnostics]),
         ]
         let guide = Design.button("Show Setup Guide…", target: self, action: #selector(showGuide))
@@ -54,6 +58,7 @@ final class GeneralPane: SettingsPane {
     }
 
     override func paneWillAppear() {
+        shortcuts.refresh()
         refreshAccess()
         loginSwitch.state = LaunchAtLogin.isEnabled || LaunchAtLogin.needsApproval ? .on : .off
         showLoginNote()

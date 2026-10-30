@@ -1,4 +1,5 @@
 import AppKit
+import MacPlatform
 
 /// Hosts the core and the module shells: menu bar item, app menu, Settings, and first-run guide.
 @MainActor
@@ -44,6 +45,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let available = Set((try? core.call("core.info") as? [String: Any])?["modules"] as? [String] ?? [])
         modules = makeModules().filter { available.contains($0.id) }
         for module in modules { module.hotKeyActions.forEach(services.hotKeys.add) }
+        services.hotKeys.add(.init(id: Self.showShortcutsAction, title: "Show all keyboard shortcuts",
+                                   defaultCombination: .init(keyCode: 44, modifiers: HotKeyCombination.option | HotKeyCombination.command), // ⌥⌘/
+                                   handler: { [weak self] in self?.showShortcuts() }))
         modules.compactMap { $0 as? WindowsShell }.first?.importRectangleOnce()
 
         installMenus()
@@ -117,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             module.menuItems().forEach(menu.addItem)
             menu.addItem(.separator())
         }
+        menu.addItem(services.menuItem("Keyboard Shortcuts", symbol: "keyboard", hotKey: Self.showShortcutsAction,
+                                       target: self, action: #selector(showShortcutsFromMenu)))
         let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
@@ -140,6 +146,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showWelcomeFromMenu() { showWelcome() }
+
+    static let showShortcutsAction = "app.shortcuts"
+
+    @objc private func showShortcutsFromMenu() { showShortcuts() }
+
+    /// Every module's shortcuts as they're set now, then the verbs that work on anything.
+    private func showShortcuts() {
+        var groups: [KeySheet.Group] = modules.compactMap { module in
+            var keys = module.hotKeyActions.compactMap { action in
+                services.hotKeys.combination(for: action.id).map { (KeyNames.display($0), action.title) }
+            }
+            guard !keys.isEmpty else { return nil }
+            if keys.count > 7 { keys = Array(keys.prefix(6)) + [("…", "\(keys.count - 6) more in Settings → \(module.title)")] }
+            return KeySheet.Group(title: module.title, keys: keys)
+        }
+        groups.append(KeyGuide.verbs)
+        if let combination = services.hotKeys.combination(for: Self.showShortcutsAction) {
+            groups.append(.init(title: "Help", keys: [(KeyNames.display(combination), "This sheet"), ("?", "A surface’s own keys (⌘/ where you type)")]))
+        }
+        KeySheet.shared.toggle("Keyboard Shortcuts", groups: groups)
+    }
 
     private func showWelcome() {
         if welcomeWindow == nil { welcomeWindow = WelcomeWindow(services: services) }
