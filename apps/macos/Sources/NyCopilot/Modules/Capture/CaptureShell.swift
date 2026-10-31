@@ -28,6 +28,7 @@ final class CaptureShell: ModuleShell {
         board.onVerb = { [weak services] verb, pin in services?.act(verb, text: nil, image: pin.displayedImage, near: pin.frame) }
         services.pinOnScreen = { [weak self] text, image in self?.pin(text: text, image: image) }
         board.restore()
+        GifRecording.removeLeftovers()
         // The display lookup is the slowest part of starting a capture; have it ready.
         ScreenGrabber.warmUp()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
@@ -84,6 +85,8 @@ final class CaptureShell: ModuleShell {
     private struct Region: Codable { let x, y, w, h: Double }
 
     func startCapture() {
+        // The shortcut again ends a recording.
+        if let recording, recording.isRecording { recording.stop(); return }
         guard session == nil else { return }
         guard ScreenGrabber.hasPermission else {
             ScreenGrabber.requestPermission()
@@ -122,6 +125,10 @@ final class CaptureShell: ModuleShell {
                     self?.end()
                     self?.startScrolling(region, frozen: frozen)
                 }
+                session.onRecord = { [weak self] region, screen in
+                    self?.end()
+                    self?.startRecording(region, on: screen)
+                }
                 session.onTextCopied = { [weak self] lines, region, _ in
                     self?.end()
                     self?.services.toast.show("Copied \(lines) line\(lines == 1 ? "" : "s") of text", style: .success,
@@ -147,8 +154,8 @@ final class CaptureShell: ModuleShell {
 
     private func finish(_ action: CaptureAction, image: NSImage, region: CGRect, screen: NSScreen) {
         switch action {
-        case .scroll:
-            break // Handled by the session's onScroll.
+        case .scroll, .record:
+            break // Handled by the session's onScroll and onRecord.
         case .inbox:
             record(image, region: region, screen: screen, path: nil)
             end()
@@ -192,6 +199,87 @@ final class CaptureShell: ModuleShell {
         guard Tips.due("pin.keys", times: 2) else { return }
         services.toast.show("Pinned", detail: "Scroll to zoom, ⌥-scroll for opacity. Click it and press ? for all its keys.", style: .info,
                             near: frame)
+    }
+
+    // MARK: GIF recording
+
+    private var recording: GifRecording?
+    private var preview: GifPreview?
+
+    private func startRecording(_ region: CGRect, on screen: NSScreen) {
+        let core = services.core
+        let recording = GifRecording(region: region, screen: screen, fps: core.setting(.gifFPS, default: 15),
+                                     retina: core.setting(.gifRetina, default: false), showsCursor: core.setting(.gifCursor, default: true))
+        recording.onFinish = { [weak self] clip in
+            self?.recording = nil
+            self?.review(clip, region: CaptureSession.appKitRect(region), screen: screen)
+        }
+        recording.onCancel = { [weak self] in self?.recording = nil }
+        recording.onFailure = { [weak self] error in
+            self?.recording = nil
+            self?.services.toast.show("Couldn’t record the GIF", detail: error.localizedDescription, style: .warning)
+        }
+        self.recording = recording
+        recording.start()
+    }
+
+    private func review(_ clip: GifClip, region: NSRect, screen: NSScreen) {
+        let preview = GifPreview(clip: clip, near: region, on: screen)
+        preview.onAction = { [weak self] action, clip in
+            self?.preview = nil
+            self?.finish(action, clip: clip, near: region)
+        }
+        preview.onDiscard = { [weak self] clip in
+            self?.preview = nil
+            try? FileManager.default.removeItem(at: clip.url)
+        }
+        self.preview = preview
+        preview.show()
+    }
+
+    /// Copy puts the file on the clipboard (chat apps take it as an animated GIF) along with its data.
+    private func finish(_ action: GifAction, clip: GifClip, near region: NSRect) {
+        switch action {
+        case .copy:
+            let item = NSPasteboardItem()
+            if let data = try? Data(contentsOf: clip.url) { item.setData(data, forType: NSPasteboard.PasteboardType("com.compuserve.gif")) }
+            item.setString(clip.url.absoluteString, forType: .fileURL)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.writeObjects([item])
+            services.toast.show("GIF copied", detail: "Paste it into a chat or a document.", style: .success, near: region)
+        case .save:
+            NSApp.activate(ignoringOtherApps: true)
+            let panel = NSSavePanel()
+            panel.directoryURL = saveFolder
+            panel.nameFieldStringValue = fileName(extension: "gif")
+            panel.allowedContentTypes = [.gif]
+            panel.canCreateDirectories = true
+            panel.level = .modalPanel
+            panel.begin { [weak self] response in
+                guard response == .OK, let url = panel.url else { return }
+                self?.move(clip, to: url)
+                if let app = self?.previousApp, !app.isTerminated { app.activate(options: []) }
+            }
+        case .quickSave:
+            let url = nextFileURL(extension: "gif")
+            if move(clip, to: url) {
+                services.toast.show("Saved “\(url.lastPathComponent)”", detail: url.deletingLastPathComponent().path, style: .success)
+            }
+        case .inbox:
+            services.sendFileToInbox(clip.url, previousApp)
+        }
+    }
+
+    @discardableResult
+    private func move(_ clip: GifClip, to url: URL) -> Bool {
+        do {
+            if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            try FileManager.default.copyItem(at: clip.url, to: url)
+            return true
+        } catch {
+            services.toast.show("Couldn’t save the GIF", detail: error.localizedDescription, style: .warning)
+            return false
+        }
     }
 
     /// The region stays live; whatever is scrolled under it is stitched into one tall image, which
@@ -244,16 +332,18 @@ final class CaptureShell: ModuleShell {
         return folder
     }
 
-    private func fileName() -> String {
+    private func fileName(extension ext: String? = nil) -> String {
         let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
         let date = [parts.year ?? 0, parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0]
         struct Name: Decodable { let name: String }
-        return (try? services.core.call("capture.file_name", ["date": date], as: Name.self).name) ?? "Capture.\(format)"
+        let name = (try? services.core.call("capture.file_name", ["date": date], as: Name.self).name) ?? "Capture.\(format)"
+        guard let ext else { return name }
+        return ((name as NSString).deletingPathExtension as NSString).appendingPathExtension(ext) ?? name
     }
 
     /// A name in the save folder that doesn't overwrite an existing file ("name 2.png", "name 3.png"…).
-    private func nextFileURL() -> URL {
-        let first = saveFolder.appendingPathComponent(fileName())
+    private func nextFileURL(extension ext: String? = nil) -> URL {
+        let first = saveFolder.appendingPathComponent(fileName(extension: ext))
         let base = first.deletingPathExtension().lastPathComponent, ext = first.pathExtension
         var candidate = first, counter = 2
         while FileManager.default.fileExists(atPath: candidate.path) {

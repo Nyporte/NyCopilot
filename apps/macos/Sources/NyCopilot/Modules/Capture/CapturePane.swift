@@ -12,6 +12,10 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
     private let pattern = NSTextField()
     private let shadowSwitch = NSSwitch()
     private let hideSwitch = NSSwitch()
+    private let gifRate = NSPopUpButton()
+    private let gifRetinaSwitch = NSSwitch()
+    private let gifCursorSwitch = NSSwitch()
+    private static let rates = [10, 15, 20, 30]
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private lazy var shortcuts = ShortcutEditor(services: services)
     private static let formats = [("png", "PNG"), ("jpg", "JPEG")]
@@ -40,6 +44,13 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         hideSwitch.target = self
         hideSwitch.action = #selector(toggleHide)
         message.isHidden = true
+        gifRate.addItems(withTitles: Self.rates.map { "\($0) frames a second" })
+        gifRate.target = self
+        gifRate.action = #selector(changeRate)
+        gifRetinaSwitch.target = self
+        gifRetinaSwitch.action = #selector(toggleGifRetina)
+        gifCursorSwitch.target = self
+        gifCursorSwitch.action = #selector(toggleGifCursor)
 
         return [
             FormSection("Permissions", rows: [
@@ -48,6 +59,11 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
             ]),
             FormSection("Capturing", rows: [
                 FormRow("Hide NyCopilot windows", subtitle: "Leave pins and other NyCopilot windows out of captures.", accessory: hideSwitch)
+            ]),
+            FormSection("GIF Recording", footer: "G in a capture records the selection: keep working, then ↩ (or the shortcut again) stops and Esc discards. Up to a minute. GIFs save to the folder below.", rows: [
+                FormRow("Frame rate", subtitle: "More frames move more smoothly and make bigger files.", accessory: gifRate),
+                FormRow("Full Retina resolution", subtitle: "Off records one pixel per point: sharp enough, and a quarter of the size.", accessory: gifRetinaSwitch),
+                FormRow("Show the pointer", accessory: gifCursorSwitch)
             ]),
             FormSection("Saving", footer: "⌘S in a capture asks where to save; ⇧⌘S saves straight to this folder. The pattern understands {date}, {time}, and {n}.", rows: [
                 FormRow("Folder", accessory: Design.hstack([folderLabel, choose], spacing: 8)),
@@ -77,6 +93,10 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         pattern.stringValue = services.core.setting(.captureFileName, default: "")
         shadowSwitch.state = services.core.setting(.pinShadow, default: true) ? .on : .off
         hideSwitch.state = services.core.setting(.hideOwnWindows, default: false) ? .on : .off
+        let rate = services.core.setting(.gifFPS, default: 15)
+        gifRate.selectItem(at: Self.rates.firstIndex { $0 >= rate } ?? 1)
+        gifRetinaSwitch.state = services.core.setting(.gifRetina, default: false) ? .on : .off
+        gifCursorSwitch.state = services.core.setting(.gifCursor, default: true) ? .on : .off
         message.isHidden = true
         shortcuts.refresh()
     }
@@ -120,4 +140,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
 
     @objc private func toggleShadow() { try? services.core.setSetting(.pinShadow, shadowSwitch.state == .on) }
     @objc private func toggleHide() { try? services.core.setSetting(.hideOwnWindows, hideSwitch.state == .on) }
+    @objc private func changeRate() { try? services.core.setSetting(.gifFPS, Self.rates[max(0, gifRate.indexOfSelectedItem)]) }
+    @objc private func toggleGifRetina() { try? services.core.setSetting(.gifRetina, gifRetinaSwitch.state == .on) }
+    @objc private func toggleGifCursor() { try? services.core.setSetting(.gifCursor, gifCursorSwitch.state == .on) }
 }

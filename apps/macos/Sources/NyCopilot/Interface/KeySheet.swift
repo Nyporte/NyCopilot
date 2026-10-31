@@ -114,7 +114,7 @@ enum KeyGuide {
         .init(title: "Select", keys: [("Tab", "Windows ⇄ elements"), ("drag", "Draw a region"), ("⌘A", "Whole screen"),
                                       ("← → ↑ ↓", "Nudge · ⇧ resize"), (", .", "Earlier regions"), ("C", "Copy the color")]),
         .init(title: "Finish", keys: [("↩ / ⌘C", "Copy"), ("⌘T", "Pin"), ("⌘S", "Save…  ·  ⇧⌘S quick"), ("Esc", "Cancel")]),
-        .init(title: "Do more", keys: [("T", "Select text in place"), ("S", "Scrolling capture"), ("R", "Translate its text"),
+        .init(title: "Do more", keys: [("T", "Select text in place"), ("S", "Scrolling capture"), ("G", "Record a GIF"), ("R", "Translate its text"),
                                        ("I", "Keep in Inbox"), ("A", "Ask AI about it"), ("P", "Pin to the screen")]),
         .init(title: "Draw", keys: [("1–8", "Rectangle … text"), ("⌘Z", "Undo · ⇧⌘Z redo")])
     ]

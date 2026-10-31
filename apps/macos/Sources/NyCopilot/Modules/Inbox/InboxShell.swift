@@ -29,6 +29,9 @@ final class InboxShell: ModuleShell {
         services.sendToInbox = { [weak self] text, image, app in
             Task { await self?.send(text: text, image: image, context: SourceContext.of(app)) }
         }
+        services.sendFileToInbox = { [weak self] url, app in
+            Task { await self?.send(file: url, context: SourceContext.of(app)) }
+        }
         bar.onSave = { [weak self] text, context in
             guard let self, add(["text": text, "source": "typed"], context: context) else { return }
             if Tips.due("inbox.selection", after: 3, times: 2) {
@@ -119,6 +122,20 @@ final class InboxShell: ModuleShell {
         guard add(params, context: context) else { return }
         let snippet = text.map { "“\($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))…”" } ?? "Screenshot"
         services.toast.show("Added to Inbox", detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
+    }
+
+    /// A GIF recording, copied in beside the screenshots.
+    private func send(file url: URL, context: SourceContext) {
+        let name = "\(UUID().uuidString).\(url.pathExtension.lowercased())"
+        do {
+            try FileManager.default.createDirectory(at: Self.images.url, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: url, to: Self.images.file(name))
+        } catch {
+            services.toast.show("Couldn’t add the recording to the inbox", detail: error.localizedDescription, style: .warning)
+            return
+        }
+        guard add(["text": "", "image": name, "source": "screenshot"], context: context) else { return }
+        services.toast.show("Added to Inbox", detail: ["Recording", context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
     @discardableResult

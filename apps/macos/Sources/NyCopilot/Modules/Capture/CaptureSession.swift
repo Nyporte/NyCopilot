@@ -8,6 +8,8 @@ final class CaptureSession {
     var onFinish: ((CaptureAction, NSImage, CGRect, NSScreen) -> Void)?
     /// S: the selection (global top-left) and the frozen screen it's on, for a scrolling capture.
     var onScroll: ((CGRect, FrozenScreen) -> Void)?
+    /// G: record the selection as a GIF, live.
+    var onRecord: ((CGRect, NSScreen) -> Void)?
     /// Live Text's Copy All put this many lines on the clipboard.
     var onTextCopied: ((Int, CGRect, NSScreen) -> Void)?
     var onCancel: (() -> Void)?
@@ -42,6 +44,11 @@ final class CaptureSession {
                 if action == .scroll {
                     close()
                     onScroll?(global, screen)
+                    return
+                }
+                if action == .record {
+                    close()
+                    onRecord?(global, screen.screen)
                     return
                 }
                 guard let image = view.renderedImage() else { return }

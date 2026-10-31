@@ -96,7 +96,8 @@ enum NoteExport {
             html += content.body.split(separator: "\n", omittingEmptySubsequences: false).map { "<div>\(escape(String($0)).isEmpty ? "<br>" : escape(String($0)))</div>" }.joined()
         }
         if let image = content.image, let data = try? Data(contentsOf: image), data.count <= 8 * 1024 * 1024 {
-            html += "<div><img src=\"data:image/png;base64,\(data.base64EncodedString())\"></div>"
+            let type = image.pathExtension.lowercased() == "gif" ? "gif" : "png"
+            html += "<div><img src=\"data:image/\(type);base64,\(data.base64EncodedString())\"></div>"
         }
         if !content.source.isEmpty {
             let link = content.address.map { "<a href=\"\(escape($0.absoluteString))\">\(escape(content.source))</a>" } ?? escape(content.source)
@@ -156,7 +157,7 @@ enum NoteExport {
         if let address = content.address { lines.append("url: \(address.absoluteString)") }
         lines += ["tags: [inbox]", "---", "", content.text.trimmingCharacters(in: .whitespacesAndNewlines)]
         if let image = content.image {
-            let name = "\(stem).png"
+            let name = "\(stem).\(image.pathExtension.lowercased())"
             try FileManager.default.copyItem(at: image, to: folder.appendingPathComponent(name))
             lines += ["", "![](\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name))"]
         }

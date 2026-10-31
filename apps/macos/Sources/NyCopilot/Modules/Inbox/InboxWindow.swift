@@ -617,7 +617,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             let cell = tableView.makeView(withIdentifier: .init("note"), owner: nil) as? InboxRow ?? InboxRow()
             cell.identifier = .init("note")
             let firstLine = item.data.text.split(whereSeparator: \.isNewline).first.map(String.init)?.trimmingCharacters(in: .whitespaces)
-            cell.title.stringValue = firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? (item.data.image == nil ? "Empty note" : "Screenshot")
+            let picture = item.data.image?.hasSuffix(".gif") == true ? "Recording" : "Screenshot"
+            cell.title.stringValue = firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? (item.data.image == nil ? "Empty note" : picture)
             cell.icon.image = NSImage(systemSymbolName: item.data.image != nil ? "photo" : item.data.source == "selection" ? "text.quote" : "pencil",
                                       accessibilityDescription: nil)
             let time = clock.string(from: Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000))

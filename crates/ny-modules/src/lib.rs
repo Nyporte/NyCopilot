@@ -19,10 +19,10 @@ pub mod translate;
 pub mod volcengine;
 pub mod windows;
 
-/// An image file a client keeps beside the database is named `<uuid>.png`, nothing else, so a
-/// record can never point anywhere else on disk.
+/// An image file a client keeps beside the database is named `<uuid>.png` (or `.gif`, for a
+/// recording), nothing else, so a record can never point anywhere else on disk.
 pub fn is_image_file_name(name: &str) -> bool {
-    let stem = name.strip_suffix(".png").unwrap_or_default();
+    let stem = name.strip_suffix(".png").or_else(|| name.strip_suffix(".gif")).unwrap_or_default();
     stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok()
 }
 

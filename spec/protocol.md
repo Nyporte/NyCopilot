@@ -113,7 +113,9 @@ object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the sys
 `italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), `capture.hide_own_windows` (synced, `false`), `clipboard.enabled` (device, `true`), `clipboard.keep_days`
 (synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), `clipboard.ignored_apps` (synced,
 bundle identifiers; password managers by default), `inbox.markdown_folder` (device, `""`: an absolute folder path
-notes are sent to as Markdown), and `ask.send_images` (synced, `true`).
+notes are sent to as Markdown), `ask.send_images` (synced, `true`), `capture.gif_fps` (synced, 5–30, `15`),
+`capture.gif_retina` (synced, `false`), and `capture.gif_cursor` (synced, `true`). Inbox images may be
+`<uuid>.gif` as well as `<uuid>.png`.
 
 ## Events
 

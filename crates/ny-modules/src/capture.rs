@@ -86,6 +86,10 @@ impl Module for CaptureModule {
                 SettingSpec::new("capture.style", default_style(), Scope::Synced,
                                  "Corner radius, fill, and text font, size, and emphasis last used for annotations."),
                 SettingSpec::new("capture.pin_shadow", json!(true), Scope::Synced, "Draw a shadow around pinned images."),
+                SettingSpec::new("capture.gif_fps", json!(15), Scope::Synced, "Frames a second in GIF recordings (5–30)."),
+                SettingSpec::new("capture.gif_retina", json!(false), Scope::Synced,
+                                 "Record GIFs at full Retina resolution rather than one pixel per point."),
+                SettingSpec::new("capture.gif_cursor", json!(true), Scope::Synced, "Show the pointer in GIF recordings."),
                 SettingSpec::new("capture.hide_own_windows", json!(false), Scope::Synced,
                                  "Leave NyCopilot's own windows, pins included, out of captures."),
             ],
@@ -147,6 +151,8 @@ impl Module for CaptureModule {
             "capture.style" => validate_style(value),
             "capture.stroke" if !value.as_f64().is_some_and(|w| (1.0..=24.0).contains(&w)) =>
                 Err(NyError::invalid_setting("Line width must be between 1 and 24 points.")),
+            "capture.gif_fps" if !value.as_i64().is_some_and(|fps| (5..=30).contains(&fps)) =>
+                Err(NyError::invalid_setting("Record 5 to 30 frames a second.")),
             _ => Ok(()),
         }
     }
@@ -172,7 +178,8 @@ mod tests {
     fn settings_are_validated() {
         let core = core();
         for (key, bad) in [("capture.format", json!("gif")), ("capture.color", json!("red")), ("capture.color", json!("#12345")),
-                           ("capture.stroke", json!(0)), ("capture.stroke", json!(99)), ("capture.file_name", json!("  "))] {
+                           ("capture.stroke", json!(0)), ("capture.stroke", json!(99)), ("capture.file_name", json!("  ")),
+                           ("capture.gif_fps", json!(60)), ("capture.gif_fps", json!(2)), ("capture.gif_retina", json!("yes"))] {
             assert!(core.call("settings.set", json!({ "key": key, "value": bad })).is_err(), "{key} {bad}");
         }
         core.call("settings.set", json!({ "key": "capture.format", "value": "jpg" })).unwrap();

@@ -23,7 +23,7 @@ const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 /// `<uuid>.png`, nothing else.
 pub fn validate_image_name(name: &str) -> Result<()> {
-    if crate::is_image_file_name(name) { Ok(()) } else { Err(NyError::invalid_params("An inbox image is named <uuid>.png.")) }
+    if crate::is_image_file_name(name) { Ok(()) } else { Err(NyError::invalid_params("An inbox image is named <uuid>.png or <uuid>.gif.")) }
 }
 
 /// One line, at most `limit` characters: window titles and addresses are context, not content.
@@ -272,6 +272,8 @@ mod tests {
         assert_eq!(add(json!({ "text": "  " })), "empty_input");
         assert_eq!(add(json!({ "image": "../../etc/passwd" })), "invalid_params");
         assert_eq!(add(json!({ "image": "photo.png" })), "invalid_params");
+        assert_eq!(add(json!({ "image": format!("{}.jpg", uuid::Uuid::new_v4()) })), "invalid_params");
+        core.call("inbox.add", json!({ "image": format!("{}.gif", uuid::Uuid::new_v4()), "source": "screenshot" })).unwrap();
         assert_eq!(add(json!({ "text": "x", "source": "email" })), "invalid_params");
         assert_eq!(add(json!({ "text": "x".repeat(MAX_TEXT_BYTES + 1) })), "input_too_large");
         // Another module's record can't be reached through the inbox.

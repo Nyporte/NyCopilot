@@ -75,6 +75,9 @@ final class CaptureToolbar: NSView {
         let inbox = Self.icon("tray.and.arrow.down", "Keep in Inbox (I)")
         inbox.target = self
         inbox.action = #selector(sendToInbox)
+        let record = Self.icon("record.circle", "Record a GIF (G)")
+        record.target = self
+        record.action = #selector(recordGIF)
         let ask = Self.icon("sparkles", "Ask AI about it (A)")
         ask.target = self
         ask.action = #selector(askAI)
@@ -90,7 +93,7 @@ final class CaptureToolbar: NSView {
         copy.action = #selector(copy(_:))
         // Grouped by purpose, left to right: draw, undo, read and file it, keep it, finish.
         let groups: [[NSView]] = [tools, [undoButton, redoButton], [textButton, translate, ask, inbox],
-                                  [scrollButton, pin, save], [cancel, copy]]
+                                  [scrollButton, record, pin, save], [cancel, copy]]
         let mainRow = Design.hstack(groups.map { Design.hstack($0, spacing: 2) }.flatMap { [Self.divider(), $0] }.dropFirst().map { $0 }, spacing: 6)
         options.isHidden = true
 
@@ -281,6 +284,7 @@ final class CaptureToolbar: NSView {
     @objc private func translateText() { onAction?(.translate) }
     @objc private func sendToInbox() { onAction?(.inbox) }
     @objc private func askAI() { onAction?(.ask) }
+    @objc private func recordGIF() { onAction?(.record) }
     @objc private func save(_ sender: Any?) {
         onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save)
     }
