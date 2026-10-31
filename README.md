@@ -293,7 +293,9 @@ clipboard). **⌥⌘/** (or **Keyboard Shortcuts** in the menu bar menu) shows e
 now, and the shared keys. Tips show up a couple of times at the moment they help — the third
 capture, the first pin — and then not again. **Settings → General** shows the Accessibility and Screen Recording status, an **Open at
 login** switch, and **Copy Diagnostics**: what NyCopilot did lately — which fields it found, where it
-pasted, what failed and why — without any of your text, ready to paste into a bug report. The same
+pasted, what failed and why — without any of your text, ready to paste into a bug report. If the screen-recording indicator stays on after a capture, macOS's
+capture service kept a stream running (it can happen when macOS frees disk space mid-capture);
+**Restart Screen Capture Service** there ends it. The same
 reasons show up as they happen: the composer says when it's in copy mode because Accessibility is off.
 
 ## Privacy and data
@@ -332,7 +334,10 @@ crates/ny-core      records, settings, events, module registry, cancellation
 crates/ny-llm       provider settings and Chat Completions client (`llm` module)
 crates/ny-modules   module logic: translate, windows, capture, clipboard, inbox, ask
 crates/ny-ffi       C ABI (`include/ny_core.h`)
-apps/macos          Swift package: NyCopilot app (App, System, Interface, Modules/<module>),
-                    MacPlatform helpers, tests, icon source
+apps/macos          Swift package: NyCopilotKit (the whole app as a library: App, System, Interface,
+                    Modules/<module>), a one-line NyCopilot executable, MacPlatform helpers, and
+                    tests (logic, and off-screen render checks of every panel), icon source
+.github/workflows   CI: core tests and lints, app build and tests
+scripts/release.sh  a notarized, stapled release from a version tag (make release)
 spec/               architecture, protocol, and module docs
 ```

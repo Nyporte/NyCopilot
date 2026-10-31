@@ -57,6 +57,8 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `records.changes` | `{since?=0, limit?=100}` | `{records, revision}` including tombstones |
 
 `Record` = `{id, collection, data, created_at, updated_at, deleted, origin, rev}` (times in Unix ms).
+| `core.compact` | — | `{removed}`: deletion markers older than 30 days are removed and the write-ahead log is folded into the database (clients call it at launch and quit) |
+
 
 ## Module methods
 
@@ -91,7 +93,7 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `inbox.snooze` | `{id, until}` | `{record}`: a waiting note moved to `inbox.snoozed` with `until` (ms, in the future) and `created` |
 | `inbox.wake` | `{id?}` | `{woken: [record]}`: the snoozed note `id`, or every one whose `until` has passed, back on top of `inbox.notes` (`created` keeps its first date) |
 | `inbox.count` | — | `{count}` of notes waiting |
-| `ask.run` | `{action, text?, image?, question?, language?, turns?, api_key?, request_id?}` | `{text}`: the model's answer. `action` is `explain`, `summarize`, `rewrite`, or `ask` (needs a `question`); `image` is a base64 PNG (up to 12 MiB), sent as an image only while `ask.send_images` is on, else `text` (its recognized text) stands in; `language` is the reply language; `turns` are earlier `{role: user\|assistant, content}` follow-ups (the last 20 are kept), with `question` the new one. Cancellable |
+| `ask.run` | `{action, text?, image?, question?, language?, turns?, api_key?, request_id?}` | `{text}`: the model's answer. `action` is `explain`, `summarize`, `rewrite`, or `ask` (needs a `question`); `image` is a base64 PNG (up to 12 MiB), sent as an image only while `ask.send_images` is on, else `text` (its recognized text) stands in; `language` is the reply language; `turns` are earlier `{role: user\|assistant, content}` follow-ups (the last 20 are kept), with `question` the new one. With `stream: true` and a `request_id`, the reply is streamed and `ask.delta` events `{request_id, text}` carry it so far (at most every 40 ms); cancelling stops reading at once. Cancellable |
 
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
 
