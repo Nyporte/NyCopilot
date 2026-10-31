@@ -73,12 +73,13 @@ final class CaptureSession {
         let pointed = zip(windows, views).first { window, _ in window.frame.contains(mouse) }
         pointed?.1.hoverAtPointer()
         for window in windows { window.orderFrontRegardless() }
+        // Key without activating NyCopilot: the app you were in keeps its focus, so nothing under the
+        // frozen screen changes (an inactive window's gray buttons, dimmed selections).
         if let (window, view) = pointed {
             window.makeKey()
             window.makeFirstResponder(view)
         }
-        // Activating takes a moment; the overlay is already up meanwhile.
-        NSApp.activate(ignoringOtherApps: true)
+        BackgroundCursor.allow()
         NSCursor.crosshair.set()
     }
 
