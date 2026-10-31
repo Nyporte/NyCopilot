@@ -111,7 +111,7 @@ final class ScreenTranslator {
     /// The menu: favourites first, then every other language NyCopilot knows, in their own scripts.
     private func languages() -> [[ScreenTranslationBar.Language]] {
         struct Known: Decodable { let name: String; let native: String }
-        let known = (try? services.core.call("translate.languages", as: [Known].self)) ?? []
+        let known = (try? services.core.call(.translateLanguages, as: [Known].self)) ?? []
         let favorites: [String] = services.core.setting(.favoriteLanguages, default: [String]())
         func entry(_ name: String) -> ScreenTranslationBar.Language {
             .init(name: name, native: known.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.native
@@ -326,7 +326,7 @@ final class ScreenTranslator {
         do {
             // Kept out of history: that's for what you translate on purpose, not what you glance at.
             let params: [String: Any] = ["text": text, "target_language": language, "save": false]
-            let translation = try await services.core.perform("translate.run", params.merging(try services.translationKeys()) { _, key in key },
+            let translation = try await services.core.perform(.translateRun, params.merging(try services.translationKeys()) { _, key in key },
                                                               as: Result.self).text
             guard isActive else { return }
             if translations.count > 5000 { translations = [:] }

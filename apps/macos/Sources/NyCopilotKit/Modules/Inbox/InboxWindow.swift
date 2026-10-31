@@ -246,7 +246,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
         let query = search.stringValue.trimmingCharacters(in: .whitespaces)
         if !query.isEmpty { params["search"] = query }
-        let items = (try? core.call("records.list", params, as: CorePage<Note>.self).records) ?? []
+        let items = (try? core.call(.recordsList, params, as: CorePage<Note>.self).records) ?? []
         rows = []
         var lastDay: String?
         // Snoozed notes are listed by when they come back, soonest first.
@@ -256,7 +256,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             if day != lastDay { rows.append(.day(day)); lastDay = day }
             rows.append(.note(item))
         }
-        let waiting = (try? core.call("inbox.count") as? [String: Any])?["count"] as? Int ?? 0
+        let waiting = (try? core.call(.inboxCount) as? [String: Any])?["count"] as? Int ?? 0
         tabs.setLabel(waiting > 0 ? "Inbox (\(waiting))" : "Inbox", forSegment: 0)
         table.reloadData()
         if let selectedID, let row = rows.firstIndex(where: { if case .note(let item) = $0 { item.id == selectedID } else { false } }) {
@@ -366,7 +366,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         pendingSave = nil
         guard let id = shownID, let item = rows.lazy.compactMap({ if case .note(let item) = $0, item.id == id { item } else { nil } }).first,
               editor.string != item.data.text else { return }
-        _ = try? core.call("inbox.update", ["id": id, "text": editor.string])
+        _ = try? core.call(.inboxUpdate, ["id": id, "text": editor.string])
     }
 
     @objc private func editSelected() {
@@ -401,19 +401,19 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         guard let item = selectedItem else { return }
         saveNow()
         let row = table.selectedRow
-        let (command, params, back): (String, [String: Any], String?) = switch tab {
-        case .inbox: ("inbox.done", ["id": item.id], "inbox.undone")
-        case .later: ("inbox.wake", ["id": item.id], nil)
-        case .done: ("inbox.undone", ["id": item.id], "inbox.done")
+        let (command, params, back): (CoreMethod, [String: Any], CoreMethod?) = switch tab {
+        case .inbox: (.inboxDone, ["id": item.id], .inboxUndone)
+        case .later: (.inboxWake, ["id": item.id], nil)
+        case .done: (.inboxUndone, ["id": item.id], .inboxDone)
         }
         guard let reply = try? core.call(command, params) as? [String: Any],
               let moved = (reply["record"] ?? (reply["woken"] as? [Any])?.first) as? [String: Any],
               let movedID = moved["id"] as? String else { return }
         let until = item.data.until
-        remember(command) { [core] in
+        remember(command.rawValue) { [core] in
             let reply: [String: Any]?
             if let back { reply = try? core.call(back, ["id": movedID]) as? [String: Any] }
-            else { reply = try? core.call("inbox.snooze", ["id": movedID, "until": until ?? 0]) as? [String: Any] }
+            else { reply = try? core.call(.inboxSnooze, ["id": movedID, "until": until ?? 0]) as? [String: Any] }
             return (reply?["record"] as? [String: Any])?["id"] as? String
         }
         reload()
@@ -469,10 +469,10 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         saveNow()
         let row = table.selectedRow
         do {
-            let reply = try core.call("inbox.snooze", ["id": item.id, "until": Int64(date.timeIntervalSince1970 * 1000)]) as? [String: Any]
+            let reply = try core.call(.inboxSnooze, ["id": item.id, "until": Int64(date.timeIntervalSince1970 * 1000)]) as? [String: Any]
             if let snoozedID = (reply?["record"] as? [String: Any])?["id"] as? String {
                 remember("Snooze") { [core] in
-                    ((try? core.call("inbox.wake", ["id": snoozedID]) as? [String: Any])?["woken"] as? [[String: Any]])?.first?["id"] as? String
+                    ((try? core.call(.inboxWake, ["id": snoozedID]) as? [String: Any])?["woken"] as? [[String: Any]])?.first?["id"] as? String
                 }
             }
         } catch {
@@ -501,7 +501,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             do {
                 let done = try await NoteExport.send(content, to: destination, core: core)
                 if selectedItem?.id == item.id { toggleDoneSelected() }
-                else if (try? core.call("inbox.done", ["id": item.id])) != nil { reload() }
+                else if (try? core.call(.inboxDone, ["id": item.id])) != nil { reload() }
                 toast.show(done, detail: "Marked done · ⌘Z in the inbox brings it back", style: .success)
             } catch {
                 let alert = NSAlert()
@@ -525,15 +525,15 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     @objc private func deleteSelected() {
         guard let item = selectedItem else { return }
         let row = table.selectedRow
-        _ = try? core.call("records.delete", ["id": item.id])
+        _ = try? core.deleteRecord(item.id)
         if let image = item.data.image { keptImages.append(image) }
         let note = item.data, done = showsDone
         remember("Delete") { [core] in
             var params: [String: Any] = ["text": note.text, "app": note.app ?? "", "title": note.title ?? "", "url": note.url ?? "",
                                          "source": note.source ?? "typed"]
             if let image = note.image { params["image"] = image }
-            guard let id = ((try? core.call("inbox.add", params) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String else { return nil }
-            return done ? ((try? core.call("inbox.done", ["id": id]) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String : id
+            guard let id = ((try? core.call(.inboxAdd, params) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String else { return nil }
+            return done ? ((try? core.call(.inboxDone, ["id": id]) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String : id
         }
         reload()
         selectNear(row)

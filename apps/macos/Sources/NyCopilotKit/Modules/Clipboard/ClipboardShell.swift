@@ -36,7 +36,7 @@ final class ClipboardShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
-        _ = try? services.core.call("clipboard.prune")
+        _ = try? services.core.call(.clipboardPrune)
         removeUnusedImages()
         startWatching()
         // Nothing is copied behind a locked screen; don't wake twice a second for it.
@@ -124,7 +124,7 @@ final class ClipboardShell: ModuleShell {
     @discardableResult
     private func add(_ params: [String: Any]) -> [String: Any]? {
         do {
-            return (try services.core.call("clipboard.add", params) as? [String: Any])?["record"] as? [String: Any]
+            return (try services.core.call(.clipboardAdd, params) as? [String: Any])?["record"] as? [String: Any]
         } catch {
             Diagnostics.note("clipboard", "couldn’t keep a copy: \(error.localizedDescription)")
             return nil

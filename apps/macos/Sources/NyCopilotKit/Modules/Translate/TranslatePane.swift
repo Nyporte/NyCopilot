@@ -68,10 +68,10 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     override func paneWillAppear() {
         let core = services.core
         favorites.load(core.setting(.favoriteLanguages, default: [String]()),
-                       suggestions: (try? core.call("translate.languages", as: [LanguageListEditor.Language].self)) ?? [],
+                       suggestions: (try? core.call(.translateLanguages, as: [LanguageListEditor.Language].self)) ?? [],
                        describe: { name in
                            struct Shown: Decodable { let native: String; let code: String }
-                           let shown = try? core.call("translate.native_name", ["language": name], as: Shown.self)
+                           let shown = try? core.call(.translateNativeName, ["language": name], as: Shown.self)
                            return .init(name: name, native: shown?.native ?? name, code: shown?.code ?? String(name.prefix(2)).uppercased())
                        })
         trimSwitch.state = services.core.setting(.trimWhitespace, default: true) ? .on : .off
@@ -161,7 +161,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
 
     /// The manifest default, so "Restore Default" can tell whether anything differs from it.
     private static func defaultInstructions(_ core: NyCore) -> String {
-        guard let modules = try? core.call("core.modules") as? [[String: Any]],
+        guard let modules = try? core.call(.coreModules) as? [[String: Any]],
               let translate = modules.first(where: { $0["id"] as? String == "translate" }),
               let settings = translate["settings"] as? [[String: Any]],
               let spec = settings.first(where: { $0["key"] as? String == SettingKey.instructions.rawValue }) else { return "" }
@@ -186,7 +186,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         alert.addButton(withTitle: "Cancel")
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.translateHistory.rawValue])
+            _ = try? self?.services.core.clearRecords(.translateHistory)
         }
     }
 }

@@ -58,6 +58,6 @@ extension NyCore {
     /// Back to the module's declared default.
     func resetSetting(_ key: SettingKey) throws {
         defer { forgetSetting(key.rawValue) }
-        try call("settings.reset", ["key": key.rawValue])
+        try call(.settingsReset, ["key": key.rawValue])
     }
 }

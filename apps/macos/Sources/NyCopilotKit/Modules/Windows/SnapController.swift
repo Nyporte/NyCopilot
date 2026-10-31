@@ -84,7 +84,7 @@ final class SnapController {
     private func updateTarget(at point: CGPoint) {
         let displays = WindowControl.displays()
         guard let display = displays.first(where: { $0.frame.contains(point) }),
-              let area = try? core.call("windows.snap_area", ["point": ["x": point.x, "y": point.y], "screen": display.visible.json],
+              let area = try? core.call(.windowsSnapArea, ["point": ["x": point.x, "y": point.y], "screen": display.visible.json],
                                         as: Area.self),
               let frame = area.frame else {
             target = nil

@@ -84,7 +84,7 @@ final class Preferences {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let oldHistory = support.appendingPathComponent("NyTranslate/history.sqlite3")
         if FileManager.default.fileExists(atPath: oldHistory.path),
-           (try? core.call("translate.import_legacy", ["path": oldHistory.path])) != nil {
+           (try? core.call(.translateImportLegacy, ["path": oldHistory.path])) != nil {
             try? FileManager.default.moveItem(at: oldHistory, to: oldHistory.appendingPathExtension("imported"))
         }
     }

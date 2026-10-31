@@ -74,7 +74,7 @@ final class SelectionTranslator {
         struct Result: Decodable { let text: String }
         do {
             let params: [String: Any] = ["text": text, "target_language": language]
-            let result = try await services.core.perform("translate.run", params.merging(try services.translationKeys()) { _, key in key },
+            let result = try await services.core.perform(.translateRun, params.merging(try services.translationKeys()) { _, key in key },
                                                          as: Result.self)
             guard !Task.isCancelled, card.isVisible else { return }
             translation = result.text

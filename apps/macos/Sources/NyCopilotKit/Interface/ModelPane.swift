@@ -147,7 +147,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
             let outcome: Result<Timing, Error>
             do {
                 let apiKey = typedKey.isEmpty && !removing ? try KeychainStore.read() : typedKey
-                outcome = .success(try await core.perform("llm.test", ["endpoint": configuration.endpoint, "model": configuration.model,
+                outcome = .success(try await core.perform(.llmTest, ["endpoint": configuration.endpoint, "model": configuration.model,
                                                                        "api_key": apiKey], as: Timing.self))
             } catch { outcome = .failure(error) }
             guard let self else { return }

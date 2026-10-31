@@ -70,14 +70,14 @@ final class TranslateShell: ModuleShell {
 
     /// The badge code and own name the composer shows for a language.
     private func display(_ language: String) -> ComposerPanel.Language {
-        let shown = try? services.core.call("translate.native_name", ["language": language], as: Display.self)
+        let shown = try? services.core.call(.translateNativeName, ["language": language], as: Display.self)
         return .init(code: shown?.code ?? String(language.prefix(2)).uppercased(), name: shown?.native ?? language)
     }
 
     /// Tab in the composer: the core picks the next favorite and remembers it as the target.
     private func cycleLanguage(_ step: Int) {
         do {
-            let next = try services.core.call("translate.cycle", ["step": step], as: Display.self)
+            let next = try services.core.call(.translateCycle, ["step": step], as: Display.self)
             composer.setLanguage(.init(code: next.code, name: next.native))
         } catch {
             composer.showError(error.localizedDescription)
@@ -160,7 +160,7 @@ final class TranslateShell: ModuleShell {
             let result: RunResult
             do {
                 let params: [String: Any] = ["text": text, "target_language": language, "request_id": id.uuidString]
-                result = try await core.perform("translate.run", params.merging(keys) { _, key in key }, as: RunResult.self)
+                result = try await core.perform(.translateRun, params.merging(keys) { _, key in key }, as: RunResult.self)
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
                 // Nothing set up yet: macOS translates it, and its Replace hands the result back.
@@ -291,7 +291,7 @@ final class TranslateShell: ModuleShell {
 
 extension NyCore {
     /// Fire-and-forget: tells the core to discard a request's result if it is still running.
-    func cancel(requestID: String) { _ = try? call("core.cancel", ["request_id": requestID]) }
+    func cancel(requestID: String) { _ = try? call(.coreCancel, ["request_id": requestID]) }
 
     /// The language you read in: screen translation's choice, or else the Mac's own language.
     var readingLanguage: String {
@@ -301,6 +301,6 @@ extension NyCore {
 
     /// A language's own name (日本語 for Japanese), or the name as given.
     func nativeName(of language: String) -> String {
-        (try? call("translate.native_name", ["language": language]) as? [String: Any])?["native"] as? String ?? language
+        (try? call(.translateNativeName, ["language": language]) as? [String: Any])?["native"] as? String ?? language
     }
 }

@@ -169,7 +169,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         if !search.isEmpty { params["search"] = search }
         let selectedID = selectedItem?.id
         do {
-            let page = try core.call("records.list", params, as: CorePage<Entry>.self)
+            let page = try core.call(.recordsList, params, as: CorePage<Entry>.self)
             items = reset ? page.records : items + page.records
             next = page.next
             table.reloadData()
@@ -240,7 +240,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
     @objc private func deleteSelected() {
         guard let item = selectedItem else { return }
         let row = table.selectedRow
-        _ = try? core.call("records.delete", ["id": item.id])
+        _ = try? core.deleteRecord(item.id)
         items.removeAll { $0.id == item.id }
         table.reloadData()
         if !items.isEmpty { table.selectRowIndexes(IndexSet(integer: min(row, items.count - 1)), byExtendingSelection: false) }

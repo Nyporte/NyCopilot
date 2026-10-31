@@ -109,9 +109,9 @@ final class CaptureShell: ModuleShell {
             do {
                 let frozen = try await ScreenGrabber.freezeAll(hidingOwnWindows: services.core.setting(.hideOwnWindows, default: false))
                 let froze = Date()
-                let recent = ((try? services.core.call("capture.recent_regions", ["limit": 20], as: [Region].self)) ?? [])
+                let recent = ((try? services.core.call(.captureRecentRegions, ["limit": 20], as: [Region].self)) ?? [])
                     .map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }
-                let palette = ((try? services.core.call("capture.palette") as? [String]) ?? []).compactMap(NSColor.init(hex:))
+                let palette = ((try? services.core.call(.capturePalette) as? [String]) ?? []).compactMap(NSColor.init(hex:))
                 let color = NSColor(hex: services.core.setting(.captureColor, default: "#FF3B30")) ?? .systemRed
                 let stroke = CGFloat(services.core.setting(.captureStroke, default: 3.0))
                 let storedStyle = services.core.setting(.captureStyle, default: [String: Any]())
@@ -321,7 +321,7 @@ final class CaptureShell: ModuleShell {
         var params: [String: Any] = ["region": ["x": region.minX, "y": region.minY, "w": region.width, "h": region.height],
                                      "display": screen.localizedName, "width": pixels.0, "height": pixels.1]
         if let path { params["path"] = path }
-        _ = try? services.core.call("capture.record", params)
+        _ = try? services.core.call(.captureRecord, params)
     }
 
     // MARK: Files
@@ -342,7 +342,7 @@ final class CaptureShell: ModuleShell {
         let parts = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
         let date = [parts.year ?? 0, parts.month ?? 0, parts.day ?? 0, parts.hour ?? 0, parts.minute ?? 0, parts.second ?? 0]
         struct Name: Decodable { let name: String }
-        let name = (try? services.core.call("capture.file_name", ["date": date], as: Name.self).name) ?? "Capture.\(format)"
+        let name = (try? services.core.call(.captureFileName, ["date": date], as: Name.self).name) ?? "Capture.\(format)"
         guard let ext else { return name }
         return ((name as NSString).deletingPathExtension as NSString).appendingPathExtension(ext) ?? name
     }

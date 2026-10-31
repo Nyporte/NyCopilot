@@ -24,8 +24,8 @@ final class PanelRenderTests: XCTestCase {
         defer { images.removeAll() }
         let wide = NSImage(size: NSSize(width: 2400, height: 500), flipped: false) { rect in NSColor.systemTeal.setFill(); rect.fill(); return true }
         let name = try XCTUnwrap(images.keep(wide))
-        _ = try core.call("inbox.add", ["image": name, "source": "screenshot", "app": "Claude"])
-        _ = try core.call("inbox.add", ["text": "Ask Lin about the Q3 plan\nbefore Friday", "app": "Safari", "title": "Q3 planning",
+        _ = try core.call(.inboxAdd, ["image": name, "source": "screenshot", "app": "Claude"])
+        _ = try core.call(.inboxAdd, ["text": "Ask Lin about the Q3 plan\nbefore Friday", "app": "Safari", "title": "Q3 planning",
                                         "url": "https://docs.example.com/a/very/long/path/that/keeps/going/q3?tab=summary"])
         let window = InboxWindow(core: core, images: images, toast: Toast())
         window.reload()
@@ -64,12 +64,12 @@ final class PanelRenderTests: XCTestCase {
     func testClipboardPickerWithPinnedTextAndAnImage() throws {
         let images = ImageFolder("panels-clip-\(UUID())")
         defer { images.removeAll() }
-        _ = try core.call("clipboard.add", ["text": "my address"])
-        let pinned = ((try core.call("records.list", ["collection": "clipboard.items"]) as? [String: Any])?["records"] as? [[String: Any]])?.first?["id"]
-        _ = try core.call("clipboard.pin", ["id": try XCTUnwrap(pinned)])
+        _ = try core.call(.clipboardAdd, ["text": "my address"])
+        let pinned = ((try core.call(.recordsList, ["collection": "clipboard.items"]) as? [String: Any])?["records"] as? [[String: Any]])?.first?["id"]
+        _ = try core.call(.clipboardPin, ["id": try XCTUnwrap(pinned)])
         let picture = NSImage(size: NSSize(width: 80, height: 60), flipped: false) { rect in NSColor.systemOrange.setFill(); rect.fill(); return true }
         let name = try XCTUnwrap(images.keep(picture))
-        _ = try core.call("clipboard.add", ["image": name, "digest": "d1", "width": 80, "height": 60])
+        _ = try core.call(.clipboardAdd, ["image": name, "digest": "d1", "width": 80, "height": 60])
         let picker = ClipboardPicker(core: core, images: images)
         picker.prepare(target: nil, source: nil)
         Render.check(picker.panel.contentView!, "clipboard")

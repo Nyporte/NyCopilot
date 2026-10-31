@@ -137,7 +137,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         func list(_ collection: CoreCollection, limit: Int) -> [Item] {
             var params: [String: Any] = ["collection": collection.rawValue, "limit": limit]
             if !query.isEmpty { params["search"] = query }
-            return (try? core.call("records.list", params, as: CorePage<ClipboardEntry>.self).records) ?? []
+            return (try? core.call(.recordsList, params, as: CorePage<ClipboardEntry>.self).records) ?? []
         }
         let pinned = list(.clipboardPinned, limit: 100)
         pinnedCount = pinned.count
@@ -170,7 +170,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
             guard items.indices.contains(row) else { return true }
             let pinned = row < pinnedCount
             do {
-                let moved = try core.call(pinned ? "clipboard.unpin" : "clipboard.pin", ["id": items[row].id]) as? [String: Any]
+                let moved = try core.call(pinned ? .clipboardUnpin : .clipboardPin, ["id": items[row].id]) as? [String: Any]
                 reload()
                 // Keep the same entry selected in its new place.
                 let id = (moved?["record"] as? [String: Any])?["id"] as? String
@@ -196,7 +196,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
             return true
         case "\u{8}", "\u{7F}":
             guard items.indices.contains(row) else { return true }
-            _ = try? core.call("records.delete", ["id": items[row].id])
+            try? core.deleteRecord(items[row].id)
             reload()
             if !items.isEmpty { table.selectRowIndexes([min(row, items.count - 1)], byExtendingSelection: false) }
             return true

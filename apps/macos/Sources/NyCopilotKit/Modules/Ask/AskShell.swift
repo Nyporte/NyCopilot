@@ -107,7 +107,7 @@ final class AskShell: ModuleShell {
             if requestID == id { requestID = nil }
         }
         do {
-            return try await services.core.perform("ask.run", params, as: Answer.self).text
+            return try await services.core.perform(.askRun, params, as: Answer.self).text
         } catch {
             Diagnostics.note("ask", "\(action) failed: \(error.localizedDescription)")
             throw error

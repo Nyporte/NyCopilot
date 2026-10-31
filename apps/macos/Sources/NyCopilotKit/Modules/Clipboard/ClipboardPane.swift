@@ -56,13 +56,13 @@ final class ClipboardPane: SettingsPane {
 
     @objc private func changeDays() {
         try? services.core.setSetting(.clipboardKeepDays, Self.days[keepFor.indexOfSelectedItem].0)
-        _ = try? services.core.call("clipboard.prune")
+        _ = try? services.core.call(.clipboardPrune)
         ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
     }
 
     @objc private func changeCount() {
         try? services.core.setSetting(.clipboardMaxItems, Self.counts[atMost.indexOfSelectedItem])
-        _ = try? services.core.call("clipboard.prune")
+        _ = try? services.core.call(.clipboardPrune)
         ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
     }
 
@@ -77,7 +77,7 @@ final class ClipboardPane: SettingsPane {
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             guard let services = self?.services else { return }
-            _ = try? services.core.call("records.clear", ["collection": CoreCollection.clipboardItems.rawValue])
+            _ = try? services.core.clearRecords(.clipboardItems)
             ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
         }
     }

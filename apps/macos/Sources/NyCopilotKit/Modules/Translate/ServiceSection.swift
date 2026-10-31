@@ -16,7 +16,7 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
         /// Whether a test can run with this field value and whether a key is available.
         let isTestable: (_ field: String, _ hasKey: Bool) -> Bool
         /// The core method and parameters that translate the sample.
-        let test: (_ field: String, _ key: String) -> (method: String, params: [String: Any])
+        let test: (_ field: String, _ key: String) -> (method: CoreMethod, params: [String: Any])
     }
 
     /// Saved values changed, so engine statuses may have too.
@@ -160,7 +160,7 @@ extension ServiceSection.Spec {
         fieldLabel: "Web app URL", fieldPlaceholder: "https://script.google.com/macros/s/…/exec", setting: .googleURL,
         keyLabel: "Access key", keyPlaceholder: "The key your script checks", keychain: .google,
         isTestable: { url, _ in !url.isEmpty },
-        test: { url, key in ("translate.test_google", ["url": url, "key": key]) })
+        test: { url, key in (.translateTestGoogle, ["url": url, "key": key]) })
 
     static let volcengine = ServiceSection.Spec(
         title: "Volcengine",
@@ -168,5 +168,5 @@ extension ServiceSection.Spec {
         fieldLabel: "App ID (old console only)", fieldPlaceholder: "Leave empty with an API key", setting: .volcengineAppID,
         keyLabel: "API key or access token", keyPlaceholder: "From the Volcengine console", keychain: .volcengine,
         isTestable: { _, hasKey in hasKey },
-        test: { appID, key in ("translate.test_volcengine", ["app_id": appID, "key": key]) })
+        test: { appID, key in (.translateTestVolcengine, ["app_id": appID, "key": key]) })
 }

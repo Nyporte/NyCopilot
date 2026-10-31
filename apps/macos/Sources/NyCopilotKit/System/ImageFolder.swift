@@ -39,7 +39,7 @@ struct ImageFolder: Sendable {
                 var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
                 if let before { params["before"] = before }
                 // A failed read must not look like "nothing is used".
-                guard let page = try? core.call("records.list", params, as: CorePage<Entry>.self) else { return }
+                guard let page = try? core.call(.recordsList, params, as: CorePage<Entry>.self) else { return }
                 used.formUnion(page.records.compactMap(\.data.image))
                 before = page.next
             } while before != nil

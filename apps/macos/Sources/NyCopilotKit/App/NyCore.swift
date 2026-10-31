@@ -52,7 +52,9 @@ final class NyCore: @unchecked Sendable {
 
     /// Synchronous call; fine for settings and records. Use `perform` for model-backed methods.
     @discardableResult
-    func call(_ method: String, _ params: [String: Any] = [:]) throws -> Any {
+    func call(_ method: CoreMethod, _ params: [String: Any] = [:]) throws -> Any { try call(name: method.rawValue, params) }
+
+    private func call(name method: String, _ params: [String: Any]) throws -> Any {
         let body = try JSONSerialization.data(withJSONObject: params)
         guard let raw = method.withCString({ name in
             String(decoding: body, as: UTF8.self).withCString { ny_call(handle, name, $0) }
@@ -67,7 +69,7 @@ final class NyCore: @unchecked Sendable {
     }
 
     /// Decode a result into a Codable type (snake_case keys become camelCase).
-    func call<T: Decodable>(_ method: String, _ params: [String: Any] = [:], as type: T.Type) throws -> T {
+    func call<T: Decodable>(_ method: CoreMethod, _ params: [String: Any] = [:], as type: T.Type) throws -> T {
         let value = try call(method, params)
         let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
         let decoder = JSONDecoder()
@@ -76,7 +78,7 @@ final class NyCore: @unchecked Sendable {
     }
 
     /// Run a blocking call (such as a model request) off the main thread.
-    func perform<T: Decodable>(_ method: String, _ params: [String: Any] = [:], as type: T.Type) async throws -> T {
+    func perform<T: Decodable>(_ method: CoreMethod, _ params: [String: Any] = [:], as type: T.Type) async throws -> T {
         try await Task.detached(priority: .userInitiated) { [self] in try call(method, params, as: type) }.value
     }
 
@@ -85,14 +87,14 @@ final class NyCore: @unchecked Sendable {
         let cached = settingsCache[key]
         cacheLock.unlock()
         if let cached { return cached as? T ?? fallback }
-        guard let value = try? call("settings.get", ["key": key]) else { return fallback }
+        guard let value = try? call(.settingsGet, ["key": key]) else { return fallback }
         cacheLock.lock(); settingsCache[key] = value; cacheLock.unlock()
         return value as? T ?? fallback
     }
 
     func setSetting(_ key: String, _ value: Any) throws {
         defer { forget(key) }
-        try call("settings.set", ["key": key, "value": value])
+        try call(.settingsSet, ["key": key, "value": value])
     }
 
     private static func decodeFailure(_ text: String?) -> Failure? {

@@ -63,7 +63,7 @@ final class InboxShell: ModuleShell {
         snoozeObservers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
         alarm = nil
         struct Snoozed: Decodable { let until: Int64? }
-        let page = try? services.core.call("records.list", ["collection": CoreCollection.inboxSnoozed.rawValue, "limit": 500],
+        let page = try? services.core.call(.recordsList, ["collection": CoreCollection.inboxSnoozed.rawValue, "limit": 500],
                                            as: CorePage<Snoozed>.self)
         guard let next = page?.records.compactMap(\.data.until).min() else { return }
         let due = Date(timeIntervalSince1970: Double(next) / 1000)
@@ -98,11 +98,11 @@ final class InboxShell: ModuleShell {
         window?.forgetUndo()
     }
 
-    private var waiting: Int { (try? services.core.call("inbox.count") as? [String: Any])?["count"] as? Int ?? 0 }
+    private var waiting: Int { (try? services.core.call(.inboxCount) as? [String: Any])?["count"] as? Int ?? 0 }
 
     private func wakeDueNotes() {
         defer { scheduleAlarm() }
-        guard let woken = (try? services.core.call("inbox.wake") as? [String: Any])?["woken"] as? [[String: Any]], !woken.isEmpty else { return }
+        guard let woken = (try? services.core.call(.inboxWake) as? [String: Any])?["woken"] as? [[String: Any]], !woken.isEmpty else { return }
         let first = ((woken[0]["data"] as? [String: Any])?["text"] as? String)?
             .split(whereSeparator: \.isNewline).first.map { "“\($0.prefix(50))”" } ?? "A snoozed note"
         services.toast.show(woken.count == 1 ? "Back in your inbox" : "\(woken.count) notes are back in your inbox",
@@ -169,7 +169,7 @@ final class InboxShell: ModuleShell {
     private func add(_ params: [String: Any], context: SourceContext) -> Bool {
         let source: [String: Any] = ["app": context.app, "title": context.title, "url": context.url]
         do {
-            _ = try services.core.call("inbox.add", params.merging(source) { mine, _ in mine })
+            _ = try services.core.call(.inboxAdd, params.merging(source) { mine, _ in mine })
             return true
         } catch {
             services.toast.show("Couldn’t add to the inbox", detail: error.localizedDescription, style: .warning)
@@ -241,9 +241,9 @@ final class InboxPane: SettingsPane {
         guard let window = view.window else { return }
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxNotes.rawValue])
-            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxDone.rawValue])
-            _ = try? self?.services.core.call("records.clear", ["collection": CoreCollection.inboxSnoozed.rawValue])
+            _ = try? self?.services.core.clearRecords(.inboxNotes)
+            _ = try? self?.services.core.clearRecords(.inboxDone)
+            _ = try? self?.services.core.clearRecords(.inboxSnoozed)
             InboxShell.images.removeAll()
         }
     }

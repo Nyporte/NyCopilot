@@ -43,7 +43,7 @@ final class WindowsShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
-        actions = (try? services.core.call("windows.actions", as: [ActionInfo].self)) ?? []
+        actions = (try? services.core.call(.windowsActions, as: [ActionInfo].self)) ?? []
         snapper = SnapController(core: services.core)
         snapper.onSnap = { [weak self] window, frame, display in self?.apply(frame, to: window, on: display, action: nil) }
         snapper.isEnabled = services.core.setting(.dragSnap, default: true)
@@ -136,20 +136,20 @@ final class WindowsShell: ModuleShell {
             case "next_display", "previous_display":
                 guard displays.count > 1 else { NSSound.beep(); return }
                 let next = displays[(index + (action == "next_display" ? 1 : displays.count - 1)) % displays.count]
-                let result = try services.core.call("windows.move_to_screen",
+                let result = try services.core.call(.windowsMoveToScreen,
                     ["window": current.json, "from": display.visible.json, "to": next.visible.json], as: FrameResult.self)
                 apply(result.frame, to: window, on: next, action: action)
             default:
                 let repeated = last.map { CFEqual($0.window, window) && $0.action == action && $0.frame.isClose(to: current) } ?? false
                 let count: UInt32 = repeated ? (last?.repeat ?? 0) + 1 : 0
-                let result = try services.core.call("windows.compute",
+                let result = try services.core.call(.windowsCompute,
                     ["action": action, "window": current.json, "screen": display.visible.json, "repeat": count], as: ComputeResult.self)
                 if let frame = result.frame {
                     apply(frame, to: window, on: display, action: action, repeat: count)
                 } else if let move = result.move {
                     // No display that way: leave the window where it is.
                     guard let neighbour = Self.neighbour(of: index, toward: move.direction, in: displays) else { NSSound.beep(); return }
-                    let landing = try services.core.call("windows.compute",
+                    let landing = try services.core.call(.windowsCompute,
                         ["action": move.action, "window": current.json, "screen": neighbour.visible.json], as: ComputeResult.self)
                     // Record the landing layout, so pressing the same key again keeps the window travelling.
                     if let frame = landing.frame { apply(frame, to: window, on: neighbour, action: move.action) }
