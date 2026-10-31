@@ -134,6 +134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         about.target = self
         menu.addItem(about)
         menu.addItem(.separator())
+        let restart = NSMenuItem(title: "Restart NyCopilot", action: #selector(restart), keyEquivalent: "")
+        restart.target = self
+        menu.addItem(restart)
         menu.addItem(NSMenuItem(title: "Quit NyCopilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -191,6 +194,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func showWelcome() {
         if welcomeWindow == nil { welcomeWindow = WelcomeWindow(services: services) }
         welcomeWindow?.present()
+    }
+
+    /// Quits and opens again: a small shell waits for this process to exit (a second copy would
+    /// otherwise see this one still running and quit), then opens the app.
+    @objc private func restart() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.1; done; /usr/bin/open \"$2\"", "restart",
+                             String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundlePath]
+        do {
+            try process.run()
+        } catch {
+            services.toast.show("Couldn’t restart", detail: error.localizedDescription, style: .warning)
+            return
+        }
+        Diagnostics.note("app", "restarting")
+        NSApp.terminate(nil)
     }
 
     @objc private func showAbout() {
