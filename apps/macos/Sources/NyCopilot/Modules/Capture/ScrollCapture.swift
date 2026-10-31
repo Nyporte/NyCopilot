@@ -49,6 +49,7 @@ final class ScrollCapture {
         border.orderFrontRegardless()
         panel.orderFrontRegardless()
         panel.makeKey()
+        panel.makeFirstResponder(nil)
         claimKeys()
         still = crop(region)
         panel.show(.started, height: still?.height ?? 0, thumbnail: still)
@@ -338,7 +339,7 @@ private final class ScrollCapturePanel: NSPanel {
     private let copyButton = NSButton(title: "Copy  ↩", target: nil, action: nil)
 
     init(beside region: NSRect, on screen: NSScreen) {
-        let width: CGFloat = 200
+        let width: CGFloat = 228
         let height = min(max(region.height, 260), 420)
         super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -367,9 +368,14 @@ private final class ScrollCapturePanel: NSPanel {
             button.widthAnchor.constraint(equalToConstant: 26).isActive = true
             return button
         }
-        let actions = Design.hstack([icon("xmark", "Cancel (Esc)", #selector(cancelTapped)),
-                                     icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)", #selector(saveTapped)),
-                                     icon("pin", "Pin to screen (⌘T)", #selector(pinTapped)), Design.spacer(), copyButton], spacing: 2)
+        // As in the GIF preview: discard apart on the left, the likeliest on the right, Copy the default.
+        let discard = icon("trash", "Discard (Esc)", #selector(cancelTapped))
+        let buttons = [discard, icon("tray.and.arrow.down", "Keep in Inbox", #selector(inboxTapped)),
+                       icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)", #selector(saveTapped)),
+                       icon("pin", "Pin to screen (⌘T)", #selector(pinTapped))]
+        // The panel's keys are its own; no button takes keyboard focus, so none is ringed and Space does nothing.
+        for button in buttons + [copyButton] { button.refusesFirstResponder = true }
+        let actions = Design.hstack([discard, Design.spacer()] + buttons.dropFirst().map { $0 as NSView } + [copyButton], spacing: 2)
         let column = Design.vstack([preview, size, hint, actions], spacing: 8, alignment: .leading)
         column.translatesAutoresizingMaskIntoConstraints = false
         material.addSubview(column)
@@ -423,6 +429,7 @@ private final class ScrollCapturePanel: NSPanel {
     @objc private func copyTapped() { if copyButton.isEnabled { onAction?(.copy) } }
     @objc private func saveTapped() { onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save) }
     @objc private func pinTapped() { onAction?(.pin) }
+    @objc private func inboxTapped() { onAction?(.inbox) }
     @objc private func cancelTapped() { onCancel?() }
 }
 
