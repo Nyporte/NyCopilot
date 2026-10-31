@@ -66,17 +66,19 @@ final class CaptureSession {
         }
     }
 
+    /// The outline under the pointer is found before anything shows, so the first frame has both
+    /// the dimming and the outline — not a gray screen that then brightens where the outline lands.
     func show() {
-        NSApp.activate(ignoringOtherApps: true)
         let mouse = NSEvent.mouseLocation
-        for (window, view) in zip(windows, views) {
-            window.orderFrontRegardless()
-            if window.frame.contains(mouse) {
-                window.makeKey()
-                window.makeFirstResponder(view)
-                view.hoverAtPointer()
-            }
+        let pointed = zip(windows, views).first { window, _ in window.frame.contains(mouse) }
+        pointed?.1.hoverAtPointer()
+        for window in windows { window.orderFrontRegardless() }
+        if let (window, view) = pointed {
+            window.makeKey()
+            window.makeFirstResponder(view)
         }
+        // Activating takes a moment; the overlay is already up meanwhile.
+        NSApp.activate(ignoringOtherApps: true)
         NSCursor.crosshair.set()
     }
 

@@ -27,6 +27,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     static var detectsWindows = true
     /// The first few captures show where the rest of the keys are.
     static var showsKeysTip = false
+    /// When the shortcut was pressed, until the first frame is drawn (for timing).
+    static var pressedAt: Date?
     private var pointer: CGPoint?
     private var drag: Drag = .none
     private var current: Annotation?
@@ -127,6 +129,10 @@ final class CaptureView: NSView, NSTextViewDelegate {
     // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
+        if let pressed = Self.pressedAt {
+            Self.pressedAt = nil
+            Diagnostics.note("capture", "F1 → first frame \(Int(Date().timeIntervalSince(pressed) * 1000)) ms")
+        }
         let dim = NSColor.black.withAlphaComponent(selection == nil ? 0.28 : 0.45)
         let hovering = selection == nil && !isPassive
         // After a selection, the next outline appears in place rather than gliding from the past.
@@ -388,7 +394,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     /// Outlines what's under the pointer as soon as the capture opens, before it moves.
     func hoverAtPointer() {
         guard let window else { return }
-        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        // From the screen position: the window may not be on screen yet.
+        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
         guard bounds.contains(point) else { return }
         pointer = point
         if selection == nil, !isPassive { hover(at: point) }

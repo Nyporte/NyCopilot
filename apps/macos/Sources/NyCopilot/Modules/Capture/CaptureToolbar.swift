@@ -88,9 +88,9 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        // Grouped by purpose, left to right: draw, undo, understand it, keep it, finish.
-        let groups: [[NSView]] = [tools, [undoButton, redoButton], [textButton, translate, ask],
-                                  [scrollButton, pin, save, inbox], [cancel, copy]]
+        // Grouped by purpose, left to right: draw, undo, read and file it, keep it, finish.
+        let groups: [[NSView]] = [tools, [undoButton, redoButton], [textButton, translate, ask, inbox],
+                                  [scrollButton, pin, save], [cancel, copy]]
         let mainRow = Design.hstack(groups.map { Design.hstack($0, spacing: 2) }.flatMap { [Self.divider(), $0] }.dropFirst().map { $0 }, spacing: 6)
         options.isHidden = true
 

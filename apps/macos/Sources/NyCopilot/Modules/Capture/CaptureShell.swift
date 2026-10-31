@@ -94,10 +94,13 @@ final class CaptureShell: ModuleShell {
             previousApp = NSWorkspace.shared.frontmostApplication
         }
         CaptureView.showsKeysTip = Tips.due("capture.keys", after: 2, times: 3)
+        let pressed = Date()
+        CaptureView.pressedAt = pressed
         Task { [weak self] in
             guard let self else { return }
             do {
                 let frozen = try await ScreenGrabber.freezeAll(hidingOwnWindows: services.core.setting(.hideOwnWindows, default: false))
+                let froze = Date()
                 let recent = ((try? services.core.call("capture.recent_regions", ["limit": 20], as: [Region].self)) ?? [])
                     .map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }
                 let palette = ((try? services.core.call("capture.palette") as? [String]) ?? []).compactMap(NSColor.init(hex:))
@@ -126,12 +129,16 @@ final class CaptureShell: ModuleShell {
                 }
                 session.onCancel = { [weak self] in self?.end() }
                 self.session = session
+                let built = Date()
                 session.show()
+                Diagnostics.note("capture", "F1 → frozen \(Self.ms(pressed, froze)) ms, session \(Self.ms(froze, built)) ms, shown \(Self.ms(built, Date())) ms")
             } catch {
                 services.toast.show("Couldn’t capture the screen", detail: error.localizedDescription, style: .warning)
             }
         }
     }
+
+    private static func ms(_ from: Date, _ to: Date) -> Int { Int(to.timeIntervalSince(from) * 1000) }
 
     private func end(returnFocus: Bool = true) {
         session = nil
