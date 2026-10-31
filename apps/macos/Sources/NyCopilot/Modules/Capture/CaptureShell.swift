@@ -85,8 +85,8 @@ final class CaptureShell: ModuleShell {
     private struct Region: Codable { let x, y, w, h: Double }
 
     func startCapture() {
-        // The shortcut again ends a recording.
-        if let recording, recording.isRecording { recording.stop(); return }
+        // With a recording armed or running, the shortcut starts or stops it.
+        if let recording, recording.isActive { recording.shortcutPressed(); return }
         guard session == nil else { return }
         guard ScreenGrabber.hasPermission else {
             ScreenGrabber.requestPermission()
@@ -209,7 +209,8 @@ final class CaptureShell: ModuleShell {
     private func startRecording(_ region: CGRect, on screen: NSScreen) {
         let core = services.core
         let recording = GifRecording(region: region, screen: screen, fps: core.setting(.gifFPS, default: 15),
-                                     retina: core.setting(.gifRetina, default: false), showsCursor: core.setting(.gifCursor, default: true))
+                                     retina: core.setting(.gifRetina, default: false), showsCursor: core.setting(.gifCursor, default: true),
+                                     shortcut: services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? "F1")
         recording.onFinish = { [weak self] clip in
             self?.recording = nil
             self?.review(clip, region: CaptureSession.appKitRect(region), screen: screen)

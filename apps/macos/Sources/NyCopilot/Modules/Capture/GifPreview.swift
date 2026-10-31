@@ -4,8 +4,9 @@ import AppKit
 enum GifAction { case copy, save, quickSave, inbox }
 
 /// The finished GIF, playing on a loop above the region it was recorded from, with what it is (length,
-/// size, file size) and what to do with it: ↩ copy, ⌘S save…, ⇧⌘S quick save, I keep in the inbox,
-/// Esc discard. A click elsewhere leaves it up, so nothing is lost by accident.
+/// size, file size) and what to do with it, the likeliest on the right: ↩ copy (the default), ⌘S
+/// save…, I keep in the inbox. Discarding takes the trash button or ⌘⌫. Esc puts the preview away and
+/// saves the GIF to your folder, and a click elsewhere leaves it up, so nothing is lost by accident.
 @MainActor
 final class GifPreview {
     var onAction: ((GifAction, GifClip) -> Void)?
@@ -54,11 +55,15 @@ final class GifPreview {
         let info = Design.label("\(String(format: "%d:%02d", seconds / 60, seconds % 60))  ·  \(clip.pixels.width) × \(clip.pixels.height)  ·  "
                                 + ByteCountFormatter.string(fromByteCount: Int64(clip.bytes), countStyle: .file),
                                 size: 12, color: NSColor.white.withAlphaComponent(0.75))
-        let discard = button("Discard", "Esc", #selector(discardTapped))
+        let discard = NSButton(image: NSImage(systemSymbolName: "trash", accessibilityDescription: "Discard")!, target: self,
+                               action: #selector(discardTapped))
+        discard.bezelStyle = .rounded
+        discard.toolTip = "Discard (⌘⌫)"
         let inbox = button("Inbox", "I", #selector(inboxTapped))
-        let save = button("Save…", "⌘S · ⇧⌘S quick save", #selector(saveTapped))
+        let save = button("Save…", "⌘S · ⇧⌘S quick save · Esc saves to your folder", #selector(saveTapped))
         let copy = button("Copy", "↩", #selector(copyTapped))
-        copy.bezelColor = .controlAccentColor
+        // The default: Return, drawn in the accent color.
+        copy.keyEquivalent = "\r"
         let actions = Design.hstack([discard, Design.spacer(), inbox, save, copy], spacing: 8)
         let column = Design.vstack([image, info, actions], spacing: 10, alignment: .centerX)
         column.translatesAutoresizingMaskIntoConstraints = false
@@ -84,11 +89,12 @@ final class GifPreview {
     private func key(_ key: PreviewPanel.Key) -> Bool {
         switch key {
         case .returnKey: act(.copy)
-        case .escape: discardTapped()
+        case .escape: act(.quickSave)
         case .character("i"): act(.inbox)
         case .command("c"): act(.copy)
         case .command("s"): act(.save)
         case .shiftCommand("s"): act(.quickSave)
+        case .command("\u{8}"), .command("\u{7F}"): discardTapped()
         default: return false
         }
         return true

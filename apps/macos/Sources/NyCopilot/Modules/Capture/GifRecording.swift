@@ -16,11 +16,12 @@ struct GifClip {
     let bytes: Int
 }
 
-/// GIF recording, run like scrolling capture: the selection stays outlined (in red) while you use the
-/// computer as usual, and a small bar beside it shows the time, with pause and stop. Return (or the
-/// stop button, or the capture shortcut again) stops; Esc discards. Recording ends on its own after a
-/// minute. Frames go to disk as they come — a minute of frames held in memory would be gigabytes —
-/// and become one GIF when you stop.
+/// GIF recording, run like scrolling capture, in two steps. First the area is armed — a white dashed
+/// outline and a bar with a Record button — so you can set up what you'll show; Esc cancels. Record
+/// (or the capture shortcut) starts it: the outline turns red, the bar shows the time with pause and
+/// stop, and the capture shortcut or stop ends it. While recording, no key is taken from your apps, so
+/// Return and Esc can be part of what you show. It ends on its own after a minute. Frames are encoded
+/// as they come (see GifWriter), so stopping only closes the file.
 @MainActor
 final class GifRecording {
     var onFinish: ((GifClip) -> Void)?
@@ -42,10 +43,13 @@ final class GifRecording {
     private let watcher = StreamWatcher()
     private var keys: [GlobalHotKey] = []
     private var ticker: Timer?
-    private var isOver = false
+    private enum Phase { case ready, recording, over }
+    private var phase = Phase.ready
+    private var isOver: Bool { phase == .over }
 
-    /// `region` is in global top-left coordinates, on `screen`.
-    init(region: CGRect, screen: NSScreen, fps: Int, retina: Bool, showsCursor: Bool) {
+    /// `region` is in global top-left coordinates, on `screen`; `shortcut` names the capture
+    /// shortcut, which starts and stops the recording.
+    init(region: CGRect, screen: NSScreen, fps: Int, retina: Bool, showsCursor: Bool, shortcut: String) {
         self.region = region
         self.screen = screen
         self.fps = fps
@@ -53,8 +57,9 @@ final class GifRecording {
         self.showsCursor = showsCursor
         let frame = CaptureSession.appKitRect(region)
         border = Self.makeBorder(around: frame)
-        bar = RecordingBar(beside: frame, on: screen)
+        bar = RecordingBar(beside: frame, on: screen, shortcut: shortcut)
         frames = FrameSink(output: FrameSink.newRecordingURL())
+        bar.onRecord = { [weak self] in self?.record() }
         bar.onStop = { [weak self] in self?.stop() }
         bar.onPause = { [weak self] in self?.togglePause() }
         // macOS ended the stream itself: keep what was recorded rather than wait on a dead stream.
@@ -63,12 +68,33 @@ final class GifRecording {
         }
     }
 
-    var isRecording: Bool { !isOver }
+    var isActive: Bool { !isOver }
 
+    /// The capture shortcut: starts a ready recording, stops a running one.
+    func shortcutPressed() {
+        switch phase {
+        case .ready: record()
+        case .recording: stop()
+        case .over: break
+        }
+    }
+
+    /// Arms the area: the outline and the bar, waiting for Record. Esc cancels.
     func start() {
         border.orderFrontRegardless()
         bar.orderFrontRegardless()
-        claimKeys()
+        keys = [GlobalHotKey.claim(HotKeyCombination(keyCode: UInt32(kVK_Escape), modifiers: 0)) { [weak self] in
+            MainActor.assumeIsolated { self?.cancel() }
+        }].compactMap { $0 }
+    }
+
+    /// Starts recording; from here on every key goes to your apps.
+    private func record() {
+        guard phase == .ready else { return }
+        phase = .recording
+        keys = []
+        (border.contentView as? BorderView)?.state = .recording
+        bar.showRecording()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
@@ -118,23 +144,13 @@ final class GifRecording {
 
     private func togglePause() {
         frames.setPaused(!frames.isPaused)
-        (border.contentView as? BorderView)?.isPaused = frames.isPaused
+        (border.contentView as? BorderView)?.state = frames.isPaused ? .paused : .recording
         tick()
-    }
-
-    /// Return and Esc work whichever app has the focus, since you're working in another app.
-    private func claimKeys() {
-        let bindings: [(Int, Bool)] = [(kVK_Escape, false), (kVK_Return, true), (kVK_ANSI_KeypadEnter, true)]
-        keys = bindings.compactMap { key, stops in
-            GlobalHotKey.claim(HotKeyCombination(keyCode: UInt32(key), modifiers: 0)) { [weak self] in
-                MainActor.assumeIsolated { stops ? self?.stop() : self?.cancel() }
-            }
-        }
     }
 
     /// Stops and makes the GIF; the bar says so while it's written.
     func stop() {
-        guard !isOver else { return }
+        guard phase == .recording else { return }
         let stream = stream
         tearDown(keepingBar: true)
         bar.showMaking()
@@ -165,7 +181,7 @@ final class GifRecording {
     }
 
     private func tearDown(keepingBar: Bool = false) {
-        isOver = true
+        phase = .over
         stream = nil
         keys = []
         ticker?.invalidate()
@@ -174,7 +190,8 @@ final class GifRecording {
         if !keepingBar { bar.orderOut(nil) }
     }
 
-    /// A red outline just outside the region (dashed while paused); clicks go through it.
+    /// An outline just outside the region — white and dashed while ready, red while recording, red
+    /// and dashed while paused; clicks go through it.
     private static func makeBorder(around frame: NSRect) -> NSWindow {
         let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
         window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
@@ -183,13 +200,21 @@ final class GifRecording {
     }
 
     private final class BorderView: NSView {
-        var isPaused = false { didSet { needsDisplay = true } }
+        enum State { case ready, recording, paused }
+        var state = State.ready { didSet { needsDisplay = true } }
 
         override func draw(_ dirtyRect: NSRect) {
             let path = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
             path.lineWidth = 2
-            if isPaused { path.setLineDash([6, 4], count: 2, phase: 0) }
-            NSColor.systemRed.setStroke()
+            if state != .recording { path.setLineDash([6, 4], count: 2, phase: 0) }
+            // White reads on any background once it has a dark edge under it.
+            if state == .ready {
+                let shadow = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
+                shadow.lineWidth = 3.5
+                NSColor.black.withAlphaComponent(0.45).setStroke()
+                shadow.stroke()
+            }
+            (state == .ready ? NSColor.white : NSColor.systemRed).setStroke()
             path.stroke()
         }
     }
@@ -325,27 +350,43 @@ extension GifRecording {
 }
 
 
-/// The bar beside a recording: a red dot, the time out of a minute, pause, and stop.
+/// The bar beside a recording. Ready: a red Record button and how to start or cancel. Recording: a
+/// red dot, the time out of a minute, pause, and stop.
 private final class RecordingBar: NSPanel {
+    var onRecord: (() -> Void)?
     var onStop: (() -> Void)?
     var onPause: (() -> Void)?
 
+    private let shortcut: String
+    private let recordButton = NSButton()
     private let dot = Design.symbol("circle.fill", size: 10, color: .systemRed)
     private let time = Design.label("0:00", size: 13, weight: .semibold, color: .white)
-    private let hint = Design.label("↩ stop   esc discard", size: 11, color: NSColor.white.withAlphaComponent(0.6))
+    private let hint = Design.label("", size: 11, color: NSColor.white.withAlphaComponent(0.6))
     private let pauseButton = NSButton()
     private let stopButton = NSButton()
     private let spinner = NSProgressIndicator()
 
-    init(beside region: NSRect, on screen: NSScreen) {
+    init(beside region: NSRect, on screen: NSScreen, shortcut: String) {
+        self.shortcut = shortcut
         super.init(contentRect: NSRect(x: 0, y: 0, width: 250, height: 40), styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         float(at: .statusBar, shadow: true)
         appearance = NSAppearance(named: .darkAqua)
         let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 10)
         time.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        // Drawn as its own red pill: a bezel's tint only shows in a key window, and this bar never is one.
+        recordButton.isBordered = false
+        recordButton.wantsLayer = true
+        recordButton.layer?.backgroundColor = NSColor.systemRed.cgColor
+        recordButton.layer?.cornerRadius = 12
+        recordButton.attributedTitle = NSAttributedString(string: "  ● Record  ", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.white])
+        recordButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        recordButton.toolTip = "Start recording (\(shortcut))"
+        recordButton.target = self
+        recordButton.action = #selector(recordTapped)
         for (button, symbol, tip, action) in [(pauseButton, "pause.fill", "Pause", #selector(pauseTapped)),
-                                              (stopButton, "stop.fill", "Stop (↩)", #selector(stopTapped))] {
+                                              (stopButton, "stop.fill", "Stop (\(shortcut))", #selector(stopTapped))] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
             button.isBordered = false
             button.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
@@ -359,15 +400,16 @@ private final class RecordingBar: NSPanel {
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
-        let row = Design.hstack([dot, time, hint, Design.spacer(), spinner, pauseButton, stopButton], spacing: 8)
+        let row = Design.hstack([recordButton, dot, time, hint, Design.spacer(), spinner, pauseButton, stopButton], spacing: 8)
         row.translatesAutoresizingMaskIntoConstraints = false
         material.addSubview(row)
         NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 12),
+            row.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 8),
             row.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -8),
             row.centerYAnchor.constraint(equalTo: material.centerYAnchor)
         ])
         contentView = material
+        showReady()
         // Below the region, else above it, else inside its bottom edge.
         let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
         var origin = NSPoint(x: min(max(region.maxX - frame.width, visible.minX), visible.maxX - frame.width), y: region.minY - frame.height - 10)
@@ -377,6 +419,18 @@ private final class RecordingBar: NSPanel {
     }
 
     override var canBecomeKey: Bool { false }
+
+    private func showReady() {
+        hint.stringValue = "\(shortcut) start   esc cancel"
+        for view in [dot, time, pauseButton, stopButton] as [NSView] { view.isHidden = true }
+    }
+
+    func showRecording() {
+        recordButton.isHidden = true
+        for view in [dot, time, pauseButton, stopButton] as [NSView] { view.isHidden = false }
+        hint.stringValue = "\(shortcut) stop"
+        show(elapsed: 0, paused: false)
+    }
 
     func show(elapsed: TimeInterval, paused: Bool) {
         let seconds = Int(elapsed)
@@ -393,6 +447,7 @@ private final class RecordingBar: NSPanel {
         spinner.startAnimation(nil)
     }
 
+    @objc private func recordTapped() { onRecord?() }
     @objc private func pauseTapped() { onPause?() }
     @objc private func stopTapped() { onStop?() }
 }

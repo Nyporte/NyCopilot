@@ -190,15 +190,18 @@ dragging it to the edge of the screen.
   sticky headers appear once. Its keys
   work wherever the focus is: **Return** (copy), **⌘S**, **⇧⌘S**, **⌘T** (pinned to fit the screen),
   or **Esc** to cancel. Up to 30,000 pixels tall; NyCopilot's own windows are never in the picture.
-- **Record a GIF** with **G** (or the record button beside scrolling capture). As with scrolling
-  capture, the selection stays outlined — in red — and you keep using the computer: clicks and typing
-  go through, and the pointer is recorded. A small bar beside it shows the time, with pause and stop.
-  **Return** (the stop button, or F1 again) stops; **Esc** discards; recording stops on its own after
-  a minute. The GIF then plays in a panel: **Return** copies it (chat apps and documents take it as an
-  animated GIF), **⌘S** saves it, **⇧⌘S** saves it straight to your folder, **I** keeps it in the
-  inbox, **Esc** discards it. Settings → Screenshot sets the frame rate (15 a second by default), full
-  Retina resolution (off: one pixel per point, a quarter of the size), and whether the pointer shows.
-  NyCopilot's own windows never appear in a recording.
+- **Record a GIF** with **G** (or the record button beside scrolling capture). The area is armed
+  first — a white dashed outline and a bar with a red **Record** button — so you can set up what
+  you'll show; **Esc** cancels. **Record** (or F1) starts it: the outline turns red and the bar shows
+  the time, with pause and stop. **F1** or stop ends it, and it ends on its own after a minute. While
+  recording, no key is taken from your apps, so Return and Esc can be part of what you show; the
+  pointer is recorded. The GIF then plays in a panel, the likeliest choice on the right: **Return**
+  copies it (chat apps and documents take it as an animated GIF), **⌘S** saves it, **I** keeps it in
+  the inbox; discarding takes the trash button or **⌘⌫**. **Esc** puts the panel away and saves the
+  GIF to your folder, so nothing is lost by accident. Settings → Screenshot sets the frame rate (15 a
+  second by default), full Retina resolution (off: one pixel per point, a quarter of the size), and
+  whether the pointer shows. Frames are encoded as they come, so finishing is instant and memory stays
+  low; NyCopilot's own windows never appear in a recording.
 - **Translate** with **R** (or the speech-bubble button): the capture's text is read paragraph by
   paragraph and its translation appears on a card beside the region. It reads the finished image,
   so text under a mosaic stays hidden.
