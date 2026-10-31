@@ -11,3 +11,39 @@ extension NSApplication {
         activate(ignoringOtherApps: true)
     }
 }
+
+extension NSRunningApplication {
+    /// Gives this app the focus, then runs `then` once macOS reports it active — or after half a
+    /// second if it never does (the app declined, or quit), so what waits on it can't hang.
+    @MainActor
+    func activate(then: @escaping () -> Void) {
+        guard !isTerminated, !isActive else { then(); return }
+        ActivationWait(then: then).start(self)
+    }
+}
+
+@MainActor
+private final class ActivationWait {
+    private var then: (() -> Void)?
+    private var observer: NSObjectProtocol?
+
+    init(then: @escaping () -> Void) { self.then = then }
+
+    func start(_ app: NSRunningApplication) {
+        let pid = app.processIdentifier
+        observer = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification,
+                                                                     object: nil, queue: .main) { [self] note in
+            guard (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier == pid else { return }
+            MainActor.assumeIsolated { finish() }
+        }
+        app.activate(options: [])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in MainActor.assumeIsolated { finish() } }
+    }
+
+    private func finish() {
+        guard let then else { return }
+        self.then = nil
+        if let observer { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        then()
+    }
+}

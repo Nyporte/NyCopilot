@@ -98,9 +98,9 @@ final class CaptureShell: ModuleShell {
             services.toast.show(L("Allow Screen Recording to capture"), detail: L("Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording, then press the shortcut again."), style: .warning)
             return
         }
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            previousApp = NSWorkspace.shared.frontmostApplication
-        }
+        // Nil when NyCopilot itself was in front: then nothing needs the focus back.
+        let front = NSWorkspace.shared.frontmostApplication
+        previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
         CaptureView.showsKeysTip = Tips.due("capture.keys", after: 2, times: 3)
         let pressed = Date()
         CaptureView.pressedAt = pressed
@@ -140,6 +140,7 @@ final class CaptureShell: ModuleShell {
                                               near: CaptureSession.appKitRect(region))
                 }
                 session.onCancel = { [weak self] in self?.end() }
+                session.returnsFocusTo = previousApp
                 self.session = session
                 let built = Date()
                 session.show()
@@ -152,9 +153,9 @@ final class CaptureShell: ModuleShell {
 
     private static func ms(_ from: Date, _ to: Date) -> Int { Int(to.timeIntervalSince(from) * 1000) }
 
-    private func end(returnFocus: Bool = true) {
+    /// The session hands the focus back as it closes (see CaptureSession.close).
+    private func end() {
         session = nil
-        if returnFocus, let app = previousApp, !app.isTerminated { app.activate(options: []) }
     }
 
     private func finish(_ action: CaptureAction, image: NSImage, region: CGRect, screen: NSScreen) {
@@ -177,7 +178,7 @@ final class CaptureShell: ModuleShell {
             record(image, region: region, screen: screen, path: nil)
             end()
         case .save:
-            end(returnFocus: false)
+            end()
             saveWithPanel(image, region: (region, screen))
         case .quickSave:
             end()
@@ -262,9 +263,10 @@ final class CaptureShell: ModuleShell {
             panel.canCreateDirectories = true
             panel.level = .modalPanel
             panel.begin { [weak self] response in
+                // Saved or not, back to the app you were in.
+                if let app = self?.previousApp, !app.isTerminated { app.activate(options: []) }
                 guard response == .OK, let url = panel.url else { return }
                 self?.move(clip, to: url)
-                if let app = self?.previousApp, !app.isTerminated { app.activate(options: []) }
             }
         case .quickSave:
             let url = nextFileURL(extension: "gif")
@@ -379,9 +381,11 @@ final class CaptureShell: ModuleShell {
         panel.canCreateDirectories = true
         panel.level = .modalPanel
         panel.begin { [weak self] response in
-            guard let self, response == .OK, let url = panel.url else { return }
-            if write(image, to: url) != nil, let (rect, screen) = region { record(image, region: rect, screen: screen, path: url.path) }
+            guard let self else { return }
+            // Saved or not, back to the app you were in.
             if let app = previousApp, !app.isTerminated { app.activate(options: []) }
+            guard response == .OK, let url = panel.url else { return }
+            if write(image, to: url) != nil, let (rect, screen) = region { record(image, region: rect, screen: screen, path: url.path) }
         }
     }
 

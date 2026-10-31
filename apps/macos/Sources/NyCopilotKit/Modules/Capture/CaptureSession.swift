@@ -14,6 +14,10 @@ final class CaptureSession {
     var onTextCopied: ((Int, CGRect, NSScreen) -> Void)?
     var onCancel: (() -> Void)?
 
+    /// The app you were in. NyCopilot is the active app while the capture is up (so the cursor is
+    /// its own); this app gets the focus back before the overlay goes.
+    var returnsFocusTo: NSRunningApplication?
+
     private var windows: [CaptureWindow] = []
     private var views: [CaptureView] = []
 
@@ -52,7 +56,8 @@ final class CaptureSession {
                     return
                 }
                 guard let image = view.renderedImage() else { return }
-                close()
+                // Saving asks where in a panel, which needs NyCopilot in front; it hands focus back after.
+                close(returningFocus: action != .save)
                 onFinish?(action, image, global, screen.screen)
             }
             view.onTextCopied = { [weak self, weak view] lines in
@@ -80,22 +85,29 @@ final class CaptureSession {
         let pointed = zip(windows, views).first { window, _ in window.frame.contains(mouse) }
         pointed?.1.hoverAtPointer()
         for window in windows { window.orderFrontRegardless() }
-        // Key without activating NyCopilot: the app you were in keeps its focus, so nothing under the
-        // frozen screen changes (an inactive window's gray buttons, dimmed selections).
+        // Active only once the frozen screen covers everything: the app you were in turns inactive
+        // underneath it, out of sight. Active, NyCopilot owns the cursor; in the background, the
+        // app in front could put its arrow back at any moment.
+        NSApp.bringForward()
         if let (window, view) = pointed {
             window.makeKey()
             window.makeFirstResponder(view)
         }
-        // Without the background cursor (a future macOS), activate so the crosshair still shows.
-        if !BackgroundCursor.allow() { NSApp.bringForward() }
         NSCursor.crosshair.set()
     }
 
-    func close() {
-        windows.forEach { $0.orderOut(nil) }
+    /// The overlay stays up until the app you were in has the focus back, so its window never
+    /// shows inactive; it takes no more clicks meanwhile.
+    func close(returningFocus: Bool = true) {
+        let closing = windows
         windows.removeAll()
         views.removeAll()
-        NSCursor.arrow.set()
+        closing.forEach { $0.ignoresMouseEvents = true }
+        let hide = {
+            closing.forEach { $0.orderOut(nil) }
+            NSCursor.arrow.set()
+        }
+        if returningFocus, let app = returnsFocusTo { app.activate(then: hide) } else { hide() }
     }
 
     /// A screen's top-left corner in global top-left coordinates (see ScreenGeometry).
