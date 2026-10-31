@@ -9,7 +9,7 @@ let coreProfile = ProcessInfo.processInfo.environment["NY_CORE_PROFILE"] ?? "rel
 
 let package = Package(
     name: "NyCopilot",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v14)],
     products: [.executable(name: "NyCopilot", targets: ["NyCopilot"])],
     targets: [
         .systemLibrary(name: "CNyCore", path: "Sources/CNyCore"),
@@ -19,6 +19,8 @@ let package = Package(
         .target(
             name: "NyCopilotKit",
             dependencies: ["CNyCore", "MacPlatform"],
+            // Every data race the compiler can see is reported (warnings for now; Swift 6 makes them errors).
+            swiftSettings: [.enableExperimentalFeature("StrictConcurrency")],
             linkerSettings: [.unsafeFlags(["-L\(root)/target/\(coreProfile)"])]
         ),
         .executableTarget(

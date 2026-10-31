@@ -1,5 +1,5 @@
 import AppKit
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 /// Every live screen stream NyCopilot runs (scrolling capture, GIF recording) starts and stops here,
 /// so each has a delegate, each failure is noted, and a stream macOS won't stop is caught.

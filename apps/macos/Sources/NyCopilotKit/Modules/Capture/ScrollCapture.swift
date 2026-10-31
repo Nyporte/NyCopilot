@@ -1,7 +1,7 @@
 import AppKit
 import Carbon
 import MacPlatform
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 /// Scrolling capture. The selection stays outlined while you scroll whatever is under it, up or down.
 /// The whole scrollable area around it is streamed — not just the selection — so every frame can be

@@ -1,6 +1,7 @@
 import AppKit
 
 /// Shared building blocks so every window uses the same spacing, type, and grouped-form style.
+@MainActor
 enum Design {
     static let paneWidth: CGFloat = 560
     static let panePadding: CGFloat = 24

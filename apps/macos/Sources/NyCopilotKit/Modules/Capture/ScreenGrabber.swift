@@ -1,9 +1,10 @@
 import AppKit
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 
 /// One display frozen at the moment a capture starts: its pixels and the windows on it, so the
 /// selection UI works on a still image while the real screen keeps running underneath.
-struct FrozenScreen {
+/// Immutable once frozen, so it can be handed between tasks.
+struct FrozenScreen: @unchecked Sendable {
     let screen: NSScreen
     let image: CGImage
     /// On-screen windows, front to back, in this screen's flipped view coordinates (top-left origin).
@@ -37,13 +38,10 @@ enum ScreenGrabber {
         let windows = visibleWindows(includingOwn: !hidingOwnWindows)
         // The display list barely changes, so the lookup made at launch (or after the last capture)
         // serves; NyCopilot's windows are left out by app, which needs no fresh window list.
-        var content: SCShareableContent?
-        if #available(macOS 14.0, *) {
-            content = try await shareableContent(reusingRecent: true)
-            let ids = NSScreen.screens.compactMap(displayID)
-            if !ids.allSatisfy({ id in content?.displays.contains { $0.displayID == id } == true }) {
-                content = try await shareableContent(reusingRecent: false)
-            }
+        var content = try await shareableContent(reusingRecent: true)
+        let ids = NSScreen.screens.compactMap(displayID)
+        if !ids.allSatisfy({ id in content.displays.contains { $0.displayID == id } }) {
+            content = try await shareableContent(reusingRecent: false)
         }
         let looked = Date()
         // Every display at once rather than one after another.
@@ -105,33 +103,23 @@ enum ScreenGrabber {
     static func snapshot(of screen: NSScreen, pixelsPerPoint: CGFloat) async throws -> CGImage? {
         guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
         let width = Int((screen.frame.width * pixelsPerPoint).rounded()), height = Int((screen.frame.height * pixelsPerPoint).rounded())
-        if #available(macOS 14.0, *) {
-            var content = try await shareableContent(reusingRecent: true)
-            if !content.displays.contains(where: { $0.displayID == id }) { content = try await shareableContent(reusingRecent: false) }
-            guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
-            // By app rather than by window, so windows opened since the lookup are left out too.
-            let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
-            let configuration = SCStreamConfiguration()
-            configuration.width = width
-            configuration.height = height
-            configuration.showsCursor = false
-            return try await SCScreenshotManager.captureImage(
-                contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
-        }
-        guard let full = composite(withoutOwnWindowsOn: id) else { return nil }
-        guard full.width != width,
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return full }
-        context.interpolationQuality = .medium
-        context.draw(full, in: CGRect(x: 0, y: 0, width: width, height: height))
-        return context.makeImage()
+        var content = try await shareableContent(reusingRecent: true)
+        if !content.displays.contains(where: { $0.displayID == id }) { content = try await shareableContent(reusingRecent: false) }
+        guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
+        // By app rather than by window, so windows opened since the lookup are left out too.
+        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        let configuration = SCStreamConfiguration()
+        configuration.width = width
+        configuration.height = height
+        configuration.showsCursor = false
+        return try await SCScreenshotManager.captureImage(
+            contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
     }
 
     private static func capture(_ id: CGDirectDisplayID?, pixels: CGSize, hidingOwnWindows: Bool,
-                                content: SCShareableContent?) async throws -> CGImage? {
+                                content: SCShareableContent) async throws -> CGImage? {
         guard let id else { return nil }
-        if #available(macOS 14.0, *), let content {
+        do {
             guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
             // By app rather than by window, so pins opened since the lookup are left out too.
             let own = hidingOwnWindows ? content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier } : []
@@ -143,20 +131,6 @@ enum ScreenGrabber {
             return try await SCScreenshotManager.captureImage(
                 contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
         }
-        return hidingOwnWindows ? composite(withoutOwnWindowsOn: id) : CGDisplayCreateImage(id)
-    }
-
-    /// macOS 13: the display composed from every on-screen window except NyCopilot's.
-    private static func composite(withoutOwnWindowsOn id: CGDirectDisplayID) -> CGImage? {
-        let own = ProcessInfo.processInfo.processIdentifier
-        let list = CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]] ?? []
-        let ids = list.compactMap { info -> CGWindowID? in
-            (info[kCGWindowOwnerPID as String] as? pid_t) == own ? nil : info[kCGWindowNumber as String] as? CGWindowID
-        }
-        // CGWindowListCreateImageFromArray takes a CFArray of raw window numbers, not objects.
-        var pointers = ids.map { UnsafeRawPointer(bitPattern: UInt($0)) }
-        guard let array = pointers.withUnsafeMutableBufferPointer({ CFArrayCreate(nil, $0.baseAddress, $0.count, nil) }) else { return nil }
-        return CGImage(windowListFromArrayScreenBounds: CGDisplayBounds(id), windowArray: array, imageOption: .bestResolution)
     }
 
     /// Normal windows, menus, menu bar items, and the Dock, front to back, in global top-left

@@ -32,7 +32,7 @@ public struct PixelFrame {
 /// not following the scroll). Where the selection includes fixed rows they appear once, above and
 /// below the scrolled content. Matching works on per-row luminance signatures, a few milliseconds per frame.
 public final class ScrollStitcher {
-    public enum Outcome: Equatable {
+    public enum Outcome: Equatable, Sendable {
         /// The first frame.
         case started
         /// The image grew by this many rows, at the top or the bottom.

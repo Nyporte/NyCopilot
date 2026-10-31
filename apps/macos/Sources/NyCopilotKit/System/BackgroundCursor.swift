@@ -11,7 +11,7 @@ enum BackgroundCursor {
     private typealias DefaultConnection = @convention(c) () -> Int32
     private typealias SetProperty = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> Int32
 
-    private static var result: Bool?
+    @MainActor private static var result: Bool?
 
     /// Whether the cursor can be set from the background; false means the caller should activate.
     @MainActor

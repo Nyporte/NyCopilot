@@ -1,5 +1,5 @@
 import AppKit
-import VisionKit
+@preconcurrency import VisionKit
 
 /// Live Text from macOS (VisionKit): the same on-device text recognition, highlight, and in-place
 /// selection as Preview and Photos. Nothing leaves the Mac, and there are no models of our own.
@@ -33,7 +33,7 @@ enum LiveText {
 
     /// What ⌘C copies: the selection (macOS 14 and later can tell), otherwise everything.
     static func textToCopy(from overlay: ImageAnalysisOverlayView) -> String {
-        if #available(macOS 14, *), overlay.hasActiveTextSelection, !overlay.selectedText.isEmpty { return overlay.selectedText }
+        if overlay.hasActiveTextSelection, !overlay.selectedText.isEmpty { return overlay.selectedText }
         return overlay.analysis?.transcript ?? ""
     }
 

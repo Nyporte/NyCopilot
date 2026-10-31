@@ -77,9 +77,15 @@ final class NyCore: @unchecked Sendable {
         return try decoder.decode(T.self, from: data)
     }
 
-    /// Run a blocking call (such as a model request) off the main thread.
-    func perform<T: Decodable>(_ method: CoreMethod, _ params: [String: Any] = [:], as type: T.Type) async throws -> T {
-        try await Task.detached(priority: .userInitiated) { [self] in try call(method, params, as: type) }.value
+    /// Run a blocking call (such as a model request) off the main thread. The parameters are
+    /// encoded here, so nothing mutable crosses to the other thread.
+    @MainActor
+    func perform<T: Decodable & Sendable>(_ method: CoreMethod, _ params: [String: Any] = [:], as type: T.Type) async throws -> T {
+        let body = try JSONSerialization.data(withJSONObject: params)
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            let decoded = try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
+            return try call(method, decoded, as: type)
+        }.value
     }
 
     func setting<T>(_ key: String, default fallback: T) -> T {
@@ -108,8 +114,11 @@ final class NyCore: @unchecked Sendable {
 /// Events may arrive on any thread; republish them on the main thread for UI code.
 private func nyCoreEvent(_ json: UnsafePointer<CChar>?, _ context: UnsafeMutableRawPointer?) {
     guard let json, let event = try? JSONSerialization.jsonObject(with: Data(bytes: json, count: strlen(json))) as? [String: Any] else { return }
+    // JSON values are immutable once parsed.
+    struct Payload: @unchecked Sendable { let event: [String: Any] }
+    let payload = Payload(event: event)
     DispatchQueue.main.async {
-        NotificationCenter.default.post(name: NyCore.eventNotification, object: nil, userInfo: ["event": event])
+        NotificationCenter.default.post(name: NyCore.eventNotification, object: nil, userInfo: ["event": payload.event])
     }
 }
 

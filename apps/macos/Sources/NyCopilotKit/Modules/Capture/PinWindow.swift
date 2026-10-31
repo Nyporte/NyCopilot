@@ -1,5 +1,5 @@
 import AppKit
-import VisionKit
+@preconcurrency import VisionKit
 
 /// An image floating above every window. Drag to move, scroll to zoom, ⌥-scroll to fade, 1–4 to rotate
 /// and flip, T to select its text in place, ⌘C to copy, ⌘S to save, Esc or a double-click to close. Right-click for

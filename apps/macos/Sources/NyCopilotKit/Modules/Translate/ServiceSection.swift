@@ -154,7 +154,7 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
 }
 
 extension ServiceSection.Spec {
-    static let google = ServiceSection.Spec(
+    @MainActor static let google = ServiceSection.Spec(
         title: "Google Translate",
         footer: "Runs through your own Apps Script web app. Deploy it with “Execute as: Me” and “Who has access: Anyone”; with any other access setting, requests land on Google’s sign-in page. The key is stored only in your Keychain.",
         fieldLabel: "Web app URL", fieldPlaceholder: "https://script.google.com/macros/s/…/exec", setting: .googleURL,
@@ -162,7 +162,7 @@ extension ServiceSection.Spec {
         isTestable: { url, _ in !url.isEmpty },
         test: { url, key in (.translateTestGoogle, ["url": url, "key": key]) })
 
-    static let volcengine = ServiceSection.Spec(
+    @MainActor static let volcengine = ServiceSection.Spec(
         title: "Volcengine",
         footer: "Doubao machine translation (volc.speech.mt), 32 languages. Paste the API key from the new Volcengine console, or, for old-console credentials, the App ID and access token. The key is stored only in your Keychain.",
         fieldLabel: "App ID (old console only)", fieldPlaceholder: "Leave empty with an API key", setting: .volcengineAppID,

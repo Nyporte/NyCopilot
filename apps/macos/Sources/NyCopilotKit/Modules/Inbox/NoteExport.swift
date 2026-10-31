@@ -1,5 +1,5 @@
 import AppKit
-import EventKit
+@preconcurrency import EventKit
 
 /// Sending an inbox note somewhere it gets done: Apple Reminders, Apple Notes, or a Markdown file in
 /// a folder of yours (an Obsidian vault, a notes repository). Each keeps the note's source.
@@ -74,9 +74,7 @@ enum NoteExport {
 
     private static func toReminders(_ content: Content) async throws {
         let store = EKEventStore()
-        let granted: Bool
-        if #available(macOS 14, *) { granted = try await store.requestFullAccessToReminders() }
-        else { granted = try await store.requestAccess(to: .reminder) }
+        let granted = try await store.requestFullAccessToReminders()
         guard granted else { throw Failure.remindersDenied }
         guard let list = store.defaultCalendarForNewReminders() else { throw Failure.noReminderList }
         let reminder = EKReminder(eventStore: store)

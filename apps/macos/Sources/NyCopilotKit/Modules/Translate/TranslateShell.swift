@@ -2,7 +2,7 @@ import AppKit
 import MacPlatform
 import os
 
-private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "composer")
+nonisolated(unsafe) private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "composer")
 
 /// macOS half of the Translate module: capture the focused field, show the composer, ask the core
 /// to translate, then paste the result back (or copy it when the field can't take a paste).

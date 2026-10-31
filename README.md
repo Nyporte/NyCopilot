@@ -34,7 +34,7 @@ See [spec/architecture.md](spec/architecture.md), [spec/protocol.md](spec/protoc
 
 ## Build and run
 
-Requires macOS 13+, Xcode or Command Line Tools (Swift 5.9+), and Rust (stable, via rustup).
+Requires macOS 14+, Xcode or Command Line Tools (Swift 5.9+), and Rust (stable, via rustup).
 
 ```sh
 make build   # Rust core (release) + Swift app → dist/NyCopilot.app, signed

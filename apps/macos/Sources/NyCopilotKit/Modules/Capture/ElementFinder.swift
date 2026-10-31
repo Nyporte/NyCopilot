@@ -32,7 +32,7 @@ final class ElementFinder: @unchecked Sendable {
     private var exposed: Set<pid_t> = []
 
     /// `point` and `window` are global top-left; `found` gets the element's frame on the main thread.
-    func find(at point: CGPoint, in window: FrozenScreen.Window, found: @escaping @MainActor (CGRect) -> Void) {
+    func find(at point: CGPoint, in window: FrozenScreen.Window, found: @escaping @MainActor @Sendable (CGRect) -> Void) {
         guard AXIsProcessTrusted(), window.pid > 0 else { return }
         lock.lock()
         generation += 1

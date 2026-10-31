@@ -12,7 +12,8 @@ final class GlobalHotKey {
     private var handler: EventHandlerRef?
     private let identifier: UInt32
     private static let signature: OSType = 0x4E79436F // "NyCo" identifies our hotkey events.
-    private static var lastIdentifier: UInt32 = 0
+    /// Only touched on the main thread, where hotkeys are registered.
+    nonisolated(unsafe) private static var lastIdentifier: UInt32 = 0
 
     /// Each instance owns a distinct numeric ID so handlers never consume one another's events.
     init() throws {

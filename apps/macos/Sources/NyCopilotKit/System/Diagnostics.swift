@@ -6,9 +6,10 @@ import os
 /// your text: app names, roles, and error codes.
 enum Diagnostics {
     private static let lock = NSLock()
-    private static var events: [String] = []
+    /// Guarded by `lock`.
+    nonisolated(unsafe) private static var events: [String] = []
     private static let limit = 300
-    private static let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "diagnostics")
+    nonisolated(unsafe) private static let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "diagnostics")
     private static let clock: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"

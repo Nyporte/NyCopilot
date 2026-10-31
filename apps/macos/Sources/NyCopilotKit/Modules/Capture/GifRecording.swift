@@ -2,7 +2,7 @@ import AppKit
 import Carbon
 import CoreMedia
 import MacPlatform
-import ScreenCaptureKit
+@preconcurrency import ScreenCaptureKit
 import VideoToolbox
 
 /// A finished GIF recording: the file (in NyCopilot's caches until it's saved somewhere) and what to

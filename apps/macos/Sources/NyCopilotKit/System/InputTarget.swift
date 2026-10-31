@@ -1,11 +1,11 @@
 import AppKit
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import Carbon
 import MacPlatform
 import os
 
 /// Geometry and roles only; captured text is never logged.
-private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "capture")
+nonisolated(unsafe) private let log = Logger(subsystem: "dev.nycopilot.NyCopilot", category: "capture")
 
 /// The field a composition goes back to. A *verified* target is a text field macOS Accessibility can
 /// read: NyCopilot restores its focus and selection and pastes through a temporary clipboard. Some

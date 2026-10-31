@@ -1,5 +1,5 @@
 import AppKit
-import VisionKit
+@preconcurrency import VisionKit
 
 /// What the user chose to do with a capture.
 enum CaptureAction { case copy, save, quickSave, pin, scroll, record, translate, inbox, ask }
