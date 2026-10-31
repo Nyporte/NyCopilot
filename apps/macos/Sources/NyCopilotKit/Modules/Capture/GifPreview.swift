@@ -13,7 +13,7 @@ final class GifPreview {
     var onDiscard: ((GifClip) -> Void)?
 
     private let clip: GifClip
-    private let panel: PreviewPanel
+    let panel: PreviewPanel
 
     init(clip: GifClip, near region: NSRect, on screen: NSScreen) {
         self.clip = clip
@@ -119,7 +119,7 @@ final class GifPreview {
 }
 
 /// Takes keys without activating NyCopilot, like the capture overlay.
-private final class PreviewPanel: NSPanel {
+final class PreviewPanel: NSPanel {
     enum Key: Equatable {
         case returnKey, escape, character(String), command(String), shiftCommand(String)
 

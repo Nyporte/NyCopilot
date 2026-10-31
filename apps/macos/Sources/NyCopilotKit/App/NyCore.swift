@@ -8,6 +8,11 @@ final class NyCore: @unchecked Sendable {
     static let eventNotification = Notification.Name("NyCopilot.CoreEvent")
 
     private let handle: OpaquePointer
+    /// Settings as last read: reading one is a JSON round trip into SQLite, and menus, captures,
+    /// and panels read them all the time. Dropped on every change the core reports and every write.
+    private let cacheLock = NSLock()
+    private var settingsCache: [String: Any] = [:]
+    private var observer: NSObjectProtocol?
 
     /// The error envelope from the core: a stable `code` plus a message suitable for display.
     struct Failure: LocalizedError, Decodable {
@@ -26,9 +31,24 @@ final class NyCore: @unchecked Sendable {
             throw Self.decodeFailure(error.map { String(cString: $0) }) ?? Failure(code: "open", message: "NyCopilot couldn’t open its data.", status: nil)
         }
         handle = opened
+        observer = NotificationCenter.default.addObserver(forName: Self.eventNotification, object: nil, queue: nil) { [weak self] note in
+            guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "settings.changed" else { return }
+            self?.forget(event["key"] as? String)
+        }
     }
 
-    deinit { ny_close(handle) }
+    deinit {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        ny_close(handle)
+    }
+
+    /// Drops one cached setting, or all of them.
+    func forgetSetting(_ key: String?) { forget(key) }
+
+    private func forget(_ key: String?) {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        if let key { settingsCache[key] = nil } else { settingsCache.removeAll() }
+    }
 
     /// Synchronous call; fine for settings and records. Use `perform` for model-backed methods.
     @discardableResult
@@ -61,10 +81,19 @@ final class NyCore: @unchecked Sendable {
     }
 
     func setting<T>(_ key: String, default fallback: T) -> T {
-        (try? call("settings.get", ["key": key])) as? T ?? fallback
+        cacheLock.lock()
+        let cached = settingsCache[key]
+        cacheLock.unlock()
+        if let cached { return cached as? T ?? fallback }
+        guard let value = try? call("settings.get", ["key": key]) else { return fallback }
+        cacheLock.lock(); settingsCache[key] = value; cacheLock.unlock()
+        return value as? T ?? fallback
     }
 
-    func setSetting(_ key: String, _ value: Any) throws { try call("settings.set", ["key": key, "value": value]) }
+    func setSetting(_ key: String, _ value: Any) throws {
+        defer { forget(key) }
+        try call("settings.set", ["key": key, "value": value])
+    }
 
     private static func decodeFailure(_ text: String?) -> Failure? {
         guard let text, let data = text.data(using: .utf8),

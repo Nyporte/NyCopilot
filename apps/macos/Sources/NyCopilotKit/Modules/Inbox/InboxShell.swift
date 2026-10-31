@@ -41,12 +41,38 @@ final class InboxShell: ModuleShell {
         }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
         Self.images.removeUnused(core: services.core, collections: [.inboxNotes, .inboxDone, .inboxSnoozed])
-        // Snoozed notes come back on time, or at launch when they fell due while NyCopilot was off.
+        // Snoozed notes come back on time, or at launch (or wake) when they fell due meanwhile.
         wakeDueNotes()
-        alarm = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        snoozeObservers = [
+            NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
+                guard let event = note.userInfo?["event"] as? [String: Any],
+                      event["collection"] as? String == CoreCollection.inboxSnoozed.rawValue else { return }
+                MainActor.assumeIsolated { self?.scheduleAlarm() }
+            },
+            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.wakeDueNotes() }
+            }
+        ]
+    }
+
+    private var snoozeObservers: [NSObjectProtocol] = []
+
+    /// One timer, for the next snoozed note that's due — none while nothing is snoozed.
+    private func scheduleAlarm() {
+        alarm?.invalidate()
+        snoozeObservers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        alarm = nil
+        struct Snoozed: Decodable { let until: Int64? }
+        let page = try? services.core.call("records.list", ["collection": CoreCollection.inboxSnoozed.rawValue, "limit": 500],
+                                           as: CorePage<Snoozed>.self)
+        guard let next = page?.records.compactMap(\.data.until).min() else { return }
+        let due = Date(timeIntervalSince1970: Double(next) / 1000)
+        let timer = Timer(fire: max(due, Date().addingTimeInterval(1)), interval: 0, repeats: false) { [weak self] _ in
             MainActor.assumeIsolated { self?.wakeDueNotes() }
         }
-        alarm?.tolerance = 10
+        timer.tolerance = 5
+        RunLoop.main.add(timer, forMode: .common)
+        alarm = timer
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
@@ -75,6 +101,7 @@ final class InboxShell: ModuleShell {
     private var waiting: Int { (try? services.core.call("inbox.count") as? [String: Any])?["count"] as? Int ?? 0 }
 
     private func wakeDueNotes() {
+        defer { scheduleAlarm() }
         guard let woken = (try? services.core.call("inbox.wake") as? [String: Any])?["woken"] as? [[String: Any]], !woken.isEmpty else { return }
         let first = ((woken[0]["data"] as? [String: Any])?["text"] as? String)?
             .split(whereSeparator: \.isNewline).first.map { "“\($0.prefix(50))”" } ?? "A snoozed note"

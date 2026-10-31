@@ -15,11 +15,22 @@ let package = Package(
         .systemLibrary(name: "CNyCore", path: "Sources/CNyCore"),
         // macOS-only mechanics (focus handoff, clipboard, shortcuts) that the core cannot own.
         .target(name: "MacPlatform"),
-        .executableTarget(
-            name: "NyCopilot",
+        // The whole app, as a library so tests can reach it; the executable only starts it.
+        .target(
+            name: "NyCopilotKit",
             dependencies: ["CNyCore", "MacPlatform"],
             linkerSettings: [.unsafeFlags(["-L\(root)/target/\(coreProfile)"])]
         ),
-        .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform"])
+        .executableTarget(
+            name: "NyCopilot",
+            dependencies: ["NyCopilotKit"],
+            linkerSettings: [.unsafeFlags(["-L\(root)/target/\(coreProfile)"])]
+        ),
+        .testTarget(name: "MacPlatformTests", dependencies: ["MacPlatform"]),
+        .testTarget(
+            name: "NyCopilotKitTests",
+            dependencies: ["NyCopilotKit"],
+            linkerSettings: [.unsafeFlags(["-L\(root)/target/\(coreProfile)"])]
+        )
     ]
 )

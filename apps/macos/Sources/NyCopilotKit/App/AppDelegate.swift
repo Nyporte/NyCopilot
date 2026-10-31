@@ -46,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Only load shells whose platform-neutral half exists in this core build.
         let available = Set((try? core.call("core.info") as? [String: Any])?["modules"] as? [String] ?? [])
+        // Old deletion markers go and the log is folded in, off the launch path.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [core] in _ = try? core?.call("core.compact") }
         modules = makeModules().filter { available.contains($0.id) }
         for module in modules { module.hotKeyActions.forEach(services.hotKeys.add) }
         services.hotKeys.add(.init(id: Self.showShortcutsAction, title: "Show all keyboard shortcuts",
@@ -63,7 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
-    func applicationWillTerminate(_ notification: Notification) { modules.forEach { $0.shutdown() } }
+    func applicationWillTerminate(_ notification: Notification) {
+        modules.forEach { $0.shutdown() }
+        _ = try? services.core.call("core.compact")
+    }
 
     // MARK: Menus
 

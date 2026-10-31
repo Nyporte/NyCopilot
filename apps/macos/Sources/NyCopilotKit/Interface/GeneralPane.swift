@@ -9,6 +9,7 @@ final class GeneralPane: SettingsPane {
     private let recordingBadge = StatusBadge()
     private let recordingButton = Design.button("Open System Settings…", target: nil, action: nil)
     private let diagnosticsButton = Design.button("Copy Diagnostics", target: nil, action: nil)
+    private let captureServiceButton = Design.button("Restart", target: nil, action: nil)
     private let loginSwitch = NSSwitch()
     private let loginNote = Design.wrapping("", size: 11.5)
     private var poll: Timer?
@@ -37,6 +38,11 @@ final class GeneralPane: SettingsPane {
         let diagnostics = FormRow("Diagnostics", subtitle: "What NyCopilot did lately — fields it found, pastes, errors — without any of your text. Paste it into a bug report.",
                                   accessory: diagnosticsButton)
 
+        captureServiceButton.target = self
+        captureServiceButton.action = #selector(restartCaptureService)
+        let captureService = FormRow("Screen capture service", subtitle: "If the screen-recording indicator stays on after a capture, macOS kept it running; restarting its capture service ends it.",
+                                     accessory: captureServiceButton)
+
         loginSwitch.target = self
         loginSwitch.action = #selector(toggleLogin)
         loginNote.isHidden = true
@@ -60,7 +66,7 @@ final class GeneralPane: SettingsPane {
             shortcuts.section("Shortcuts", footer: "Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys.",
                               actions: [AppDelegate.showShortcutsAction]),
             shortcuts.errorLabel,
-            FormSection("Troubleshooting", rows: [diagnostics]),
+            FormSection("Troubleshooting", rows: [diagnostics, captureService]),
         ]
         let guide = Design.button("Show Setup Guide…", target: self, action: #selector(showGuide))
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
@@ -111,6 +117,11 @@ final class GeneralPane: SettingsPane {
     @objc private func toggleModule(_ sender: NSSwitch) {
         guard let id = sender.identifier?.rawValue else { return }
         services.setModule(id, sender.state == .on)
+    }
+
+    @objc private func restartCaptureService() {
+        let done = CaptureStreams.restartCaptureService()
+        services.toast.show(done ? "Screen capture service restarted" : "Couldn’t restart the screen capture service", style: done ? .success : .warning)
     }
 
     @objc private func copyDiagnostics() {

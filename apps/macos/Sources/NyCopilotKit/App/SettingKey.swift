@@ -56,5 +56,8 @@ extension NyCore {
     func setting<T>(_ key: SettingKey, default fallback: T) -> T { setting(key.rawValue, default: fallback) }
     func setSetting(_ key: SettingKey, _ value: Any) throws { try setSetting(key.rawValue, value) }
     /// Back to the module's declared default.
-    func resetSetting(_ key: SettingKey) throws { try call("settings.reset", ["key": key.rawValue]) }
+    func resetSetting(_ key: SettingKey) throws {
+        defer { forgetSetting(key.rawValue) }
+        try call("settings.reset", ["key": key.rawValue])
+    }
 }

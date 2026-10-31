@@ -122,6 +122,20 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
     }
 
     func present() {
+        prepare()
+        window?.center()
+        NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        // Permission is granted in System Settings and the model in Settings, so re-check while open.
+        poll?.invalidate()
+        poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+    }
+
+    /// Everything `present` does but show the window.
+    func prepare() {
         // Only modules this build loaded.
         let loaded = Set(services.moduleList().map(\.id))
         for row in goalRows {
@@ -132,15 +146,6 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         scheme.selectedSegment = KeyScheme.allCases.firstIndex(of: current) ?? 0
         refresh()
         window?.setContentSize(window?.contentView?.fittingSize ?? .zero)
-        window?.center()
-        NSApp.activate(ignoringOtherApps: true)
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
-        // Permission is granted in System Settings and the model in Settings, so re-check while open.
-        poll?.invalidate()
-        poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refresh() }
-        }
     }
 
     private var chosenScheme: KeyScheme { KeyScheme.allCases[max(0, scheme.selectedSegment)] }

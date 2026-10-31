@@ -34,7 +34,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     var onPin: ((String) -> Void)?
     var onReplace: ((String) -> Void)?
 
-    private let panel = AskWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
+    let panel = AskWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
                                   styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: true)
     private let subject = Design.label("", size: 12, color: .secondaryLabelColor)
     private let picture = NSImageView()
@@ -150,6 +150,13 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     /// Opens beside the material (or a fifth of the way down the screen with the pointer), ready for
     /// a question; with something to ask about, ↩ alone explains it.
     func present(_ material: AskMaterial) {
+        prepare(material)
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(input)
+    }
+
+    /// Everything `present` does but show the panel.
+    func prepare(_ material: AskMaterial) {
         request?.cancel()
         self.material = material
         turns = []
@@ -172,8 +179,6 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         updateHint()
         fit()
         place(near: material.anchor)
-        panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(input)
     }
 
     func close() {
@@ -229,9 +234,9 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         }
     }
 
-    private enum Style { case question, answer, failure }
+    enum Style { case question, answer, failure }
 
-    private func append(_ text: String, style: Style) {
+    func append(_ text: String, style: Style) {
         let storage = transcript.textStorage!
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 4
@@ -360,7 +365,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
 }
 
 /// Borderless but able to take typing; ⌘ keys go to the panel, and it closes when you click elsewhere.
-private final class AskWindow: NSPanel {
+final class AskWindow: NSPanel {
     var onResignKey: (() -> Void)?
     var onCancel: (() -> Void)?
     var onCommand: ((String, Bool) -> Bool)?

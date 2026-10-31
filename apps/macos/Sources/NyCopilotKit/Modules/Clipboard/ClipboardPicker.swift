@@ -29,7 +29,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let core: NyCore
     private let images: ImageFolder
     private let thumbnails = NSCache<NSString, NSImage>()
-    private let panel = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
+    let panel = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
                                     styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: true)
     private let search = NSSearchField()
     private let table = NSTableView()
@@ -105,6 +105,14 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
 
     /// Opens near the pointer, newest copy selected, ready for typing.
     func present(target: InputTarget?, source: NSRunningApplication?) {
+        prepare(target: target, source: source)
+        // Key without activating the app, so its other windows stay where they are.
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(search)
+    }
+
+    /// Everything `present` does but show the list.
+    func prepare(target: InputTarget?, source: NSRunningApplication?) {
         self.target = target
         self.source = source
         search.stringValue = ""
@@ -117,9 +125,6 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let origin = NSPoint(x: min(max(pointer.x - size.width / 2, visible.minX), visible.maxX - size.width),
                              y: min(max(pointer.y - size.height - 12, visible.minY), visible.maxY - size.height))
         panel.setFrameOrigin(origin)
-        // Key without activating the app, so its other windows stay where they are.
-        panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(search)
     }
 
     /// Closes the list; unless a paste is about to return there anyway, focus goes back to the app
@@ -312,7 +317,7 @@ private final class ClipRow: NSTableCellView {
 
 /// Borderless but able to take typing; Esc and ⌘ keys go to the picker, and it closes when you
 /// click elsewhere.
-private final class PickerPanel: NSPanel {
+final class PickerPanel: NSPanel {
     var onCancel: (() -> Void)?
     var onCommand: ((String) -> Bool)?
     var onResignKey: (() -> Void)?

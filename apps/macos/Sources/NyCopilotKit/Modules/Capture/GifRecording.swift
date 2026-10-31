@@ -39,8 +39,6 @@ final class GifRecording {
     private let bar: RecordingBar
     private let frames: FrameSink
     private var stream: SCStream?
-    /// Hears when macOS stops the stream itself.
-    private let watcher = StreamWatcher()
     private var keys: [GlobalHotKey] = []
     private var ticker: Timer?
     private enum Phase { case ready, recording, over }
@@ -62,10 +60,6 @@ final class GifRecording {
         bar.onRecord = { [weak self] in self?.record() }
         bar.onStop = { [weak self] in self?.stop() }
         bar.onPause = { [weak self] in self?.togglePause() }
-        // macOS ended the stream itself: keep what was recorded rather than wait on a dead stream.
-        watcher.onStop = { [weak self] in
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.stop() } }
-        }
     }
 
     var isActive: Bool { !isOver }
@@ -127,12 +121,12 @@ final class GifRecording {
         configuration.showsCursor = showsCursor
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
         configuration.queueDepth = 5
-        let stream = SCStream(filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-                              configuration: configuration, delegate: watcher)
-        try stream.addStreamOutput(frames, type: .screen, sampleHandlerQueue: frames.queue)
         frames.begin()
-        try await stream.startCapture()
-        if isOver { try? await stream.stopCapture(); return }
+        // macOS ended the stream itself: keep what was recorded rather than wait on a dead stream.
+        let stream = try await CaptureStreams.shared.start(
+            "GIF recording", filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
+            configuration: configuration, output: frames, queue: frames.queue) { [weak self] in self?.stop() }
+        if isOver { await CaptureStreams.shared.stop(stream); return }
         self.stream = stream
     }
 
@@ -156,7 +150,7 @@ final class GifRecording {
         bar.showMaking()
         let frames = frames, scale = pixelsPerPoint
         Task { [weak self] in
-            if let stream { await Self.stopCapture(stream) }
+            if let stream { await CaptureStreams.shared.stop(stream) }
             let clip = await Task.detached(priority: .utility) { frames.makeGIF(pointsPerPixel: 1 / scale) }.value
             guard let self else { return }
             bar.orderOut(nil)
@@ -168,16 +162,9 @@ final class GifRecording {
         guard !isOver else { return }
         let stream = stream
         tearDown()
-        Task { if let stream { await Self.stopCapture(stream) } }
+        Task { if let stream { await CaptureStreams.shared.stop(stream) } }
         frames.discard()
         onCancel?()
-    }
-
-    /// A stream that won't stop keeps the screen-recording indicator up; note it for diagnostics.
-    private static func stopCapture(_ stream: SCStream) async {
-        do { try await stream.stopCapture() } catch {
-            Diagnostics.note("capture", "GIF stream didn’t stop: \((error as NSError).code) \(error.localizedDescription)")
-        }
     }
 
     private func tearDown(keepingBar: Bool = false) {
@@ -352,7 +339,7 @@ extension GifRecording {
 
 /// The bar beside a recording. Ready: a red Record button and how to start or cancel. Recording: a
 /// red dot, the time out of a minute, pause, and stop.
-private final class RecordingBar: NSPanel {
+final class RecordingBar: NSPanel {
     var onRecord: (() -> Void)?
     var onStop: (() -> Void)?
     var onPause: (() -> Void)?
@@ -450,15 +437,4 @@ private final class RecordingBar: NSPanel {
     @objc private func recordTapped() { onRecord?() }
     @objc private func pauseTapped() { onPause?() }
     @objc private func stopTapped() { onStop?() }
-}
-
-/// Notes when macOS stops a recording's stream on its own (a display change, the system's own
-/// "stop sharing"), so a stuck recording indicator can be explained.
-private final class StreamWatcher: NSObject, SCStreamDelegate, @unchecked Sendable {
-    var onStop: (() -> Void)?
-
-    func stream(_ stream: SCStream, didStopWithError error: Error) {
-        Diagnostics.note("capture", "GIF stream stopped by macOS: \((error as NSError).code) \(error.localizedDescription)")
-        onStop?()
-    }
 }

@@ -13,7 +13,7 @@ SIGN_IDENTITY ?= $(or \
 	$(shell security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/"Apple Development:/ { print $$2; exit }'), \
 	-)
 
-.PHONY: build core test test-core test-macos run icon clean
+.PHONY: build core test test-core test-macos run icon clean release
 
 # The optimized core as a static library, then the app bundle that links it.
 build: core
@@ -22,6 +22,8 @@ build: core
 	mkdir -p "$(APP)/Contents/MacOS" "$(APP)/Contents/Resources"
 	cp apps/macos/.build/release/NyCopilot "$(APP)/Contents/MacOS/NyCopilot"
 	cp apps/macos/Resources/Info.plist "$(APP)/Contents/Info.plist"
+	@if [ -n "$(VERSION)" ]; then /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" "$(APP)/Contents/Info.plist"; fi
+	@if [ -n "$(BUILD_NUMBER)" ]; then /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_NUMBER)" "$(APP)/Contents/Info.plist"; fi
 	cp apps/macos/Resources/AppIcon.icns "$(APP)/Contents/Resources/AppIcon.icns"
 	@if [ "$(SIGN_IDENTITY)" = "-" ]; then echo "warning: no signing certificate found; ad-hoc builds lose Accessibility and Keychain access on every rebuild"; fi
 	codesign --force --options runtime --entitlements apps/macos/Resources/NyCopilot.entitlements --sign "$(SIGN_IDENTITY)" "$(APP)"
@@ -53,3 +55,7 @@ icon:
 clean:
 	cargo clean
 	rm -rf apps/macos/.build dist .build
+
+# A notarized, stapled zip from the current version tag; see scripts/release.sh.
+release:
+	scripts/release.sh

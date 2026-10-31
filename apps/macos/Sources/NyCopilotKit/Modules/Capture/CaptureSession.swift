@@ -86,7 +86,8 @@ final class CaptureSession {
             window.makeKey()
             window.makeFirstResponder(view)
         }
-        BackgroundCursor.allow()
+        // Without the background cursor (a future macOS), activate so the crosshair still shows.
+        if !BackgroundCursor.allow() { NSApp.activate(ignoringOtherApps: true) }
         NSCursor.crosshair.set()
     }
 

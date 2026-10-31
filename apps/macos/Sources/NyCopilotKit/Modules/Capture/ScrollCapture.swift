@@ -113,12 +113,14 @@ final class ScrollCapture {
         configuration.showsCursor = false
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         configuration.queueDepth = 4
-        let stream = SCStream(filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-                              configuration: configuration, delegate: nil)
-        try stream.addStreamOutput(frames, type: .screen, sampleHandlerQueue: frames.queue)
-        try await stream.startCapture()
+        let stream = try await CaptureStreams.shared.start(
+            "scrolling capture", filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
+            configuration: configuration, output: frames, queue: frames.queue) { [weak self] in
+            // macOS ended it: keep what was stitched so far.
+            self?.finish(.copy)
+        }
         // Finished or cancelled while the stream was starting.
-        if isOver { try? await stream.stopCapture(); return }
+        if isOver { await CaptureStreams.shared.stop(stream); return }
         self.stream = stream
     }
 
@@ -154,7 +156,7 @@ final class ScrollCapture {
 
     private func stop() {
         isOver = true
-        if let stream { Task { try? await stream.stopCapture() } }
+        if let stream { Task { await CaptureStreams.shared.stop(stream) } }
         stream = nil
         pace?.stop()
         pace = nil
@@ -329,7 +331,7 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
 /// Beside the region: the whole image so far, its height, a hint, and the actions. It never
 /// activates NyCopilot, so the app being scrolled stays in front.
 @MainActor
-private final class ScrollCapturePanel: NSPanel {
+final class ScrollCapturePanel: NSPanel {
     var onAction: ((CaptureAction) -> Void)?
     var onCancel: (() -> Void)?
 

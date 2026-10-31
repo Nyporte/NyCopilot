@@ -31,16 +31,24 @@ final class ClipboardShell: ModuleShell {
     private lazy var picker = ClipboardPicker(core: services.core, images: Self.images)
     private var watcher: Timer?
     private var lastChange = NSPasteboard.general.changeCount
+    private var cleanup: DispatchWorkItem?
+    private var lockObservers: [NSObjectProtocol] = []
 
     init(services: CopilotServices) {
         self.services = services
         _ = try? services.core.call("clipboard.prune")
         removeUnusedImages()
-        // The pasteboard has no change notification; its counter is cheap to read.
-        watcher = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.checkPasteboard() }
-        }
-        watcher?.tolerance = 0.2
+        startWatching()
+        // Nothing is copied behind a locked screen; don't wake twice a second for it.
+        let center = DistributedNotificationCenter.default()
+        lockObservers = [
+            center.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.watcher?.invalidate(); self?.watcher = nil }
+            },
+            center.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.startWatching() }
+            }
+        ]
         picker.onPick = { [weak self] entry, target in self?.paste(entry, into: target) }
         picker.onCopy = { [weak self] entry in self?.put(entry) }
         picker.onVerb = { [weak services] verb, entry, app in
@@ -60,7 +68,17 @@ final class ClipboardShell: ModuleShell {
 
     func makeSettingsPane() -> SettingsPane? { ClipboardPane(services: services) }
 
+    /// The pasteboard has no change notification; its counter is cheap to read.
+    private func startWatching() {
+        guard watcher == nil else { return }
+        watcher = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkPasteboard() }
+        }
+        watcher?.tolerance = 0.2
+    }
+
     func shutdown() {
+        lockObservers.forEach(DistributedNotificationCenter.default().removeObserver)
         watcher?.invalidate()
         picker.close()
     }
@@ -99,7 +117,7 @@ final class ClipboardShell: ModuleShell {
         let record = add(source.merging(["image": kept.name, "digest": kept.digest, "width": kept.width, "height": kept.height]) { _, new in new })
         // Not kept (off, an excluded app, already pinned), or it replaced an earlier copy of the same image.
         if record == nil { try? FileManager.default.removeItem(at: images.file(kept.name)) }
-        removeUnusedImages()
+        scheduleImageCleanup()
     }
 
     /// The record kept, or nil when the core left the copy out.
@@ -111,6 +129,15 @@ final class ClipboardShell: ModuleShell {
             Diagnostics.note("clipboard", "couldn’t keep a copy: \(error.localizedDescription)")
             return nil
         }
+    }
+
+    /// Images of pruned or replaced entries go once copying has paused a while, not after each copy:
+    /// finding them means reading every entry.
+    private func scheduleImageCleanup() {
+        cleanup?.cancel()
+        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.removeUnusedImages() } }
+        cleanup = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: work)
     }
 
     private func removeUnusedImages() { Self.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned]) }

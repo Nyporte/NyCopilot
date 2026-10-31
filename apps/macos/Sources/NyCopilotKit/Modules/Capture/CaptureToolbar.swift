@@ -15,6 +15,8 @@ final class CaptureToolbar: NSView {
     var onCancel: (() -> Void)?
     /// T: read the text in the selection, in place.
     var onText: (() -> Void)?
+    /// The options row appeared or went: the bar's size changed and it needs placing again.
+    var onResize: (() -> Void)?
 
     var selectedTool: AnnotationTool? { didSet { if selectedTool != oldValue { rebuildOptions() }; refreshTools() } }
     var selectedColor: NSColor = .systemRed { didSet { refreshSwatches() } }
@@ -108,8 +110,16 @@ final class CaptureToolbar: NSView {
             column.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 6),
             column.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -6),
             column.topAnchor.constraint(equalTo: material.topAnchor, constant: 5),
-            column.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -6)
+            // Just below required: the bar is frame-sized by its owner, and for a moment while the
+            // options row comes or goes, the frame is the old size. Required, that moment logged a
+            // conflict for every view in the bar on every capture.
+            {
+                let bottom = column.bottomAnchor.constraint(equalTo: material.bottomAnchor, constant: -6)
+                bottom.priority = .init(999)
+                return bottom
+            }()
         ])
+        setFrameSize(fittingSize)
         refreshTools()
     }
 
@@ -123,6 +133,7 @@ final class CaptureToolbar: NSView {
     private func rebuildOptions() {
         options.arrangedSubviews.forEach { $0.removeFromSuperview() }
         swatches.removeAll()
+        defer { onResize?() }
         guard let tool = selectedTool else { options.isHidden = true; return }
         options.isHidden = false
         if tool != .mosaic {

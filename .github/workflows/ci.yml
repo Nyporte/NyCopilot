@@ -1,0 +1,27 @@
+# Every push and pull request: the Rust core's tests and lints, then the macOS client's build and
+# tests (unit tests and off-screen render checks of every panel). Nothing is signed here.
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Core tests
+        run: cargo test --workspace
+      - name: Core lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Build the core for the app
+        run: make core
+      - name: App build and tests
+        run: |
+          cd apps/macos
+          swift build
+          swift test

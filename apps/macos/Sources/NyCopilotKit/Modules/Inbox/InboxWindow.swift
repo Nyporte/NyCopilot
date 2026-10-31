@@ -199,7 +199,10 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
         preview.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        preview.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        // Below the fitting priority too, so even the window's natural size ignores a big picture.
+        preview.setContentHuggingPriority(.init(1), for: .horizontal)
+        preview.setContentHuggingPriority(.init(1), for: .vertical)
+        preview.setContentCompressionResistancePriority(.init(1), for: .horizontal)
         editorScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
         editorScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80).isActive = true
 
@@ -238,7 +241,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     // MARK: Loading
 
-    private func reload() {
+    func reload() {
         let selectedID = selectedItem?.id
         var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
         let query = search.stringValue.trimmingCharacters(in: .whitespaces)

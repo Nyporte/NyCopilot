@@ -12,7 +12,7 @@ final class KeySheet {
 
     static let shared = KeySheet()
 
-    private var panel: NSPanel?
+    private(set) var panel: NSPanel?
     private var monitors: [Any] = []
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -26,6 +26,16 @@ final class KeySheet {
 
     func show(_ title: String, groups: [Group], over window: NSWindow? = nil) {
         dismiss()
+        let panel = Self.makePanel(title, groups: groups, over: window)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; panel.animator().alphaValue = 1 }
+        self.panel = panel
+        watchForDismissal()
+    }
+
+    /// The sheet as a panel, placed but not shown.
+    static func makePanel(_ title: String, groups: [Group], over window: NSWindow? = nil) -> NSPanel {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.float(at: window.map { NSWindow.Level(rawValue: $0.level.rawValue + 1) } ?? .floating, shadow: true, clickThrough: false,
                     behavior: .transient)
@@ -48,10 +58,10 @@ final class KeySheet {
         let area = window.map { $0.frame.intersection(screen.visibleFrame) } ?? screen.visibleFrame
         let center = NSPoint(x: area.midX, y: area.midY)
         panel.setFrame(NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height), display: false)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; panel.animator().alphaValue = 1 }
-        self.panel = panel
+        return panel
+    }
+
+    private func watchForDismissal() {
         // Put away by the next key or click, wherever the focus is; the key itself still does its job.
         let events: NSEvent.EventTypeMask = [.keyDown, .leftMouseDown, .rightMouseDown]
         if let local = NSEvent.addLocalMonitorForEvents(matching: events, handler: { [weak self] event in

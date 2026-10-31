@@ -17,6 +17,16 @@ enum KeychainStore {
     }
 
     private static let service = "dev.nycopilot.NyCopilot"
+    /// What was read, so a translation or a menu doesn't ask the Keychain each time; every write
+    /// through here clears it.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var values: [Item: String] = [:]
+    nonisolated(unsafe) private static var presence: [Item: Bool] = [:]
+
+    private static func cached<T>(_ body: () -> T) -> T {
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        return body()
+    }
     /// NyTranslate kept its provider key here; it is moved over the first time a key is needed.
     private static let legacy = (service: "dev.nycopilot.NyTranslate", account: "translation-api-key")
 
@@ -33,6 +43,13 @@ enum KeychainStore {
 
     /// An absent credential is valid (a local server needs none); other failures remain visible.
     static func read(_ item: Item = .provider) throws -> String {
+        if let value = cached({ values[item] }) { return value }
+        let value = try readFromKeychain(item)
+        cached { values[item] = value }
+        return value
+    }
+
+    private static func readFromKeychain(_ item: Item) throws -> String {
         if let key = try read(query(account: item.account)) { return key }
         guard item == .provider, let key = try read(query(service: legacy.service, account: legacy.account)) else { return "" }
         try write(key)
@@ -42,15 +59,19 @@ enum KeychainStore {
 
     /// Checks presence through attributes only, so Settings can say "saved" without unlocking the secret.
     static func hasKey(_ item: Item = .provider) -> Bool {
-        queries(item).contains { base in
+        if let known = cached({ presence[item] }) { return known }
+        let found = queries(item).contains { base in
             var attributes = base
             attributes[kSecReturnAttributes as String] = true
             return SecItemCopyMatching(attributes as CFDictionary, nil) == errSecSuccess
         }
+        cached { presence[item] = found }
+        return found
     }
 
     /// Update in place to preserve the old key if a write fails; blank explicitly removes it.
     static func write(_ key: String, for item: Item = .provider) throws {
+        defer { cached { values[item] = nil; presence[item] = nil } }
         if key.isEmpty {
             for query in queries(item) {
                 let status = SecItemDelete(query as CFDictionary)

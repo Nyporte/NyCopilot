@@ -29,6 +29,11 @@ final class CaptureShell: ModuleShell {
         services.pinOnScreen = { [weak self] text, image in self?.pin(text: text, image: image) }
         board.restore()
         GifRecording.removeLeftovers()
+        CaptureStreams.shared.onStuck = { [weak services] in
+            services?.toast.show("macOS kept a screen capture running",
+                                 detail: "Its recording indicator stays on. Settings → General → Restart Screen Capture Service ends it.",
+                                 style: .warning)
+        }
         // The display lookup is the slowest part of starting a capture; have it ready.
         ScreenGrabber.warmUp()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in

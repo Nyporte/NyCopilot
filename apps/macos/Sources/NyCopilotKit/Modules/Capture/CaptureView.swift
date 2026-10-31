@@ -111,6 +111,10 @@ final class CaptureView: NSView, NSTextViewDelegate {
         toolbar.onAction = { [weak self] action in self?.finish(action) }
         toolbar.onCancel = { [weak self] in self?.onCancel?() }
         toolbar.onText = { [weak self] in self?.beginReadingText() }
+        toolbar.onResize = { [weak self] in
+            guard let self, !toolbar.isHidden else { return }
+            place(toolbar)
+        }
         addSubview(toolbar)
         textBar.isHidden = true
         textBar.onCopyAll = { [weak self] in self?.copyAllText() }
