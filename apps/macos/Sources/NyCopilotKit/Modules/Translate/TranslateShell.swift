@@ -138,7 +138,6 @@ final class TranslateShell: ModuleShell {
         }
     }
 
-    private struct RunResult: Decodable { let text: String; let targetLanguage: String; let engine: String; let notice: String? }
 
     /// One request per submit. A newer submit or a cancel makes older results irrelevant, and the
     /// core discards a cancelled result before it reaches history.
@@ -157,10 +156,9 @@ final class TranslateShell: ModuleShell {
         composer.showLoading()
         let core = services.core
         operation = Task { [weak self] in
-            let result: RunResult
+            let result: NyCore.Translation
             do {
-                let params: [String: Any] = ["text": text, "target_language": language, "request_id": id.uuidString]
-                result = try await core.perform(.translateRun, params.merging(keys) { _, key in key }, as: RunResult.self)
+                result = try await core.translate(text, into: language, keys: keys, extra: ["request_id": id.uuidString])
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
                 // Nothing set up yet: macOS translates it, and its Replace hands the result back.

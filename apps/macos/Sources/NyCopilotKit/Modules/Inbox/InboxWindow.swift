@@ -271,7 +271,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             if day != lastDay { rows.append(.day(day)); lastDay = day }
             rows.append(.note(item))
         }
-        let waiting = (try? core.call(.inboxCount) as? [String: Any])?["count"] as? Int ?? 0
+        let waiting = core.inboxCount()
         tabs.setLabel(waiting > 0 ? "Inbox (\(waiting))" : "Inbox", forSegment: 0)
         table.reloadData()
         if let selectedID, let row = rows.firstIndex(where: { if case .note(let item) = $0 { item.id == selectedID } else { false } }) {
@@ -381,7 +381,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         pendingSave = nil
         guard let id = shownID, let item = rows.lazy.compactMap({ if case .note(let item) = $0, item.id == id { item } else { nil } }).first,
               editor.string != item.data.text else { return }
-        _ = try? core.call(.inboxUpdate, ["id": id, "text": editor.string])
+        try? core.inboxUpdate(id, text: editor.string)
     }
 
     @objc func editSelected() {
@@ -426,10 +426,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
               let movedID = moved["id"] as? String else { return }
         let until = item.data.until
         remember(command.rawValue) { [core] in
-            let reply: [String: Any]?
-            if let back { reply = try? core.call(back, ["id": movedID]) as? [String: Any] }
-            else { reply = try? core.call(.inboxSnooze, ["id": movedID, "until": until ?? 0]) as? [String: Any] }
-            return (reply?["record"] as? [String: Any])?["id"] as? String
+            if let back { return try? core.inboxMove(back, movedID) ?? nil }
+            return try? core.inboxSnooze(movedID, until: until ?? 0) ?? nil
         }
         reload()
         selectNear(row)

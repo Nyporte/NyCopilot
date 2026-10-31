@@ -221,12 +221,10 @@ final class ScreenTranslator {
         guard translations[key] == nil, !requested.contains(key) else { return }
         requested.insert(key)
         defer { requested.remove(key) }
-        struct Result: Decodable { let text: String }
         do {
             // Kept out of history: that's for what you translate on purpose, not what you glance at.
-            let params: [String: Any] = ["text": text, "target_language": language, "save": false]
-            let translation = try await services.core.perform(.translateRun, params.merging(try services.translationKeys()) { _, key in key },
-                                                              as: Result.self).text
+            let translation = try await services.core.translate(text, into: language, keys: try services.translationKeys(),
+                                                                extra: ["save": false]).text
             guard isActive else { return }
             if translations.count > 5000 { translations = [:] }
             translations[key] = translation

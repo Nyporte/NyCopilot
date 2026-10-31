@@ -56,13 +56,13 @@ final class ClipboardPane: SettingsPane {
 
     @objc private func changeDays() {
         try? services.core.setSetting(.clipboardKeepDays, Self.days[keepFor.indexOfSelectedItem].0)
-        _ = try? services.core.call(.clipboardPrune)
+        services.core.clipboardPrune()
         ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
     }
 
     @objc private func changeCount() {
         try? services.core.setSetting(.clipboardMaxItems, Self.counts[atMost.indexOfSelectedItem])
-        _ = try? services.core.call(.clipboardPrune)
+        services.core.clipboardPrune()
         ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
     }
 

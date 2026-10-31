@@ -45,11 +45,8 @@ extension InboxWindow {
         saveNow()
         let row = table.selectedRow
         do {
-            let reply = try core.call(.inboxSnooze, ["id": item.id, "until": Int64(date.timeIntervalSince1970 * 1000)]) as? [String: Any]
-            if let snoozedID = (reply?["record"] as? [String: Any])?["id"] as? String {
-                remember("Snooze") { [core] in
-                    ((try? core.call(.inboxWake, ["id": snoozedID]) as? [String: Any])?["woken"] as? [[String: Any]])?.first?["id"] as? String
-                }
+            if let snoozedID = try core.inboxSnooze(item.id, until: Int64(date.timeIntervalSince1970 * 1000)) {
+                remember("Snooze") { [core] in (try? core.inboxWake(snoozedID))?.first?.id }
             }
         } catch {
             NSSound.beep()
@@ -77,7 +74,7 @@ extension InboxWindow {
             do {
                 let done = try await NoteExport.send(content, to: destination, core: self.core)
                 if selectedItem?.id == item.id { toggleDoneSelected() }
-                else if (try? self.core.call(.inboxDone, ["id": item.id])) != nil { reload() }
+                else if (try? self.core.inboxMove(.inboxDone, item.id)) != nil { reload() }
                 toast.show(done, detail: "Marked done · ⌘Z in the inbox brings it back", style: .success)
             } catch {
                 let alert = NSAlert()
@@ -108,8 +105,8 @@ extension InboxWindow {
             var params: [String: Any] = ["text": note.text, "app": note.app ?? "", "title": note.title ?? "", "url": note.url ?? "",
                                          "source": note.source ?? "typed"]
             if let image = note.image { params["image"] = image }
-            guard let id = ((try? core.call(.inboxAdd, params) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String else { return nil }
-            return done ? ((try? core.call(.inboxDone, ["id": id]) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String : id
+            guard let id = try? core.inboxAdd(params) ?? nil else { return nil }
+            return done ? try? core.inboxMove(.inboxDone, id) ?? nil : id
         }
         reload()
         selectNear(row)

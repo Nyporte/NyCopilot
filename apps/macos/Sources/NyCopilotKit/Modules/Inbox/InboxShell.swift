@@ -101,12 +101,12 @@ final class InboxShell: ModuleShell {
         window?.forgetUndo()
     }
 
-    private var waiting: Int { (try? services.core.call(.inboxCount) as? [String: Any])?["count"] as? Int ?? 0 }
+    private var waiting: Int { services.core.inboxCount() }
 
     private func wakeDueNotes() {
         defer { scheduleAlarm() }
-        guard let woken = (try? services.core.call(.inboxWake) as? [String: Any])?["woken"] as? [[String: Any]], !woken.isEmpty else { return }
-        let first = ((woken[0]["data"] as? [String: Any])?["text"] as? String)?
+        guard let woken = try? services.core.inboxWake(), !woken.isEmpty else { return }
+        let first = woken[0].text?
             .split(whereSeparator: \.isNewline).first.map { "“\($0.prefix(50))”" } ?? "A snoozed note"
         services.toast.show(woken.count == 1 ? "Back in your inbox" : "\(woken.count) notes are back in your inbox",
                             detail: woken.count == 1 ? first : "\(first) and more · ⇧F3 to open", style: .info)
@@ -172,7 +172,7 @@ final class InboxShell: ModuleShell {
     private func add(_ params: [String: Any], context: SourceContext) -> Bool {
         let source: [String: Any] = ["app": context.app, "title": context.title, "url": context.url]
         do {
-            _ = try services.core.call(.inboxAdd, params.merging(source) { mine, _ in mine })
+            try services.core.inboxAdd(params.merging(source) { mine, _ in mine })
             return true
         } catch {
             services.toast.show("Couldn’t add to the inbox", detail: error.localizedDescription, style: .warning)

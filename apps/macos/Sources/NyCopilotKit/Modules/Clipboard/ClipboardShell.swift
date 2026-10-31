@@ -39,7 +39,7 @@ final class ClipboardShell: ModuleShell {
         // Pruning and finding unused images read every entry: after launch, not during it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
             guard let self else { return }
-            _ = try? self.services.core.call(.clipboardPrune)
+            self.services.core.clipboardPrune()
             self.removeUnusedImages()
         }
         startWatching()
@@ -132,7 +132,7 @@ final class ClipboardShell: ModuleShell {
     @discardableResult
     private func add(_ params: [String: Any]) -> [String: Any]? {
         do {
-            return (try services.core.call(.clipboardAdd, params) as? [String: Any])?["record"] as? [String: Any]
+            return try services.core.clipboardAdd(params)
         } catch {
             Diagnostics.note("clipboard", "couldn’t keep a copy: \(error.localizedDescription)")
             return nil
