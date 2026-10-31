@@ -339,7 +339,7 @@ extension GifRecording {
 
 /// The bar beside a recording. Ready: a red Record button and how to start or cancel. Recording: a
 /// red dot, the time out of a minute, pause, and stop.
-final class RecordingBar: NSPanel {
+final class RecordingBar: FloatingPanel {
     var onRecord: (() -> Void)?
     var onStop: (() -> Void)?
     var onPause: (() -> Void)?
@@ -355,9 +355,9 @@ final class RecordingBar: NSPanel {
 
     init(beside region: NSRect, on screen: NSScreen, shortcut: String) {
         self.shortcut = shortcut
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 250, height: 40), styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: false)
-        float(at: .statusBar, shadow: true)
+        super.init(size: NSSize(width: 250, height: 40), level: .statusBar, behavior: [])
+        // It only shows; your keys stay with the app you're recording.
+        takesKeys = false
         appearance = NSAppearance(named: .darkAqua)
         let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 10)
         time.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
@@ -405,7 +405,6 @@ final class RecordingBar: NSPanel {
         setFrameOrigin(origin)
     }
 
-    override var canBecomeKey: Bool { false }
 
     private func showReady() {
         hint.stringValue = "\(shortcut) start   esc cancel"

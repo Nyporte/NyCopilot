@@ -55,7 +55,7 @@ final class Toast {
         panel.contentView = material
         let size = material.fittingSize
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.minY - 8) } ?? NSPoint(x: NSEvent.mouseLocation.x, y: NSEvent.mouseLocation.y - 24)
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main
+        let screen: NSScreen? = ScreenGeometry.screen(at: point)
         var frame = NSRect(x: point.x - size.width / 2, y: point.y - size.height, width: size.width, height: size.height)
         if let visible = screen?.visibleFrame.insetBy(dx: 12, dy: 12) {
             frame.origin.x = max(visible.minX, min(frame.minX, visible.maxX - frame.width))

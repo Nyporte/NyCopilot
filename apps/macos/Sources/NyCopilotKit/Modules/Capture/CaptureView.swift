@@ -918,8 +918,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
                 let moved = clamp(CGPoint(x: pointer.x + delta.x, y: pointer.y + delta.y))
                 if let window {
                     let screenPoint = window.convertPoint(toScreen: convert(moved, to: nil))
-                    let top = NSScreen.screens.first?.frame.maxY ?? 0
-                    CGWarpMouseCursorPosition(CGPoint(x: screenPoint.x, y: top - screenPoint.y))
+                    CGWarpMouseCursorPosition(ScreenGeometry.topLeft(screenPoint))
                 }
                 self.pointer = moved
                 needsDisplay = true

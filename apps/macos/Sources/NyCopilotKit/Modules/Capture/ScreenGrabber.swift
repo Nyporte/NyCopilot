@@ -164,8 +164,7 @@ enum ScreenGrabber {
     /// (the Dock keeps one over every screen) and would hide every window beneath them.
     private static func visibleWindows(includingOwn: Bool) -> [FrozenScreen.Window] {
         let own = ProcessInfo.processInfo.processIdentifier
-        let primaryHeight = NSScreen.screens.first?.frame.maxY ?? 0
-        let displays = NSScreen.screens.map { CGRect(x: $0.frame.minX, y: primaryHeight - $0.frame.maxY, width: $0.frame.width, height: $0.frame.height) }
+        let displays = NSScreen.screens.map(ScreenGeometry.topLeftFrame)
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         var windows: [FrozenScreen.Window] = []
         var dock: FrozenScreen.Window?
@@ -252,8 +251,7 @@ enum ScreenGrabber {
 
     /// Global top-left coordinates → this screen's flipped view coordinates, clipped to the screen.
     private static func local(_ window: FrozenScreen.Window, on screen: NSScreen) -> FrozenScreen.Window? {
-        let primaryHeight = NSScreen.screens.first?.frame.maxY ?? 0
-        let origin = CGPoint(x: screen.frame.minX, y: primaryHeight - screen.frame.maxY)
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
         let moved = window.rect.offsetBy(dx: -origin.x, dy: -origin.y)
         let clipped = moved.intersection(CGRect(origin: .zero, size: screen.frame.size))
         return clipped.isNull || clipped.width < 8 || clipped.height < 8 ? nil : .init(rect: clipped, pid: window.pid)

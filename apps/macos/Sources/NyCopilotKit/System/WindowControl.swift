@@ -106,7 +106,7 @@ enum WindowControl {
 
     // MARK: Coordinates
 
-    private static var primaryHeight: Double { Double(NSScreen.screens.first?.frame.maxY ?? 0) }
+    private static var primaryHeight: Double { Double(ScreenGeometry.primaryHeight) }
 
     static func axRect(_ rect: NSRect) -> WindowRect {
         WindowRect(x: rect.minX, y: primaryHeight - rect.maxY, w: rect.width, h: rect.height)

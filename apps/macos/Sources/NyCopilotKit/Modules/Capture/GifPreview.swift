@@ -33,9 +33,7 @@ final class GifPreview {
     }
 
     func show() {
-        panel.orderFrontRegardless()
-        panel.makeKey()
-        panel.makeFirstResponder(nil)
+        panel.present()
     }
 
     func close() { panel.orderOut(nil) }
@@ -65,9 +63,6 @@ final class GifPreview {
         let copy = button("Copy", "↩", #selector(copyTapped))
         // The default: Return, drawn in the accent color.
         copy.keyEquivalent = "\r"
-        // The panel's keys are its own (↩, ⌘S, I, ⌘⌫); no button takes keyboard focus, so the trash
-        // never gets a focus ring, and Space can't discard.
-        for button in [discard, inbox, save, copy] { button.refusesFirstResponder = true }
         let actions = Design.hstack([discard, Design.spacer(), inbox, save, copy], spacing: 8)
         let column = Design.vstack([image, info, actions], spacing: 10, alignment: .centerX)
         column.translatesAutoresizingMaskIntoConstraints = false
@@ -118,8 +113,8 @@ final class GifPreview {
     }
 }
 
-/// Takes keys without activating NyCopilot, like the capture overlay.
-final class PreviewPanel: NSPanel {
+/// Its keys are single letters as well as ⌘ keys, so it reads them itself.
+final class PreviewPanel: FloatingPanel {
     enum Key: Equatable {
         case returnKey, escape, character(String), command(String), shiftCommand(String)
 
@@ -133,11 +128,8 @@ final class PreviewPanel: NSPanel {
     var onKey: ((Key) -> Bool)?
 
     init() {
-        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        float(at: .statusBar, shadow: true)
+        super.init(size: .zero, level: .statusBar, behavior: [])
     }
-
-    override var canBecomeKey: Bool { true }
 
     override func keyDown(with event: NSEvent) {
         if let key = Self.key(event), onKey?(key) == true { return }

@@ -47,9 +47,7 @@ final class ScrollCapture {
     /// joins a moment later, carrying on from what was on screen.
     func start() {
         border.orderFrontRegardless()
-        panel.orderFrontRegardless()
-        panel.makeKey()
-        panel.makeFirstResponder(nil)
+        panel.present()
         claimKeys()
         still = crop(region)
         panel.show(.started, height: still?.height ?? 0, thumbnail: still)
@@ -331,9 +329,8 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
 /// Beside the region: the whole image so far, its height, a hint, and the actions. It never
 /// activates NyCopilot, so the app being scrolled stays in front.
 @MainActor
-final class ScrollCapturePanel: NSPanel {
+final class ScrollCapturePanel: FloatingPanel {
     var onAction: ((CaptureAction) -> Void)?
-    var onCancel: (() -> Void)?
 
     private let preview = WholePreview()
     private let size = Design.label("", size: 12, weight: .semibold, color: .white)
@@ -343,16 +340,13 @@ final class ScrollCapturePanel: NSPanel {
     init(beside region: NSRect, on screen: NSScreen) {
         let width: CGFloat = 228
         let height = min(max(region.height, 260), 420)
-        super.init(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        float(at: .statusBar, shadow: true)
+        super.init(size: NSSize(width: width, height: height), level: .statusBar, behavior: [])
         appearance = NSAppearance(named: .darkAqua)
         contentView = makeContent()
         setFrameOrigin(Self.origin(for: frame.size, beside: region, in: screen.visibleFrame))
         show(.started, height: 0, thumbnail: nil)
     }
 
-    override var canBecomeKey: Bool { true }
 
     private func makeContent() -> NSView {
         let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 12)
@@ -375,8 +369,6 @@ final class ScrollCapturePanel: NSPanel {
         let buttons = [discard, icon("tray.and.arrow.down", "Keep in Inbox", #selector(inboxTapped)),
                        icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)", #selector(saveTapped)),
                        icon("pin", "Pin to screen (⌘T)", #selector(pinTapped))]
-        // The panel's keys are its own; no button takes keyboard focus, so none is ringed and Space does nothing.
-        for button in buttons + [copyButton] { button.refusesFirstResponder = true }
         let actions = Design.hstack([discard, Design.spacer()] + buttons.dropFirst().map { $0 as NSView } + [copyButton], spacing: 2)
         let column = Design.vstack([preview, size, hint, actions], spacing: 8, alignment: .leading)
         column.translatesAutoresizingMaskIntoConstraints = false
@@ -426,7 +418,6 @@ final class ScrollCapturePanel: NSPanel {
         }
     }
 
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
 
     @objc private func copyTapped() { if copyButton.isEnabled { onAction?(.copy) } }
     @objc private func saveTapped() { onAction?(NSEvent.modifierFlags.contains(.shift) ? .quickSave : .save) }

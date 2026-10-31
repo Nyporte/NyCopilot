@@ -286,10 +286,7 @@ final class TranslateShell: ModuleShell {
         return anchor
     }
 
-    private static func appKitRect(_ ax: CGRect) -> NSRect {
-        let top = NSScreen.screens.first?.frame.maxY ?? 0
-        return NSRect(x: ax.minX, y: top - ax.maxY, width: ax.width, height: ax.height)
-    }
+    private static func appKitRect(_ ax: CGRect) -> NSRect { ScreenGeometry.appKit(ax) }
 }
 
 extension NyCore {

@@ -98,15 +98,9 @@ final class CaptureSession {
         NSCursor.arrow.set()
     }
 
-    /// A screen's top-left corner in global top-left coordinates (the primary display's top is 0).
-    static func globalOrigin(of screen: NSScreen) -> CGPoint {
-        let primaryHeight = NSScreen.screens.first?.frame.maxY ?? 0
-        return CGPoint(x: screen.frame.minX, y: primaryHeight - screen.frame.maxY)
-    }
+    /// A screen's top-left corner in global top-left coordinates (see ScreenGeometry).
+    static func globalOrigin(of screen: NSScreen) -> CGPoint { ScreenGeometry.topLeftOrigin(of: screen) }
 
-    /// Global top-left coordinates → AppKit screen coordinates (bottom-left origin).
-    static func appKitRect(_ rect: CGRect) -> NSRect {
-        let primaryHeight = NSScreen.screens.first?.frame.maxY ?? 0
-        return NSRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
-    }
+    /// Global top-left coordinates → AppKit screen coordinates (see ScreenGeometry).
+    static func appKitRect(_ rect: CGRect) -> NSRect { ScreenGeometry.appKit(rect) }
 }

@@ -170,9 +170,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         setLanguage(language, animated: false)
         setIdle()
         hideError()
-        // Convert AX's top-left desktop origin into AppKit's bottom-left coordinates.
-        let desktopTop = NSScreen.screens.first?.frame.maxY ?? 0
-        let anchor = axFrame.map { NSRect(x: $0.minX, y: desktopTop - $0.maxY, width: $0.width, height: $0.height) }
+        let anchor = axFrame.map(ScreenGeometry.appKit)
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
         if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
             // Three tenths of the screen wide (at least 300 pt), starting where the cursor is so typed text lines up with it.

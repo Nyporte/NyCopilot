@@ -34,8 +34,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     var onPin: ((String) -> Void)?
     var onReplace: ((String) -> Void)?
 
-    let panel = AskWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
-                                  styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: true)
+    let panel = FloatingPanel(size: NSSize(width: 500, height: 200))
     private let subject = Design.label("", size: 12, color: .secondaryLabelColor)
     private let picture = NSImageView()
     private var pictureHeight: NSLayoutConstraint!
@@ -54,7 +53,6 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
 
     override init() {
         super.init()
-        panel.float(at: .floating, shadow: true, behavior: .transient)
         panel.onResignKey = { [weak self] in self?.close() }
         panel.onCancel = { [weak self] in self?.close() }
         panel.onCommand = { [weak self] key, shift in self?.command(key, shift: shift) ?? false }
@@ -151,8 +149,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     /// a question; with something to ask about, ↩ alone explains it.
     func present(_ material: AskMaterial) {
         prepare(material)
-        panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(input)
+        panel.present(focus: input)
     }
 
     /// Everything `present` does but show the panel.
@@ -361,26 +358,5 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         x = min(max(x, visible.minX), visible.maxX - Self.width)
         top = min(max(top, visible.minY + height), visible.maxY)
         panel.setFrame(NSRect(x: x, y: top - height, width: Self.width, height: height), display: false)
-    }
-}
-
-/// Borderless but able to take typing; ⌘ keys go to the panel, and it closes when you click elsewhere.
-final class AskWindow: NSPanel {
-    var onResignKey: (() -> Void)?
-    var onCancel: (() -> Void)?
-    var onCommand: ((String, Bool) -> Bool)?
-    override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if flags.subtracting(.shift) == [.command], let key = event.charactersIgnoringModifiers?.lowercased(),
-           onCommand?(key, flags.contains(.shift)) == true { return true }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    override func resignKey() {
-        super.resignKey()
-        onResignKey?()
     }
 }

@@ -29,8 +29,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let core: NyCore
     private let images: ImageFolder
     private let thumbnails = NSCache<NSString, NSImage>()
-    let panel = PickerPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
-                                    styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: true)
+    let panel = FloatingPanel(size: NSSize(width: 420, height: 380))
     private let search = NSSearchField()
     private let table = NSTableView()
     private let empty = Design.label("", size: 12.5, color: .tertiaryLabelColor)
@@ -52,9 +51,8 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         self.core = core
         self.images = images
         super.init()
-        panel.float(at: .floating, shadow: true, behavior: .transient)
         panel.onCancel = { [weak self] in self?.close() }
-        panel.onCommand = { [weak self] key in self?.command(key) ?? false }
+        panel.onCommand = { [weak self] key, shift in shift ? false : self?.command(key) ?? false }
         panel.onResignKey = { [weak self] in self?.close(returningFocus: false) }
 
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 12)
@@ -106,9 +104,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     /// Opens near the pointer, newest copy selected, ready for typing.
     func present(target: InputTarget?, source: NSRunningApplication?) {
         prepare(target: target, source: source)
-        // Key without activating the app, so its other windows stay where they are.
-        panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(search)
+        panel.present(focus: search)
     }
 
     /// Everything `present` does but show the list.
@@ -119,7 +115,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         hint.stringValue = Tips.due("clipboard.pin", after: 3, times: 2) ? "Tip: ⌘P keeps an entry at the top, for good" : Self.keysHint
         reload()
         let pointer = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = ScreenGeometry.screen(at: pointer)
         let visible = screen.visibleFrame.insetBy(dx: 8, dy: 8)
         let size = panel.frame.size
         let origin = NSPoint(x: min(max(pointer.x - size.width / 2, visible.minX), visible.maxX - size.width),
@@ -313,26 +309,4 @@ private final class ClipRow: NSTableCellView {
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
-}
-
-/// Borderless but able to take typing; Esc and ⌘ keys go to the picker, and it closes when you
-/// click elsewhere.
-final class PickerPanel: NSPanel {
-    var onCancel: (() -> Void)?
-    var onCommand: ((String) -> Bool)?
-    var onResignKey: (() -> Void)?
-
-    override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if flags == [.command], let key = event.charactersIgnoringModifiers?.lowercased(), onCommand?(key) == true { return true }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    override func resignKey() {
-        super.resignKey()
-        onResignKey?()
-    }
 }

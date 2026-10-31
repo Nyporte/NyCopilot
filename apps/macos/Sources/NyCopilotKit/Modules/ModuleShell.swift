@@ -86,8 +86,7 @@ final class CopilotServices {
     func act(_ verb: Verb, text: String?, image: NSImage?, from app: NSRunningApplication? = nil, near anchor: NSRect? = nil) {
         let text = text.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         guard text != nil || image != nil else { NSSound.beep(); return }
-        let top = NSScreen.screens.first?.frame.maxY ?? 0
-        let near = anchor.map { CGRect(x: $0.minX, y: top - $0.maxY, width: $0.width, height: $0.height) }
+        let near = anchor.map(ScreenGeometry.topLeft)
         switch verb {
         case .translate:
             if let text { translateText(text, near); return }

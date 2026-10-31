@@ -9,8 +9,7 @@ final class InboxCaptureBar {
     var onSave: ((String, SourceContext) -> Void)?
     var onOpenInbox: (() -> Void)?
 
-    private let panel = BarPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 92),
-                                 styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: true)
+    private let panel = FloatingPanel(size: NSSize(width: 560, height: 92))
     private let input = JotView()
     private var inputHeight: NSLayoutConstraint!
     private let source = Design.label("", size: 11.5, color: .secondaryLabelColor)
@@ -21,10 +20,9 @@ final class InboxCaptureBar {
     private static let width: CGFloat = 560, lineHeight: CGFloat = 20
 
     init() {
-        panel.float(at: .floating, shadow: true, behavior: .transient)
         panel.onResignKey = { [weak self] in self?.close(returningFocus: false) }
-        panel.onCommand = { [weak self] key in
-            guard key == "o" else { return false }
+        panel.onCommand = { [weak self] key, shift in
+            guard key == "o", !shift else { return false }
             self?.close(returningFocus: false)
             self?.onOpenInbox?()
             return true
@@ -92,14 +90,13 @@ final class InboxCaptureBar {
         hint.stringValue = "↩ save   ⇧↩ new line   ⌘O inbox" + (waiting > 0 ? " (\(waiting))" : "")
         fit()
         let pointer = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = ScreenGeometry.screen(at: pointer)
         let visible = screen.visibleFrame
         let top = visible.maxY - visible.height * 0.2
         panel.setFrameTopLeftPoint(NSPoint(x: visible.midX - Self.width / 2, y: top))
         // The panel takes typing without activating the app: activating would bring the app's
         // other windows (an open inbox) forward along with it.
-        panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(input)
+        panel.present(focus: input)
         input.selectAll(nil)
     }
 
@@ -158,23 +155,5 @@ final class JotView: NSTextView {
         guard string.isEmpty, !placeholder.isEmpty else { return }
         (placeholder as NSString).draw(at: NSPoint(x: textContainerInset.width + (textContainer?.lineFragmentPadding ?? 0), y: textContainerInset.height),
                                        withAttributes: [.font: font ?? .systemFont(ofSize: 16), .foregroundColor: NSColor.placeholderTextColor])
-    }
-}
-
-/// Borderless but able to take typing; ⌘ keys go to the bar, and it goes away when you click elsewhere.
-private final class BarPanel: NSPanel {
-    var onResignKey: (() -> Void)?
-    var onCommand: ((String) -> Bool)?
-    override var canBecomeKey: Bool { true }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if flags == [.command], let key = event.charactersIgnoringModifiers?.lowercased(), onCommand?(key) == true { return true }
-        return super.performKeyEquivalent(with: event)
-    }
-
-    override func resignKey() {
-        super.resignKey()
-        onResignKey?()
     }
 }

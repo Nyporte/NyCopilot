@@ -54,7 +54,7 @@ final class KeySheet {
         ])
         panel.contentView = material
         let size = material.fittingSize
-        let screen = window?.screen ?? NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = window?.screen ?? ScreenGeometry.screen()
         let area = window.map { $0.frame.intersection(screen.visibleFrame) } ?? screen.visibleFrame
         let center = NSPoint(x: area.midX, y: area.midY)
         panel.setFrame(NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height), display: false)

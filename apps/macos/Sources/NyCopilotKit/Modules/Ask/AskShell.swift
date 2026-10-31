@@ -140,9 +140,5 @@ final class AskShell: ModuleShell {
         }
     }
 
-    /// AX (top-left) to AppKit (bottom-left) coordinates.
-    static func appKitRect(_ rect: CGRect) -> NSRect {
-        let top = NSScreen.screens.first?.frame.maxY ?? 0
-        return NSRect(x: rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
-    }
+    static func appKitRect(_ rect: CGRect) -> NSRect { ScreenGeometry.appKit(rect) }
 }

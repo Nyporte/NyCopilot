@@ -26,9 +26,8 @@ final class SelectionTranslator {
     /// `bounds` is the selection in AX coordinates; without it the card goes by the pointer.
     func show(_ text: String, near bounds: CGRect?) {
         dismiss()
-        let top = NSScreen.screens.first?.frame.maxY ?? 0
         let pointer = NSEvent.mouseLocation
-        let source = bounds.map { NSRect(x: $0.minX, y: top - $0.maxY, width: $0.width, height: $0.height) }
+        let source = bounds.map(ScreenGeometry.appKit)
             ?? NSRect(x: pointer.x, y: pointer.y - 4, width: 1, height: 8)
         let screen = NSScreen.screens.first { $0.frame.intersects(source) } ?? NSScreen.main ?? NSScreen.screens[0]
         let language = Self.language(for: text, core: services.core)
