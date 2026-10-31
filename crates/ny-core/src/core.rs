@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{ListQuery, Manifest, Module, NyError, Result, Scope, SettingSpec, Store};
+use crate::{now_millis, ListQuery, Manifest, Module, NyError, Result, Scope, SettingSpec, Store};
 
 /// Receives JSON events such as `{"type":"records.changed",...}`. Called on the calling thread;
 /// clients hop to their UI thread themselves.
@@ -105,6 +105,11 @@ impl Core {
                 }))
             }
             "modules" => Ok(serde_json::to_value(&self.manifests)?),
+            // Deletion markers older than 30 days go, and the log is folded in; at launch and quit.
+            "compact" => {
+                let removed = self.store()?.compact(now_millis() - 30 * 24 * 60 * 60 * 1000)?;
+                Ok(json!({ "removed": removed }))
+            }
             _ => Err(NyError::unknown_method(&format!("core.{command}"))),
         }
     }
@@ -236,6 +241,20 @@ impl Core {
         let record = self.store()?.insert(collection, data, search, created_at)?;
         self.emit(json!({ "type": "records.changed", "collection": collection, "id": record.id, "change": "inserted" }));
         Ok(record)
+    }
+
+    /// `insert_record` with a lookup key, so the module can find the record again without a scan.
+    pub fn insert_keyed_record(&self, collection: &str, data: Value, search: &str, lookup: &str) -> Result<crate::Record> {
+        self.owned_collection(collection)?;
+        let record = self.store()?.insert_keyed(collection, data, search, None, Some(lookup))?;
+        self.emit(json!({ "type": "records.changed", "collection": collection, "id": record.id, "change": "inserted" }));
+        Ok(record)
+    }
+
+    /// Live records in `collection` (which the calling module owns) under a lookup key.
+    pub fn find_records(&self, collection: &str, lookup: &str) -> Result<Vec<crate::Record>> {
+        self.owned_collection(collection)?;
+        self.store()?.find(collection, lookup)
     }
 
     /// Replace the data of a record in `collection` (which the calling module owns) and notify listeners.

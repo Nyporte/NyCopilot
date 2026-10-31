@@ -77,6 +77,9 @@ const MIGRATIONS: &[&str] = &[
         rev INTEGER NOT NULL
      );
      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    // 2: a lookup key a module can set (a content hash) to find a record without scanning.
+    "ALTER TABLE records ADD COLUMN lookup TEXT;
+     CREATE INDEX records_by_lookup ON records (collection, lookup) WHERE lookup IS NOT NULL AND deleted = 0;",
 ];
 
 impl Store {
@@ -135,6 +138,11 @@ impl Store {
 
     /// `created_at` may be supplied when importing older data; ids still sort by import time.
     pub fn insert(&mut self, collection: &str, data: Value, search: &str, created_at: Option<i64>) -> Result<Record> {
+        self.insert_keyed(collection, data, search, created_at, None)
+    }
+
+    /// `insert`, with a lookup key (see `find`).
+    pub fn insert_keyed(&mut self, collection: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Record> {
         let now = now_millis();
         let tx = self.conn.transaction()?;
         let rev = Self::next_rev(&tx)?;
@@ -149,12 +157,28 @@ impl Store {
             rev,
         };
         tx.execute(
-            "INSERT INTO records (id, collection, data, search, created_at, updated_at, deleted, origin, rev)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
-            params![record.id, record.collection, record.data.to_string(), search, record.created_at, record.updated_at, record.origin, rev],
+            "INSERT INTO records (id, collection, data, search, created_at, updated_at, deleted, origin, rev, lookup)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9)",
+            params![record.id, record.collection, record.data.to_string(), search, record.created_at, record.updated_at, record.origin, rev, lookup],
         )?;
         tx.commit()?;
         Ok(record)
+    }
+
+    /// Live records in `collection` with this lookup key, through its index.
+    pub fn find(&self, collection: &str, lookup: &str) -> Result<Vec<Record>> {
+        let mut statement = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM records WHERE collection = ?1 AND lookup = ?2 AND deleted = 0"))?;
+        let rows = statement.query_map(params![collection, lookup], row_to_record)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    /// Removes deletion markers last changed before `before` — kept only for a sync that doesn't
+    /// exist yet — and folds the write-ahead log back into the database. → markers removed.
+    pub fn compact(&mut self, before: i64) -> Result<usize> {
+        let removed = self.conn.execute("DELETE FROM records WHERE deleted = 1 AND updated_at < ?1", [before])?;
+        self.conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(removed)
     }
 
     pub fn get(&self, id: &str) -> Result<Option<Record>> {
@@ -183,7 +207,7 @@ impl Store {
         let tx = self.conn.transaction()?;
         let rev = Self::next_rev(&tx)?;
         let collection: Option<String> = tx.query_row(
-            "UPDATE records SET deleted = 1, data = 'null', search = '', updated_at = ?2, origin = ?3, rev = ?4
+            "UPDATE records SET deleted = 1, data = 'null', search = '', lookup = NULL, updated_at = ?2, origin = ?3, rev = ?4
              WHERE id = ?1 AND deleted = 0 RETURNING collection",
             params![id, now_millis(), self.device, rev], |r| r.get(0)).optional()?;
         // A delete that changed nothing must not advance the revision a sync client reads.
@@ -310,6 +334,21 @@ fn restrict(_: &Path, _: u32) {}
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn lookup_keys_find_records_and_compact_drops_old_tombstones() {
+        let mut store = Store::open_in_memory().unwrap();
+        let kept = store.insert_keyed("t.items", json!({ "n": 1 }), "", None, Some("h1")).unwrap();
+        store.insert_keyed("t.items", json!({ "n": 2 }), "", None, Some("h2")).unwrap();
+        store.insert_keyed("t.other", json!({ "n": 3 }), "", None, Some("h1")).unwrap();
+        assert_eq!(store.find("t.items", "h1").unwrap().iter().map(|r| r.id.clone()).collect::<Vec<_>>(), vec![kept.id.clone()]);
+        store.delete(&kept.id).unwrap();
+        assert!(store.find("t.items", "h1").unwrap().is_empty());
+        // A fresh tombstone stays; one older than the cutoff goes.
+        assert_eq!(store.compact(now_millis() - 60_000).unwrap(), 0);
+        assert_eq!(store.compact(now_millis() + 60_000).unwrap(), 1);
+        assert!(store.get(&kept.id).unwrap().is_none());
+    }
 
     #[test]
     fn records_round_trip_newest_first_with_cursor() {

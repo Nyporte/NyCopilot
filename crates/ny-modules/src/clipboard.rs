@@ -95,7 +95,8 @@ impl Module for ClipboardModule {
                 // rather than appearing twice.
                 if !same_as(core, PINNED, &data)?.is_empty() { return skipped("pinned"); }
                 for id in same_as(core, ITEMS, &data)? { core.call("records.delete", json!({ "id": id }))?; }
-                let record = core.insert_record(ITEMS, data, &search, None)?;
+                let key = lookup(&data);
+                let record = core.insert_keyed_record(ITEMS, data, &search, &key)?;
                 prune(core)?;
                 Ok(json!({ "record": record }))
             }
@@ -105,14 +106,14 @@ impl Module for ClipboardModule {
                 if core.count_records(PINNED)? >= MAX_PINNED {
                     return Err(NyError::invalid_params("Up to 100 entries can be pinned; unpin one first."));
                 }
-                let record = core.insert_record(PINNED, data.clone(), data["text"].as_str().unwrap_or_default(), None)?;
+                let record = core.insert_keyed_record(PINNED, data.clone(), data["text"].as_str().unwrap_or_default(), &lookup(&data))?;
                 core.call("records.delete", json!({ "id": p.id }))?;
                 Ok(json!({ "record": record }))
             }
             "unpin" => {
                 let p: Id = parse(params)?;
                 let data = entry(core, &p.id, PINNED)?;
-                let record = core.insert_record(ITEMS, data.clone(), data["text"].as_str().unwrap_or_default(), None)?;
+                let record = core.insert_keyed_record(ITEMS, data.clone(), data["text"].as_str().unwrap_or_default(), &lookup(&data))?;
                 core.call("records.delete", json!({ "id": p.id }))?;
                 prune(core)?;
                 Ok(json!({ "record": record }))
@@ -136,18 +137,24 @@ impl Module for ClipboardModule {
     }
 }
 
-/// Ids in `collection` holding the same text, or an image with the same pixels. Text is found
-/// through search; an image is compared against the newest entries.
+/// Ids in `collection` holding the same text, or an image with the same pixels — found through
+/// an indexed content hash, then compared exactly.
 fn same_as(core: &Core, collection: &str, data: &Value) -> Result<Vec<Value>> {
-    let params = match data["text"].as_str() {
-        Some(text) => json!({ "collection": collection, "search": text, "limit": 50 }),
-        None => json!({ "collection": collection, "limit": 50 }),
-    };
-    let page = core.call("records.list", params)?;
     let key = if data["text"].is_string() { "text" } else { "digest" };
-    Ok(page["records"].as_array().into_iter().flatten()
-        .filter(|record| record["data"][key] == data[key])
-        .map(|record| record["id"].clone()).collect())
+    Ok(core.find_records(collection, &lookup(data))?.into_iter()
+        .filter(|record| record.data[key] == data[key])
+        .map(|record| json!(record.id)).collect())
+}
+
+/// The content hash an entry is filed under: FNV-1a of the text, or the image's own digest.
+fn lookup(data: &Value) -> String {
+    match data["text"].as_str() {
+        Some(text) => {
+            let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3));
+            format!("t:{hash:016x}")
+        }
+        None => format!("i:{}", data["digest"].as_str().unwrap_or_default()),
+    }
 }
 
 /// An entry's data, if `id` is in `collection`.
