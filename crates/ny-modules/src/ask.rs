@@ -32,7 +32,7 @@ impl Module for AskModule {
                                  "Send screenshots to the model as images (it must accept images); off sends only their text."),
             ],
             commands: vec![
-                CommandSpec::new("run", "Answer about a thing: {action: explain|summarize|rewrite|ask, text?, image?: base64 PNG, question?, language?, turns?: [{role: user|assistant, content}], api_key?, request_id?} → {text}. turns are the follow-ups so far, oldest first; question is the new one."),
+                CommandSpec::new("run", "Answer about a thing: {action: explain|summarize|rewrite|ask, text?, image?: base64 PNG, question?, language?, turns?: [{role: user|assistant, content}], api_key?, request_id?, stream?} → {text}. turns are the follow-ups so far, oldest first; question is the new one. With stream and a request_id, `ask.delta` events {request_id, text} carry the answer so far."),
             ],
         }
     }
@@ -50,10 +50,13 @@ impl Module for AskModule {
             #[serde(default)] turns: Vec<Turn>,
             #[serde(default)] api_key: String,
             request_id: Option<String>,
+            /// Stream the answer: `ask.delta` events carry it so far, for this `request_id`.
+            #[serde(default)] stream: bool,
         }
         match command {
             "run" => {
                 let p: Run = parse(params)?;
+                let request_id = p.request_id.clone();
                 let request = core.begin_request(p.request_id);
                 if !ACTIONS.contains(&p.action.as_str()) {
                     return Err(NyError::invalid_params("Ask explains, summarizes, rewrites, or answers a question."));
@@ -86,7 +89,21 @@ impl Module for AskModule {
                     messages.push(json!({ "role": "user", "content": p.question }));
                 }
                 let config = ProviderConfig::from_core(core)?;
-                let text = ny_llm::complete_messages(&messages, &config, &p.api_key)?;
+                let text = match (p.stream, request_id) {
+                    (true, Some(id)) => {
+                        // At most every 40 ms: enough to look live, few enough not to flood the client.
+                        let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
+                        ny_llm::stream_messages(&messages, &config, &p.api_key, |so_far| {
+                            if last.elapsed() >= std::time::Duration::from_millis(40) {
+                                last = std::time::Instant::now();
+                                core.emit(json!({ "type": "ask.delta", "request_id": id, "text": so_far }));
+                            }
+                            // Cancelled: stop reading now rather than when the answer is done.
+                            !request.is_cancelled()
+                        })?
+                    }
+                    _ => ny_llm::complete_messages(&messages, &config, &p.api_key)?,
+                };
                 // Cancelled while waiting: the answer is no longer wanted.
                 request.check()?;
                 Ok(json!({ "text": text.trim() }))
@@ -171,6 +188,23 @@ mod tests {
         assert_eq!(with_image[1]["image_url"]["url"], "data:image/png;base64,iVBORw0KGgo=");
         assert!(with_image[0]["text"].as_str().unwrap().contains("What is this?"));
         assert!(body(&requests[1])["messages"][1]["content"].as_str().unwrap().contains("Q3 revenue"));
+    }
+
+    #[test]
+    fn streamed_answers_send_progress_events() {
+        let body = ["Two", " particles"].iter().map(|chunk| format!("data: {}\n\n",
+            json!({ "choices": [{ "delta": { "content": chunk } }] }))).collect::<String>() + "data: [DONE]\n\n";
+        let (model, _) = stand_in::serve(vec![stand_in::http("200 OK", "Content-Type: text/event-stream\r\n", &body)]);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let core = Core::new(Store::open_in_memory().unwrap(), crate::all(), "test", Box::new(move |event| sink.lock().unwrap().push(event))).unwrap();
+        core.call("settings.set", json!({ "key": "llm.endpoint", "value": format!("{model}/v1/chat/completions") })).unwrap();
+        core.call("settings.set", json!({ "key": "llm.model", "value": "m" })).unwrap();
+        let reply = core.call("ask.run", json!({ "action": "explain", "text": "x", "stream": true, "request_id": "r1" })).unwrap();
+        assert_eq!(reply["text"], "Two particles");
+        let deltas: Vec<Value> = events.lock().unwrap().iter().filter(|e| e["type"] == "ask.delta").cloned().collect();
+        assert!(!deltas.is_empty());
+        assert_eq!(deltas[0]["request_id"], "r1");
     }
 
     #[test]

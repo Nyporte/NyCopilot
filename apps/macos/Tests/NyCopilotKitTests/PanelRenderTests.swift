@@ -47,6 +47,20 @@ final class PanelRenderTests: XCTestCase {
         XCTAssertEqual(panel.panel.frame.width, 500)
     }
 
+    func testAskPanelShowsAnAnswerAsItStreams() async {
+        let panel = AskPanel()
+        panel.prepare(AskMaterial(text: "x", source: SourceContext()))
+        panel.onAsk = { _, _, _ in
+            await MainActor.run { panel.streamed("Two") }
+            await MainActor.run { XCTAssertTrue(panel.transcript.string.hasSuffix("Two")) }
+            await MainActor.run { panel.streamed("Two particles") }
+            return "Two particles, linked."
+        }
+        panel.ask(action: "explain", question: "", shown: "Explain")
+        for _ in 0..<50 where !panel.transcript.string.hasSuffix("linked.") { try? await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertEqual(panel.transcript.string, "Explain\nTwo particles, linked.", "the final answer replaces what streamed")
+    }
+
     func testClipboardPickerWithPinnedTextAndAnImage() throws {
         let images = ImageFolder("panels-clip-\(UUID())")
         defer { images.removeAll() }

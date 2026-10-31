@@ -39,7 +39,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     private let picture = NSImageView()
     private var pictureHeight: NSLayoutConstraint!
     private var chips: [NSButton] = []
-    private let transcript = NSTextView()
+    let transcript = NSTextView()
     private let transcriptScroll = NSScrollView()
     private var transcriptHeight: NSLayoutConstraint!
     private let spinner = NSProgressIndicator()
@@ -208,11 +208,13 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         ask(action: "ask", question: question, shown: question)
     }
 
-    private func ask(action: String, question: String, shown: String) {
+    func ask(action: String, question: String, shown: String) {
         request?.cancel()
         onCancel?()
         let previous = turns
         append(shown, style: .question)
+        // Room for the answer, filled in as it streams.
+        streaming = append("", style: .answer)
         spinner.startAnimation(nil)
         request = Task { [weak self] in
             guard let self else { return }
@@ -221,10 +223,10 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
                 guard !Task.isCancelled else { return }
                 turns = previous + [["role": "user", "content": question.isEmpty ? shown : question], ["role": "assistant", "content": answer]]
                 lastAnswer = answer
-                append(answer, style: .answer)
+                finishStreaming(answer, style: .answer)
             } catch {
                 guard !Task.isCancelled else { return }
-                append(error.localizedDescription, style: .failure)
+                finishStreaming(error.localizedDescription, style: .failure)
             }
             spinner.stopAnimation(nil)
             updateHint()
@@ -233,8 +235,41 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
 
     enum Style { case question, answer, failure }
 
-    func append(_ text: String, style: Style) {
+    /// Where the answer being streamed sits in the transcript.
+    private var streaming: NSRange?
+
+    /// More of the answer arrived: it replaces what was shown so far.
+    func streamed(_ text: String) {
+        guard let range = streaming else { return }
+        streaming = replace(range, with: formatted(text, style: .answer))
+    }
+
+    private func finishStreaming(_ text: String, style: Style) {
+        if let range = streaming { _ = replace(range, with: formatted(text, style: style)) } else { append(text, style: style) }
+        streaming = nil
+    }
+
+    private func replace(_ range: NSRange, with piece: NSAttributedString) -> NSRange {
+        transcript.textStorage?.replaceCharacters(in: range, with: piece)
+        fit()
+        transcript.scrollToEndOfDocument(nil)
+        return NSRange(location: range.location, length: piece.length)
+    }
+
+    /// Adds a piece to the transcript; its range, for an answer still arriving.
+    @discardableResult
+    func append(_ text: String, style: Style) -> NSRange {
         let storage = transcript.textStorage!
+        if storage.length > 0 { storage.append(NSAttributedString(string: style == .question ? "\n\n" : "\n")) }
+        let piece = formatted(text, style: style)
+        let range = NSRange(location: storage.length, length: piece.length)
+        storage.append(piece)
+        fit()
+        transcript.scrollToEndOfDocument(nil)
+        return range
+    }
+
+    private func formatted(_ text: String, style: Style) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.paragraphSpacing = 4
         paragraph.lineSpacing = 2
@@ -260,10 +295,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
             piece = NSMutableAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 12.5), .foregroundColor: NSColor.systemOrange])
         }
         piece.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: piece.length))
-        if storage.length > 0 { storage.append(NSAttributedString(string: style == .question ? "\n\n" : "\n")) }
-        storage.append(piece)
-        fit()
-        transcript.scrollToEndOfDocument(nil)
+        return piece
     }
 
     private func updateHint() {

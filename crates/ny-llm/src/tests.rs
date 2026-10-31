@@ -74,7 +74,8 @@ fn serve(status: &str, body: String, headers: &str, include_length: bool) -> Ser
     let requests = Arc::new(Mutex::new(Vec::new()));
     let log = requests.clone();
     let length = if include_length { format!("Content-Length: {}\r\n", body.len()) } else { String::new() };
-    let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{length}{headers}Connection: close\r\n\r\n{body}");
+    let kind = if headers.contains("Content-Type:") { "" } else { "Content-Type: application/json\r\n" };
+    let response = format!("HTTP/1.1 {status}\r\n{kind}{length}{headers}Connection: close\r\n\r\n{body}");
     thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { break };
@@ -140,4 +141,43 @@ fn settings_are_validated_through_the_module() {
     assert!(module.validate_setting("llm.endpoint", &json!("ftp://x")).is_err());
     assert!(module.validate_setting("llm.endpoint", &json!("")).is_ok());
     assert!(module.validate_setting("llm.model", &json!("a\nb")).is_err());
+}
+
+fn sse(chunks: &[&str]) -> String {
+    let mut body: String = chunks.iter().map(|chunk| format!("data: {}\n\n",
+        serde_json::json!({ "choices": [{ "delta": { "content": chunk }, "finish_reason": null }] }))).collect();
+    body.push_str("data: [DONE]\n\n");
+    body
+}
+
+#[test]
+fn streamed_replies_arrive_piece_by_piece_and_can_be_stopped() {
+    let server = serve("200 OK", sse(&["Hel", "lo", ", world"]), "Content-Type: text/event-stream\r\n", true);
+    let mut seen = Vec::new();
+    let text = stream_messages(&[serde_json::json!({ "role": "user", "content": "hi" })], &server.config, "", |so_far| {
+        seen.push(so_far.to_string());
+        true
+    }).unwrap();
+    assert_eq!(text, "Hello, world");
+    assert_eq!(seen, ["Hel", "Hello", "Hello, world"]);
+    assert!(server.requests.lock().unwrap()[0].contains("\"stream\":true"));
+
+    let server = serve("200 OK", sse(&["one", " two", " three"]), "Content-Type: text/event-stream\r\n", true);
+    let mut calls = 0;
+    let error = stream_messages(&[serde_json::json!({ "role": "user", "content": "hi" })], &server.config, "", |_| {
+        calls += 1;
+        calls < 2
+    }).unwrap_err();
+    assert_eq!((error.code.as_str(), calls), ("cancelled", 2));
+}
+
+#[test]
+fn servers_that_do_not_stream_answer_in_one_piece() {
+    let server = serve("200 OK", SUCCESS.to_string(), "", true);
+    let mut seen = Vec::new();
+    let text = stream_messages(&[serde_json::json!({ "role": "user", "content": "hi" })], &server.config, "", |so_far| {
+        seen.push(so_far.to_string());
+        true
+    }).unwrap();
+    assert_eq!((text.as_str(), seen.len()), ("Hello, world!", 1));
 }

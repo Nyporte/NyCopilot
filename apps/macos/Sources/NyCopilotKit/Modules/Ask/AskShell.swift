@@ -95,7 +95,17 @@ final class AskShell: ModuleShell {
         let id = UUID().uuidString
         requestID = id
         params["request_id"] = id
-        defer { if requestID == id { requestID = nil } }
+        params["stream"] = true
+        // The answer so far, as the core streams it.
+        let progress = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
+            guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "ask.delta",
+                  event["request_id"] as? String == id, let text = event["text"] as? String else { return }
+            MainActor.assumeIsolated { self?.panel.streamed(text) }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(progress)
+            if requestID == id { requestID = nil }
+        }
         do {
             return try await services.core.perform("ask.run", params, as: Answer.self).text
         } catch {

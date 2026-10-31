@@ -101,6 +101,56 @@ pub fn complete_messages(messages: &[Value], config: &ProviderConfig, api_key: &
     send(messages_body(messages, config, api_key)?, config, api_key)
 }
 
+/// A conversation, streamed: `on_text` gets the reply so far each time more arrives and returns
+/// false to stop reading (the request was cancelled), which ends the request at once rather than
+/// when the reply is done. A server that doesn't stream answers in one piece, and `on_text` gets it
+/// once. Bounded like `complete`, but with time for a long answer.
+pub fn stream_messages(messages: &[Value], config: &ProviderConfig, api_key: &str, mut on_text: impl FnMut(&str) -> bool) -> Result<String> {
+    let mut body: Value = serde_json::from_slice(&messages_body(messages, config, api_key)?)?;
+    body["stream"] = json!(true);
+    let mut request = http::streaming_agent().post(endpoint_url(&config.endpoint)?.as_str())
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream, application/json");
+    if !api_key.is_empty() { request = request.header("Authorization", &format!("Bearer {api_key}")); }
+    let mut response = request.send(&serde_json::to_vec(&body)?[..]).map_err(http::transport_error)?;
+    let status = response.status().as_u16();
+    if !(200..300).contains(&status) { return Err(http_status(status)); }
+    let streams = response.headers().get("content-type").and_then(|value| value.to_str().ok())
+        .is_some_and(|kind| kind.contains("text/event-stream"));
+    if !streams {
+        let text = decode_response(&http::read_body(&mut response)?)?;
+        if !on_text(&text) { return Err(cancelled()); }
+        return Ok(text);
+    }
+    let invalid = || NyError::new("invalid_response", "Unexpected response. The endpoint must stream Chat Completions events.");
+    let reader = std::io::BufReader::new(response.body_mut().as_reader().take(MAX_RESPONSE_BYTES + 1));
+    let mut text = String::new();
+    let mut finish: Option<String> = None;
+    for line in std::io::BufRead::lines(reader) {
+        let line = line.map_err(|_| NyError::new("network", "The connection dropped while reading the reply. Try again."))?;
+        let Some(data) = line.strip_prefix("data:").map(str::trim) else { continue };
+        if data == "[DONE]" { break; }
+        let event: Value = serde_json::from_str(data).map_err(|_| invalid())?;
+        if let Some(message) = event["error"]["message"].as_str() {
+            return Err(NyError::new("model_error", format!("The model reported an error: {message}")));
+        }
+        let choice = &event["choices"][0];
+        if let Some(reason) = choice["finish_reason"].as_str() { finish = Some(reason.to_string()); }
+        if let Some(delta) = choice["delta"]["content"].as_str().filter(|delta| !delta.is_empty()) {
+            text.push_str(delta);
+            if text.len() as u64 > MAX_RESPONSE_BYTES { return Err(too_large()); }
+            if !on_text(&text) { return Err(cancelled()); }
+        }
+    }
+    if finish.as_deref() == Some("length") {
+        return Err(NyError::new("truncated_response", "The model hit its output limit, so the reply was incomplete."));
+    }
+    if text.trim().is_empty() { return Err(NyError::new("empty_response", "The model returned an empty reply.")); }
+    Ok(text)
+}
+
+fn cancelled() -> NyError { NyError::new("cancelled", "Cancelled.") }
+
 fn send(body: Vec<u8>, config: &ProviderConfig, api_key: &str) -> Result<String> {
     let mut request = http::agent().post(endpoint_url(&config.endpoint)?.as_str())
         .header("Content-Type", "application/json")
@@ -126,6 +176,22 @@ pub mod http {
             .timeout_connect(Some(Duration::from_secs(15)))
             .timeout_recv_response(Some(Duration::from_secs(30)))
             .timeout_recv_body(Some(Duration::from_secs(30)))
+            .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
+            .build()
+            .into()
+    }
+
+    /// For streamed replies: the same bounds, with minutes rather than seconds for the whole reply,
+    /// since a long answer keeps arriving well past a minute.
+    pub fn streaming_agent() -> ureq::Agent {
+        ureq::Agent::config_builder()
+            .max_redirects(0)
+            .http_status_as_error(false)
+            .save_redirect_history(false)
+            .timeout_global(Some(Duration::from_secs(300)))
+            .timeout_connect(Some(Duration::from_secs(15)))
+            .timeout_recv_response(Some(Duration::from_secs(60)))
+            .timeout_recv_body(Some(Duration::from_secs(300)))
             .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
             .build()
             .into()
