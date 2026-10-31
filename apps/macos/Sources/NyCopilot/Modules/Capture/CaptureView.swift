@@ -242,7 +242,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     private var focusedHandle: Handle?
     private var handleGrowth: [Handle: (from: CGFloat, to: CGFloat, start: CFTimeInterval)] = [:]
     private static let growDuration: CFTimeInterval = 0.18
-    private static let handleReach: CGFloat = 40
+    private static let handleReach: CGFloat = 24
 
     private func growth(of handle: Handle, at now: CFTimeInterval) -> CGFloat {
         guard let state = handleGrowth[handle] else { return 0 }
@@ -254,7 +254,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
         var target: Handle?
         if case .resizing(let handle, _) = drag {
             target = handle
-        } else if let selection, let point, tool == nil, !isReadingText, !isPassive {
+        } else if let selection, let point, tool == nil, !isReadingText, !isPassive,
+                  toolbar.isHidden || !toolbar.frame.insetBy(dx: -4, dy: -4).contains(point) {
             func distance(_ handle: Handle) -> CGFloat {
                 let spot = self.point(of: handle, in: selection)
                 return hypot(spot.x - point.x, spot.y - point.y)
