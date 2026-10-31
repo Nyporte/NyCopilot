@@ -35,6 +35,7 @@ final class TranslateShell: ModuleShell {
         composer.onClose = { [weak self] in self?.cancelOperation() }
         composer.onCycleLanguage = { [weak self] step in self?.cycleLanguage(step) }
         services.translateText = { [weak self] text, near in self?.selection.show(text, near: near) }
+        services.core.seedFavoriteLanguages()
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
@@ -295,6 +296,20 @@ extension NyCore {
     var readingLanguage: String {
         let chosen: String = setting(.screenLanguage, default: "")
         return chosen.isEmpty ? ScreenText.deviceLanguage : chosen
+    }
+
+    /// The core's favorites, which Tab steps through in the composer, until someone changes them.
+    static let coreFavorites = ["English", "Simplified Chinese", "Japanese"]
+
+    /// On a Mac in another language, the favorites start as English and that language instead of
+    /// the core's English, Chinese, and Japanese. Once per Mac, and only if they're still the core's.
+    func seedFavoriteLanguages(device: String = ScreenText.deviceLanguage, defaults: UserDefaults = .standard) {
+        let key = "NyCopilotSeededFavorites"
+        guard !defaults.bool(forKey: key) else { return }
+        defaults.set(true, forKey: key)
+        let favorites: [String] = setting(.favoriteLanguages, default: [])
+        guard favorites == Self.coreFavorites, !favorites.contains(device) else { return }
+        try? setSetting(.favoriteLanguages, ["English", device])
     }
 
     /// A language's own name (日本語 for Japanese), or the name as given.

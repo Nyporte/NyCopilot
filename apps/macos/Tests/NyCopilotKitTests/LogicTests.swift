@@ -104,4 +104,36 @@ final class LogicTests: XCTestCase {
         try core.resetSetting(.clipboardKeepDays)
         XCTAssertEqual(core.setting(.clipboardKeepDays, default: 0), 30)
     }
+
+    /// A German Mac starts with English and German to Tab between; Chinese and Japanese stay for
+    /// Macs in those languages, and favorites someone changed are never touched.
+    func testFavoritesStartInTheMacsLanguage() throws {
+        func fresh() throws -> (NyCore, UserDefaults) {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("core-\(UUID())", isDirectory: true)
+            addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+            let suite = "favorites-\(UUID())"
+            addTeardownBlock { UserDefaults().removePersistentDomain(forName: suite) }
+            return (try NyCore(dataDirectory: folder), try XCTUnwrap(UserDefaults(suiteName: suite)))
+        }
+        func favorites(_ core: NyCore) -> [String] { core.setting(.favoriteLanguages, default: []) }
+
+        let (german, germanDefaults) = try fresh()
+        XCTAssertEqual(favorites(german), NyCore.coreFavorites, "the copy must match the core's own default")
+        german.seedFavoriteLanguages(device: "German", defaults: germanDefaults)
+        XCTAssertEqual(favorites(german), ["English", "German"])
+        try german.setSetting(.favoriteLanguages, NyCore.coreFavorites)
+        german.seedFavoriteLanguages(device: "German", defaults: germanDefaults)
+        XCTAssertEqual(favorites(german), NyCore.coreFavorites, "only once per Mac")
+
+        for device in ["English", "Japanese"] {
+            let (core, defaults) = try fresh()
+            core.seedFavoriteLanguages(device: device, defaults: defaults)
+            XCTAssertEqual(favorites(core), NyCore.coreFavorites, device)
+        }
+
+        let (changed, changedDefaults) = try fresh()
+        try changed.setSetting(.favoriteLanguages, ["English", "Korean"])
+        changed.seedFavoriteLanguages(device: "French", defaults: changedDefaults)
+        XCTAssertEqual(favorites(changed), ["English", "Korean"])
+    }
 }
