@@ -85,7 +85,12 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         super.init(window: window)
         window.delegate = self
         window.contentView = makeContent()
-        if !window.setFrameUsingName("NyCopilotInbox") { window.center() }
+        // A size saved while a screenshot stretched the window is put back to the default.
+        let restored = window.setFrameUsingName("NyCopilotInbox")
+        if !restored || window.frame.width > (window.screen ?? NSScreen.main).map({ $0.visibleFrame.width * 0.8 }) ?? 1200 {
+            window.setContentSize(NSSize(width: 860, height: 560))
+            window.center()
+        }
         observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
             guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "records.changed",
                   let collection = event["collection"] as? String, collection.hasPrefix("inbox.") else { return }
@@ -187,10 +192,14 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         detail.edgeInsets = NSEdgeInsets(top: 16, left: 18, bottom: 14, right: 18)
         for view in [editorScroll, actions] as [NSView] { view.widthAnchor.constraint(equalTo: detail.widthAnchor, constant: -36).isActive = true }
         // A long address is cut in the middle (the whole of it shows on hover), never past the pane.
-        for label in [sourceLabel, timeLabel, hint] {
-            label.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
-            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // A screenshot is shown at most as wide as the pane: left to its natural size, a wide one
+        // would push the window wider than the screen.
+        for view in [sourceLabel, timeLabel, hint, preview] as [NSView] {
+            view.widthAnchor.constraint(lessThanOrEqualTo: detail.widthAnchor, constant: -36).isActive = true
+            view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
+        preview.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        preview.setContentHuggingPriority(.defaultLow, for: .horizontal)
         editorScroll.setContentHuggingPriority(.defaultLow, for: .vertical)
         editorScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 80).isActive = true
 
