@@ -182,8 +182,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// Ease-out: quick to leave, gentle to arrive.
     private static func position(of glide: (from: CGRect, to: CGRect, start: CFTimeInterval), at now: CFTimeInterval) -> CGRect {
-        let t = min(max((now - glide.start) / glideDuration, 0), 1)
-        let eased = CGFloat(1 - pow(1 - t, 3))
+        let eased = BezierCurve.easeOut.value(at: (now - glide.start) / glideDuration)
         func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * eased }
         return CGRect(x: mix(glide.from.minX, glide.to.minX), y: mix(glide.from.minY, glide.to.minY),
                       width: mix(glide.from.width, glide.to.width), height: mix(glide.from.height, glide.to.height))
@@ -194,9 +193,12 @@ final class CaptureView: NSView, NSTextViewDelegate {
         guard glideTimer == nil else { return }
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
-                guard let self, let glide = self.glide else { timer.invalidate(); self?.glideTimer = nil; return }
+                guard let self else { timer.invalidate(); return }
                 self.needsDisplay = true
-                if CACurrentMediaTime() - glide.start >= Self.glideDuration {
+                let now = CACurrentMediaTime()
+                let gliding = self.glide.map { now - $0.start < Self.glideDuration } ?? false
+                let growing = self.handleGrowth.values.contains { now - $0.start < Self.growDuration }
+                if !gliding && !growing {
                     timer.invalidate()
                     self.glideTimer = nil
                 }
@@ -221,14 +223,53 @@ final class CaptureView: NSView, NSTextViewDelegate {
         border.lineWidth = 1.5
         border.stroke()
         guard handles else { return }
+        let now = CACurrentMediaTime()
         for handle in Handle.allCases {
-            let dot = NSBezierPath(ovalIn: CGRect(center: point(of: handle, in: rect), size: 7))
+            let grown = growth(of: handle, at: now)
+            let dot = NSBezierPath(ovalIn: CGRect(center: point(of: handle, in: rect), size: 7 + 7 * grown))
             NSColor.white.setFill()
             dot.fill()
             NSColor.controlAccentColor.setStroke()
-            dot.lineWidth = 1.5
+            dot.lineWidth = 1.5 + 0.5 * grown
             dot.stroke()
         }
+    }
+
+    // MARK: Handle under the pointer
+
+    /// The handle nearest the pointer (within reach) grows, and so does the area that grabs it; it
+    /// stays grown while it's dragged. Growing overshoots a touch and settles; shrinking eases out.
+    private var focusedHandle: Handle?
+    private var handleGrowth: [Handle: (from: CGFloat, to: CGFloat, start: CFTimeInterval)] = [:]
+    private static let growDuration: CFTimeInterval = 0.18
+    private static let handleReach: CGFloat = 40
+
+    private func growth(of handle: Handle, at now: CFTimeInterval) -> CGFloat {
+        guard let state = handleGrowth[handle] else { return 0 }
+        let curve = state.to > state.from ? BezierCurve.overshoot : BezierCurve.easeOut
+        return state.from + (state.to - state.from) * curve.value(at: (now - state.start) / Self.growDuration)
+    }
+
+    private func focusHandle(near point: CGPoint?) {
+        var target: Handle?
+        if case .resizing(let handle, _) = drag {
+            target = handle
+        } else if let selection, let point, tool == nil, !isReadingText, !isPassive {
+            func distance(_ handle: Handle) -> CGFloat {
+                let spot = self.point(of: handle, in: selection)
+                return hypot(spot.x - point.x, spot.y - point.y)
+            }
+            if let nearest = Handle.allCases.min(by: { distance($0) < distance($1) }), distance(nearest) <= Self.handleReach {
+                target = nearest
+            }
+        }
+        guard target != focusedHandle else { return }
+        let now = CACurrentMediaTime()
+        for handle in [focusedHandle, target].compactMap({ $0 }) {
+            handleGrowth[handle] = (growth(of: handle, at: now), handle == target ? 1 : 0, now)
+        }
+        focusedHandle = target
+        keepGliding()
     }
 
     /// The pixel size of `measuring` (by default `rect` itself), next to `rect`.
@@ -387,6 +428,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         let point = convert(event.locationInWindow, from: nil)
         pointer = point
         if selection == nil, !isPassive { hover(at: point) }
+        focusHandle(near: point)
         updateCursor(at: point)
         needsDisplay = true
     }
@@ -452,6 +494,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             drag = .drawing
         } else if tool == nil, let handle = handle(at: point, in: selection) {
             drag = .resizing(handle, selection)
+            focusHandle(near: point)
         } else if tool == nil, selection.contains(point) {
             drag = .moving(point, selection)
         } else if annotations.isEmpty, tool == nil {
@@ -518,6 +561,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
             break
         }
         drag = .none
+        focusHandle(near: pointer)
         needsDisplay = true
     }
 
@@ -556,7 +600,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
     }
 
     private func handle(at point: CGPoint, in rect: CGRect) -> Handle? {
-        Handle.allCases.first { CGRect(center: self.point(of: $0, in: rect), size: 14).contains(point) }
+        // The grown handle is easier to grab.
+        if let focusedHandle, CGRect(center: self.point(of: focusedHandle, in: rect), size: 28).contains(point) { return focusedHandle }
+        return Handle.allCases.first { CGRect(center: self.point(of: $0, in: rect), size: 14).contains(point) }
     }
 
     private func resized(_ rect: CGRect, handle: Handle, to point: CGPoint) -> CGRect {
@@ -956,6 +1002,40 @@ final class CaptureWindow: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+/// A cubic Bézier timing curve from (0, 0) to (1, 1), as in CSS `cubic-bezier()`: the outline's
+/// glide and the handles' growth follow these.
+struct BezierCurve {
+    let x1, y1, x2, y2: Double
+
+    /// Quick to leave, gentle to arrive.
+    static let easeOut = BezierCurve(x1: 0.33, y1: 1, x2: 0.68, y2: 1)
+    /// Goes a little past the end and settles back.
+    static let overshoot = BezierCurve(x1: 0.34, y1: 1.45, x2: 0.64, y2: 1)
+
+    /// Progress at time `t` (0…1, clamped): the curve's y where its x is `t`.
+    func value(at t: Double) -> CGFloat {
+        let t = min(max(t, 0), 1)
+        func bezier(_ a: Double, _ b: Double, _ s: Double) -> Double { 3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s }
+        // Solve x(s) = t: a few Newton steps, then bisection if the slope is too flat.
+        var s = t
+        for _ in 0..<6 {
+            let x = bezier(x1, x2, s) - t
+            let slope = 3 * x1 * (1 - s) * (1 - s) + 6 * (x2 - x1) * s * (1 - s) + 3 * (1 - x2) * s * s
+            if abs(x) < 1e-5 { break }
+            guard abs(slope) > 1e-6 else { break }
+            s = min(max(s - x / slope, 0), 1)
+        }
+        if abs(bezier(x1, x2, s) - t) > 1e-3 {
+            var low = 0.0, high = 1.0
+            for _ in 0..<30 {
+                s = (low + high) / 2
+                if bezier(x1, x2, s) < t { low = s } else { high = s }
+            }
+        }
+        return CGFloat(bezier(y1, y2, s))
+    }
 }
 
 extension CGRect {
