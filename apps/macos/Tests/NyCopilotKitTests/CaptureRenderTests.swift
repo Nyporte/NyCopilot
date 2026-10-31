@@ -24,6 +24,23 @@ final class CaptureRenderTests: XCTestCase {
         XCTAssertLessThan(toolbar.fittingSize.width, 720, "the bar should fit beside most selections")
     }
 
+    /// The view answers AppKit's cursor requests itself. Without a cursor-update area, AppKit put
+    /// the arrow back after every redraw, so the crosshair showed only while the mouse moved.
+    func testCaptureViewKeepsTheCrosshairUntilThereIsASelection() throws {
+        let screen = NSScreen.screens[0]
+        let context = CGContext(data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let frozen = FrozenScreen(screen: screen, image: try XCTUnwrap(context.makeImage()), windows: [])
+        let view = CaptureView(frozen: frozen, recent: [], palette: [.systemRed], color: .systemRed, stroke: 3, style: CaptureStyle()) { _, _, _ in }
+        view.updateTrackingAreas()
+        XCTAssertTrue(view.trackingAreas.contains { $0.options.contains(.cursorUpdate) && $0.owner === view })
+        view.updateCursor(at: CGPoint(x: 300, y: 300))
+        XCTAssertEqual(NSCursor.current, .crosshair)
+        view.selection = CGRect(x: 100, y: 100, width: 100, height: 100)
+        view.updateCursor(at: CGPoint(x: 300, y: 300))
+        XCTAssertEqual(NSCursor.current, .arrow, "outside a finished selection, the pointer")
+    }
+
     /// A pointer move redraws around the pointer and the outline, not the whole screen.
     func testPointerMovesRedrawOnlyNearby() throws {
         let screen = NSScreen.screens[0]
