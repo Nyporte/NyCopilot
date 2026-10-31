@@ -17,11 +17,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var onTextCopied: ((Int) -> Void)?
 
     let frozen: FrozenScreen
-    private(set) var selection: CGRect?
-    private(set) var annotations: [Annotation] = []
-    private var redoStack: [Annotation] = []
+    var selection: CGRect?
+    var annotations: [Annotation] = []
+    var redoStack: [Annotation] = []
     /// What a click would take: the element under the pointer, or — in window mode — its window.
-    private var hoverWindow: CGRect?
+    var hoverWindow: CGRect?
     /// Tab switches between outlining whole windows and elements, as in Snipaste. Shared by every
     /// display's overlay, and back to windows with each new capture.
     static var detectsWindows = true
@@ -29,25 +29,25 @@ final class CaptureView: NSView, NSTextViewDelegate {
     static var showsKeysTip = false
     /// When the shortcut was pressed, until the first frame is drawn (for timing).
     static var pressedAt: Date?
-    private var pointer: CGPoint?
-    private var drag: Drag = .none
-    private var current: Annotation?
-    private var textEditor: TextAnnotationEditor?
-    private var recentIndex = -1
-    private var analysis: (rect: CGRect, task: Task<ImageAnalysis, Error>)?
-    private var pendingAnalysis: DispatchWorkItem?
-    private var textOverlay: ImageAnalysisOverlayView?
-    private var copyWhenRead = false
-    private let textBar = CaptureTextBar()
+    var pointer: CGPoint?
+    var drag: Drag = .none
+    var current: Annotation?
+    var textEditor: TextAnnotationEditor?
+    var recentIndex = -1
+    var analysis: (rect: CGRect, task: Task<ImageAnalysis, Error>)?
+    var pendingAnalysis: DispatchWorkItem?
+    var textOverlay: ImageAnalysisOverlayView?
+    var copyWhenRead = false
+    let textBar = CaptureTextBar()
     /// Which format C copies; Shift switches between HEX and RGB.
-    private var copiesHex = true
+    var copiesHex = true
     /// "Copied …" shown briefly in the magnifier after C.
-    private var copiedFlash: String?
-    private var clearFlash: DispatchWorkItem?
-    private var shiftWasDown = false
-    private let recent: [CGRect]
-    private lazy var pixelated = CaptureRenderer.pixelate(frozen.image, blockSize: 12 * frozen.scale)
-    private let toolbar: CaptureToolbar
+    var copiedFlash: String?
+    var clearFlash: DispatchWorkItem?
+    var shiftWasDown = false
+    let recent: [CGRect]
+    lazy var pixelated = CaptureRenderer.pixelate(frozen.image, blockSize: 12 * frozen.scale)
+    let toolbar: CaptureToolbar
     /// Another display has the selection. Becoming the active one keeps what's outlined, so the
     /// click that started it can still take it.
     var isPassive = false {
@@ -70,12 +70,12 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var color: NSColor { didSet { toolbar.selectedColor = color; textEditor?.apply(style, color: color) } }
     var stroke: CGFloat { didSet { toolbar.selectedStroke = stroke } }
     var style: CaptureStyle { didSet { toolbar.style = style; textEditor?.apply(style, color: color); needsDisplay = true } }
-    private let onStyleChange: (NSColor, CGFloat, CaptureStyle) -> Void
+    let onStyleChange: (NSColor, CGFloat, CaptureStyle) -> Void
 
-    private enum Drag {
+    enum Drag {
         case none, creating(CGPoint), moving(CGPoint, CGRect), resizing(Handle, CGRect), drawing
     }
-    private enum Handle: CaseIterable { case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left }
+    enum Handle: CaseIterable { case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left }
 
     init(frozen: FrozenScreen, recent: [CGRect], palette: [NSColor], color: NSColor, stroke: CGFloat, style: CaptureStyle,
          onStyleChange: @escaping (NSColor, CGFloat, CaptureStyle) -> Void) {
@@ -115,6 +115,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
             guard let self, !toolbar.isHidden else { return }
             place(toolbar)
         }
+        // Under the toolbar and the text bars: the dimming and outline, the label, the magnifier.
+        chrome.frame = bounds
+        chrome.autoresizingMask = [.width, .height]
+        magnifierView.owner = self
+        for view in [chrome, sizeLabelView, magnifierView] as [NSView] { addSubview(view) }
         addSubview(toolbar)
         textBar.isHidden = true
         textBar.onCopyAll = { [weak self] in self?.copyAllText() }
@@ -124,300 +129,86 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     required init?(coder: NSCoder) { fatalError("Use init(frozen:…)") }
 
-    private func styleChanged() { onStyleChange(color, stroke, style) }
+    func styleChanged() { onStyleChange(color, stroke, style) }
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// The GPU-drawn dimming, outline, and handles; the size label; the magnifier (see CaptureChrome).
+    let chrome = CaptureChrome(frame: .zero)
+    let sizeLabelView = CaptureLabel()
+    let magnifierView = MagnifierView()
+    // Outline and handle animation state (see CaptureView+Outline).
+    var glide: (from: CGRect, to: CGRect, start: CFTimeInterval)?
+    var glideTimer: Timer?
+    var focusedHandle: Handle?
+    var handleGrowth: [Handle: (from: CGFloat, to: CGFloat, start: CFTimeInterval)] = [:]
+
     // MARK: Drawing
 
+    /// The moving parts, refreshed: the outline's place, the handles, the label, the magnifier.
+    func refreshDynamic() { updateChrome() }
+
+    /// Any redraw also refreshes the layers above it.
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            super.needsDisplay = newValue
+            if newValue { updateChrome() }
+        }
+    }
+
+    /// The area the last draw was asked to cover, or zero (for tests).
+    var lastDirtyRect = NSRect.zero
+
+    /// Only what changes with editing: annotations inside the selection and the text being typed.
     override func draw(_ dirtyRect: NSRect) {
+        lastDirtyRect = dirtyRect
         if let pressed = Self.pressedAt {
             Self.pressedAt = nil
             Diagnostics.note("capture", "F1 → first frame \(Int(Date().timeIntervalSince(pressed) * 1000)) ms")
         }
-        let dim = NSColor.black.withAlphaComponent(selection == nil ? 0.28 : 0.45)
+        guard let selection else { return }
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: selection).addClip()
+        for annotation in annotations { annotation.draw(pixelated: pixelated, imageFrame: bounds) }
+        current?.draw(pixelated: pixelated, imageFrame: bounds)
+        NSGraphicsContext.restoreGraphicsState()
+        if let textEditor { drawEditorFrame(textEditor.frame) }
+    }
+
+    /// The dimming, outline, handles, label, and magnifier, as the state says they are now.
+    func updateChrome() {
+        guard chrome.superview === self else { return }
         let hovering = selection == nil && !isPassive
         // After a selection, the next outline appears in place rather than gliding from the past.
         if !hovering { glide = nil }
         let outlined = hovering ? glidingOutline() : nil
-        let focus = selection ?? outlined
-        let shade = NSBezierPath(rect: bounds)
-        if let focus { shade.append(NSBezierPath(rect: focus)) }
-        shade.windingRule = .evenOdd
-        dim.setFill()
-        shade.fill()
-
-        if let selection {
-            NSGraphicsContext.saveGraphicsState()
-            NSBezierPath(rect: selection).addClip()
-            for annotation in annotations { annotation.draw(pixelated: pixelated, imageFrame: bounds) }
-            current?.draw(pixelated: pixelated, imageFrame: bounds)
-            NSGraphicsContext.restoreGraphicsState()
-            drawFrame(selection, handles: tool == nil && !isReadingText)
-            drawSizeLabel(for: selection)
-            if let textEditor { drawEditorFrame(textEditor.frame) }
-        } else if let outlined, let hoverWindow {
-            drawFrame(outlined, handles: false)
-            drawSizeLabel(for: outlined, measuring: hoverWindow)
-        }
-        if showsMagnifier, let pointer { drawMagnifier(at: pointer) }
-    }
-
-    // MARK: Gliding outline
-
-    /// The hover outline as drawn: one outline that glides from element to element instead of
-    /// jumping. It appears where it belongs the first time, then eases to each new target.
-    private var glide: (from: CGRect, to: CGRect, start: CFTimeInterval)?
-    private var glideTimer: Timer?
-    private static let glideDuration: CFTimeInterval = 0.16
-
-    private func glidingOutline() -> CGRect? {
-        guard let target = hoverWindow else { glide = nil; return nil }
+        let framed = selection ?? (hoverWindow != nil ? outlined : nil)
         let now = CACurrentMediaTime()
-        if glide?.to != target {
-            let current = glide.map { Self.position(of: $0, at: now) } ?? target
-            glide = (current, target, now)
-            if current != target { keepGliding() }
-        }
-        return glide.map { Self.position(of: $0, at: now) }
-    }
+        let spots: [(CGPoint, CGFloat)] = selection.map { selection in
+            guard tool == nil, !isReadingText else { return [] }
+            return Handle.allCases.map { (point(of: $0, in: selection), growth(of: $0, at: now)) }
+        } ?? []
+        chrome.show(dimming: selection == nil ? 0.28 : 0.45, focus: selection ?? outlined, frame: framed, handles: spots)
 
-    /// Ease-out: quick to leave, gentle to arrive.
-    private static func position(of glide: (from: CGRect, to: CGRect, start: CFTimeInterval), at now: CFTimeInterval) -> CGRect {
-        let eased = BezierCurve.easeOut.value(at: (now - glide.start) / glideDuration)
-        func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * eased }
-        return CGRect(x: mix(glide.from.minX, glide.to.minX), y: mix(glide.from.minY, glide.to.minY),
-                      width: mix(glide.from.width, glide.to.width), height: mix(glide.from.height, glide.to.height))
-    }
-
-    /// Redraws at display rate until the outline arrives, then stops.
-    private func keepGliding() {
-        guard glideTimer == nil else { return }
-        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
-            MainActor.assumeIsolated {
-                guard let self else { timer.invalidate(); return }
-                self.needsDisplay = true
-                let now = CACurrentMediaTime()
-                let gliding = self.glide.map { now - $0.start < Self.glideDuration } ?? false
-                let growing = self.handleGrowth.values.contains { now - $0.start < Self.growDuration }
-                if !gliding && !growing {
-                    timer.invalidate()
-                    self.glideTimer = nil
-                }
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        glideTimer = timer
-    }
-
-    private var showsMagnifier: Bool {
-        guard !isPassive, textEditor == nil else { return false }
-        switch drag {
-        case .creating, .resizing: return true
-        case .none: return selection == nil
-        default: return false
-        }
-    }
-
-    private func drawFrame(_ rect: CGRect, handles: Bool) {
-        NSColor.controlAccentColor.setStroke()
-        let border = NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5))
-        border.lineWidth = 1.5
-        border.stroke()
-        guard handles else { return }
-        let now = CACurrentMediaTime()
-        for handle in Handle.allCases {
-            let grown = growth(of: handle, at: now)
-            let dot = NSBezierPath(ovalIn: CGRect(center: point(of: handle, in: rect), size: 7 + 7 * grown))
-            NSColor.white.setFill()
-            dot.fill()
-            NSColor.controlAccentColor.setStroke()
-            dot.lineWidth = 1.5 + 0.5 * grown
-            dot.stroke()
-        }
-    }
-
-    // MARK: Handle under the pointer
-
-    /// The handle nearest the pointer (within reach) grows, and so does the area that grabs it; it
-    /// stays grown while it's dragged. Growing overshoots a touch and settles; shrinking eases out.
-    private var focusedHandle: Handle?
-    private var handleGrowth: [Handle: (from: CGFloat, to: CGFloat, start: CFTimeInterval)] = [:]
-    private static let growDuration: CFTimeInterval = 0.18
-    private static let handleReach: CGFloat = 24
-
-    private func growth(of handle: Handle, at now: CFTimeInterval) -> CGFloat {
-        guard let state = handleGrowth[handle] else { return 0 }
-        let curve = state.to > state.from ? BezierCurve.overshoot : BezierCurve.easeOut
-        return state.from + (state.to - state.from) * curve.value(at: (now - state.start) / Self.growDuration)
-    }
-
-    private func focusHandle(near point: CGPoint?) {
-        var target: Handle?
-        if case .resizing(let handle, _) = drag {
-            target = handle
-        } else if let selection, let point, tool == nil, !isReadingText, !isPassive,
-                  toolbar.isHidden || !toolbar.frame.insetBy(dx: -4, dy: -4).contains(point) {
-            func distance(_ handle: Handle) -> CGFloat {
-                let spot = self.point(of: handle, in: selection)
-                return hypot(spot.x - point.x, spot.y - point.y)
-            }
-            if let nearest = Handle.allCases.min(by: { distance($0) < distance($1) }), distance(nearest) <= Self.handleReach {
-                target = nearest
-            }
-        }
-        guard target != focusedHandle else { return }
-        let now = CACurrentMediaTime()
-        for handle in [focusedHandle, target].compactMap({ $0 }) {
-            handleGrowth[handle] = (growth(of: handle, at: now), handle == target ? 1 : 0, now)
-        }
-        focusedHandle = target
-        keepGliding()
-    }
-
-    /// The pixel size of `measuring` (by default `rect` itself), next to `rect`.
-    private func drawSizeLabel(for rect: CGRect, measuring measured: CGRect? = nil, note: String? = nil) {
-        let measured = measured ?? rect
-        let dimensions = "\(Int(measured.width * frozen.scale)) × \(Int(measured.height * frozen.scale))"
-        let text = (note.map { "\(dimensions)  ·  \($0)" } ?? dimensions) as NSString
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
-                                                          .foregroundColor: NSColor.white]
-        let size = text.size(withAttributes: attributes)
-        var origin = CGPoint(x: rect.minX, y: rect.minY - size.height - 10)
-        if origin.y < 4 { origin.y = rect.minY + 6; origin.x += 6 }
-        let plate = CGRect(x: origin.x, y: origin.y, width: size.width + 12, height: size.height + 6)
-        NSColor.black.withAlphaComponent(0.65).setFill()
-        NSBezierPath(roundedRect: plate, xRadius: 5, yRadius: 5).fill()
-        text.draw(at: CGPoint(x: plate.minX + 6, y: plate.minY + 3), withAttributes: attributes)
-    }
-
-    /// A pixel-exact zoom of the area under the pointer with a pixel grid, then the pointer's position,
-    /// the selection size while dragging, the color in HEX and RGB (the format C copies is
-    /// highlighted), and the keys that act on it.
-    private func drawMagnifier(at point: CGPoint) {
-        let zoom: CGFloat = 8, span: CGFloat = 17
-        let box = CGSize(width: span * zoom, height: span * zoom)
-        let scale = frozen.scale
-        // Whole pixels around the pointer, so every cell in the grid is exactly one screen pixel.
-        let center = CGPoint(x: floor(point.x * scale), y: floor(point.y * scale))
-
-        // The lines under the zoom, measured first so the panel fits the longest one.
-        let mono = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        let bold = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
-        let small = NSFont.systemFont(ofSize: 10.5), smallBold = NSFont.systemFont(ofSize: 10.5, weight: .semibold)
-        let dim = NSColor.white.withAlphaComponent(0.55)
-        func text(_ parts: [(String, NSFont, NSColor)]) -> NSAttributedString {
-            let line = NSMutableAttributedString()
-            for (string, font, color) in parts { line.append(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color])) }
-            return line
-        }
-        var lines: [(text: NSAttributedString, swatch: NSColor?)] = []
-        lines.append((text([("X \(Int(center.x))   Y \(Int(center.y))", mono, .white)]), nil))
-        if isSizing, let selection {
-            lines.append((text([("\(Int((selection.width * scale).rounded())) × \(Int((selection.height * scale).rounded())) px", mono, .white)]), nil))
-        }
-        let swatch = color(at: point)
-        if let swatch {
-            lines.append((text([(swatch.hexString, copiesHex ? bold : mono, copiesHex ? .white : dim)]), swatch))
-            lines.append((text([(Self.rgb(swatch), copiesHex ? mono : bold, copiesHex ? dim : .white)]), nil))
-        }
-        if let copiedFlash {
-            lines.append((text([(copiedFlash, smallBold, .systemGreen)]), nil))
+        if let framed {
+            let (text, plate) = sizeLabel(for: framed, measuring: selection == nil ? hoverWindow : nil)
+            sizeLabelView.text = text
+            sizeLabelView.frame = plate
+            sizeLabelView.isHidden = false
         } else {
-            lines.append((text([("C", smallBold, .white), (" copy  ·  ", small, dim), ("⇧", smallBold, .white), (" switch format", small, dim)]), nil))
+            sizeLabelView.isHidden = true
         }
-        // While hovering: what's being outlined, and how to switch.
-        if selection == nil {
-            lines.append((text([(Self.detectsWindows ? "Windows" : "Elements", smallBold, .white),
-                                ("  ·  ", small, dim), ("Tab", smallBold, .white),
-                                (Self.detectsWindows ? " for elements" : " for windows", small, dim)]), nil))
-            if Self.showsKeysTip {
-                lines.append((text([("?", smallBold, .white), (" all keys  ·  then ", small, dim), ("A", smallBold, .white), (" asks AI", small, dim)]), nil))
-            }
+        if showsMagnifier, let pointer {
+            magnifierView.pointer = pointer
+            magnifierView.frame = magnifierFrame(at: pointer)
+            magnifierView.needsDisplay = true
+            magnifierView.isHidden = false
+        } else {
+            magnifierView.isHidden = true
         }
-        let padding: CGFloat = 9, swatchIndent: CGFloat = 17, lineHeight: CGFloat = 15
-        let textWidth = lines.map { $0.text.size().width + ($0.swatch == nil ? 0 : swatchIndent) }.max() ?? 0
-        let panel = CGSize(width: max(box.width, ceil(textWidth) + padding * 2), height: CGFloat(lines.count) * lineHeight + 12)
-
-        // Beside the pointer, flipped to the other side near a screen edge.
-        let width = max(box.width, panel.width), height = box.height + 4 + panel.height
-        var origin = CGPoint(x: point.x + 20, y: point.y + 20)
-        if origin.x + width > bounds.maxX - 8 { origin.x = point.x - 20 - width }
-        if origin.y + height > bounds.maxY - 8 { origin.y = point.y - 20 - height }
-        origin.x = max(origin.x, bounds.minX + 8)
-        let frame = CGRect(origin: origin, size: box)
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let half = floor(span / 2)
-        let source = CGRect(x: center.x - half, y: center.y - half, width: span, height: span)
-        context.saveGState()
-        NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8).addClip()
-        NSColor.black.setFill()
-        frame.fill()
-        if let crop = frozen.image.cropping(to: source) {
-            context.interpolationQuality = .none
-            context.translateBy(x: frame.minX, y: frame.maxY)
-            context.scaleBy(x: 1, y: -1)
-            context.draw(crop, in: CGRect(origin: .zero, size: box))
-            context.scaleBy(x: 1, y: -1)
-            context.translateBy(x: -frame.minX, y: -frame.maxY)
-        }
-        NSColor.white.withAlphaComponent(0.08).setFill()
-        for index in 1..<Int(span) {
-            let offset = CGFloat(index) * zoom
-            CGRect(x: frame.minX + offset, y: frame.minY, width: 0.5, height: frame.height).fill(using: .sourceOver)
-            CGRect(x: frame.minX, y: frame.minY + offset, width: frame.width, height: 0.5).fill(using: .sourceOver)
-        }
-        context.restoreGState()
-        // The pixel the pointer is on, outlined.
-        let cell = CGRect(x: frame.minX + half * zoom, y: frame.minY + half * zoom, width: zoom, height: zoom)
-        NSColor.white.setStroke()
-        NSBezierPath(rect: cell.insetBy(dx: -0.5, dy: -0.5)).stroke()
-        NSColor.white.withAlphaComponent(0.9).setStroke()
-        let ring = NSBezierPath(roundedRect: frame, xRadius: 8, yRadius: 8)
-        ring.lineWidth = 2
-        ring.stroke()
-
-        let plate = CGRect(origin: CGPoint(x: frame.minX, y: frame.maxY + 4), size: panel)
-        NSColor.black.withAlphaComponent(0.78).setFill()
-        NSBezierPath(roundedRect: plate, xRadius: 7, yRadius: 7).fill()
-        var y = plate.minY + 6
-        for line in lines {
-            var x = plate.minX + padding
-            if let swatch = line.swatch {
-                swatch.setFill()
-                NSBezierPath(roundedRect: CGRect(x: x, y: y + 2, width: 11, height: 11), xRadius: 2, yRadius: 2).fill()
-                x += swatchIndent
-            }
-            line.text.draw(at: CGPoint(x: x, y: y))
-            y += lineHeight
-        }
-    }
-
-    /// Dragging out or resizing a selection: the magnifier also shows its size.
-    private var isSizing: Bool {
-        switch drag {
-        case .creating, .resizing: return true
-        default: return false
-        }
-    }
-
-    private static func rgb(_ color: NSColor) -> String {
-        "RGB \(Int(round(color.redComponent * 255))), \(Int(round(color.greenComponent * 255))), \(Int(round(color.blueComponent * 255)))"
-    }
-
-    // MARK: Pixels
-
-    func color(at point: CGPoint) -> NSColor? {
-        let scale = frozen.scale
-        let pixel = CGRect(x: floor(point.x * scale), y: floor(point.y * scale), width: 1, height: 1)
-        guard let crop = frozen.image.cropping(to: pixel), let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
-        var bytes = [UInt8](repeating: 0, count: 4)
-        guard let context = CGContext(data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
-                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-        return NSColor(srgbRed: CGFloat(bytes[0]) / 255, green: CGFloat(bytes[1]) / 255, blue: CGFloat(bytes[2]) / 255, alpha: 1)
     }
 
     // MARK: Mouse
@@ -435,7 +226,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         if selection == nil, !isPassive { hover(at: point) }
         focusHandle(near: point)
         updateCursor(at: point)
-        needsDisplay = true
+        refreshDynamic()
     }
 
     /// Outlines what's under the pointer as soon as the capture opens, before it moves.
@@ -451,7 +242,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// In window mode, the window under the pointer. Otherwise the element under it, once its app
     /// answers; meanwhile the outline stays where it is rather than flashing the whole window.
-    private func hover(at point: CGPoint) {
+    func hover(at point: CGPoint) {
         guard let window = frozen.windows.first(where: { $0.rect.contains(point) }) else { hoverWindow = nil; return }
         guard !Self.detectsWindows, AXIsProcessTrusted() else { hoverWindow = window.rect; return }
         if hoverWindow == nil { hoverWindow = window.rect }
@@ -461,12 +252,12 @@ final class CaptureView: NSView, NSTextViewDelegate {
             guard let self, selection == nil, !isPassive, !Self.detectsWindows, let pointer, window.rect.contains(pointer) else { return }
             let local = element.offsetBy(dx: -origin.x, dy: -origin.y)
             hoverWindow = local.contains(pointer) ? local : window.rect
-            needsDisplay = true
+            refreshDynamic()
         }
     }
 
     /// Tab: elements ⇄ windows, on every display at once.
-    private func toggleDetection() {
+    func toggleDetection() {
         Self.detectsWindows.toggle()
         for view in NSApp.windows.compactMap({ $0.contentView?.subviews.first as? CaptureView }) {
             if let pointer = view.pointer, view.selection == nil, !view.isPassive { view.hover(at: pointer) }
@@ -578,11 +369,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
         else { onCancel?() }
     }
 
-    private func clamp(_ point: CGPoint) -> CGPoint {
+    func clamp(_ point: CGPoint) -> CGPoint {
         CGPoint(x: min(max(point.x, 0), bounds.width), y: min(max(point.y, 0), bounds.height))
     }
 
-    private func clearSelection() {
+    func clearSelection() {
         selection = nil
         toolbar.isHidden = true
         tool = nil
@@ -591,7 +382,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     // MARK: Handles
 
-    private func point(of handle: Handle, in rect: CGRect) -> CGPoint {
+    func point(of handle: Handle, in rect: CGRect) -> CGPoint {
         switch handle {
         case .topLeft: return CGPoint(x: rect.minX, y: rect.minY)
         case .top: return CGPoint(x: rect.midX, y: rect.minY)
@@ -604,13 +395,13 @@ final class CaptureView: NSView, NSTextViewDelegate {
         }
     }
 
-    private func handle(at point: CGPoint, in rect: CGRect) -> Handle? {
+    func handle(at point: CGPoint, in rect: CGRect) -> Handle? {
         // The grown handle is easier to grab.
         if let focusedHandle, CGRect(center: self.point(of: focusedHandle, in: rect), size: 28).contains(point) { return focusedHandle }
         return Handle.allCases.first { CGRect(center: self.point(of: $0, in: rect), size: 14).contains(point) }
     }
 
-    private func resized(_ rect: CGRect, handle: Handle, to point: CGPoint) -> CGRect {
+    func resized(_ rect: CGRect, handle: Handle, to point: CGPoint) -> CGRect {
         var minX = rect.minX, minY = rect.minY, maxX = rect.maxX, maxY = rect.maxY
         switch handle {
         case .topLeft: minX = point.x; minY = point.y
@@ -627,13 +418,13 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// Each edge to its nearest pixel. Rounding outward (`integral`) grew selections by a point —
     /// two pixels on Retina — whenever the pointer sat between pixels.
-    private func snapped(_ rect: CGRect) -> CGRect {
+    func snapped(_ rect: CGRect) -> CGRect {
         let scale = frozen.scale
         func pixel(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
         return CGRect(corners: CGPoint(x: pixel(rect.minX), y: pixel(rect.minY)), CGPoint(x: pixel(rect.maxX), y: pixel(rect.maxY)))
     }
 
-    private func updateCursor(at point: CGPoint) {
+    func updateCursor(at point: CGPoint) {
         guard let selection else { NSCursor.crosshair.set(); return }
         if tool != nil { (selection.contains(point) ? (tool == .text ? NSCursor.iBeam : NSCursor.crosshair) : NSCursor.arrow).set() }
         else if let handle = handle(at: point, in: selection) {
@@ -648,14 +439,14 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     // MARK: Toolbar
 
-    private func placeToolbar() {
+    func placeToolbar() {
         guard let selection, selection.width >= 4, selection.height >= 4, !isReadingText else { toolbar.isHidden = true; return }
         toolbar.isHidden = false
         place(toolbar)
     }
 
     /// Below the selection, right-aligned; above it when there is no room; inside as a last resort.
-    private func place(_ bar: NSView) {
+    func place(_ bar: NSView) {
         guard let selection else { return }
         bar.isHidden = false
         let size = bar.fittingSize
@@ -670,7 +461,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// A borderless, growing text view styled like the finished annotation, so what you type is
     /// exactly what gets drawn. Return commits, Shift+Return adds a line, Esc discards.
-    private func beginText(at point: CGPoint) {
+    func beginText(at point: CGPoint) {
         let editor = TextAnnotationEditor(origin: point)
         editor.delegate = self
         editor.apply(style, color: color)
@@ -701,7 +492,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         }
     }
 
-    private func drawEditorFrame(_ frame: CGRect) {
+    func drawEditorFrame(_ frame: CGRect) {
         let box = NSBezierPath(rect: frame.insetBy(dx: -4, dy: -3))
         box.lineWidth = 1
         box.setLineDash([4, 3], count: 2, phase: 0)
@@ -709,7 +500,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         box.stroke()
     }
 
-    private func commitText() {
+    func commitText() {
         guard let editor = textEditor else { return }
         textEditor = nil
         let text = editor.string
@@ -723,7 +514,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         toolbar.canRedo = false
     }
 
-    private func cancelText() {
+    func cancelText() {
         textEditor?.removeFromSuperview()
         textEditor = nil
         window?.makeFirstResponder(self)
@@ -748,7 +539,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
-    private func finish(_ action: CaptureAction) {
+    func finish(_ action: CaptureAction) {
         if textEditor != nil { commitText() }
         guard selection != nil else { return }
         onFinish?(action)
@@ -757,7 +548,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     // MARK: Live Text
 
     /// Arrow keys and drags settle many times a second; read the text once things are still.
-    private func selectionSettled() {
+    func selectionSettled() {
         pendingAnalysis?.cancel()
         let work = DispatchWorkItem { [weak self] in _ = self?.textAnalysis() }
         pendingAnalysis = work
@@ -766,7 +557,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// The text in the current selection, read from the screen as it was, so annotations don't get in
     /// the way. Started in the background as soon as the selection settles, so T is instant.
-    private func textAnalysis() -> Task<ImageAnalysis, Error>? {
+    func textAnalysis() -> Task<ImageAnalysis, Error>? {
         guard let selection else { return nil }
         if let analysis, analysis.rect == selection { return analysis.task }
         guard let image = CaptureRenderer.render(frozen, selection: selection, annotations: [], pixelated: nil)?
@@ -807,7 +598,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         needsDisplay = true
     }
 
-    private func endReadingText() {
+    func endReadingText() {
         copyWhenRead = false
         textOverlay?.removeFromSuperview()
         textOverlay = nil
@@ -818,7 +609,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     }
 
     /// ⌘C: the selected words, staying in Live Text.
-    private func copySelectedText() {
+    func copySelectedText() {
         guard let overlay = textOverlay, overlay.analysis != nil else { return }
         let text = LiveText.textToCopy(from: overlay)
         guard !text.isEmpty else { return }
@@ -828,7 +619,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
 
     /// T twice — the left hand never moves — or Return, or Copy All: every line, then the capture
     /// closes. A double tap faster than recognition copies as soon as the text is read.
-    private func copyAllText() {
+    func copyAllText() {
         guard let overlay = textOverlay else { return }
         guard let analysis = overlay.analysis else { copyWhenRead = true; return }
         let transcript = analysis.transcript
@@ -838,7 +629,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     }
 
     /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
-    private func readingTextKeyDown(_ event: NSEvent) {
+    func readingTextKeyDown(_ event: NSEvent) {
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags, key) {
@@ -856,250 +647,4 @@ final class CaptureView: NSView, NSTextViewDelegate {
     }
 
 
-    // MARK: Keyboard
-
-    override func keyDown(with event: NSEvent) {
-        if isReadingText { readingTextKeyDown(event); return }
-        if event.characters == "?" { KeySheet.shared.toggle("Screenshot keys", groups: KeyGuide.capture, over: window); return }
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        switch (event.keyCode, flags) {
-        case (53, _): onCancel?()
-        case (48, []) where selection == nil: toggleDetection()
-        case (36, _), (76, _): finish(.copy)
-        case (123...126, _): nudge(event.keyCode, resize: flags.contains(.shift))
-        default:
-            if flags == [.command] {
-                switch key {
-                case "c": finish(.copy)
-                case "s": finish(.save)
-                case "t": finish(.pin)
-                case "z": undo()
-                case "a": selectAll()
-                default: super.keyDown(with: event)
-                }
-            } else if flags == [.command, .shift] {
-                switch key {
-                case "s": finish(.quickSave)
-                case "z": redo()
-                default: super.keyDown(with: event)
-                }
-            } else if flags.isEmpty {
-                switch key {
-                case "c" where showsMagnifier: copyColor()
-                case "t" where selection != nil: beginReadingText()
-                case "s" where selection != nil: finish(.scroll)
-                case "g" where selection != nil: finish(.record)
-                case "r" where selection != nil: finish(.translate)
-                case "i" where selection != nil: finish(.inbox)
-                case "a" where selection != nil: finish(.ask)
-                case "p" where selection != nil: finish(.pin)
-                case ",": stepRecent(by: 1)
-                case ".": stepRecent(by: -1)
-                case "1", "2", "3", "4", "5", "6", "7", "8":
-                    guard selection != nil, let index = Int(key) else { break }
-                    let picked = AnnotationTool.allCases[index - 1]
-                    tool = tool == picked ? nil : picked
-                default: super.keyDown(with: event)
-                }
-            } else {
-                super.keyDown(with: event)
-            }
-        }
-    }
-
-    /// Arrow keys move the selection one point; with Shift they grow or shrink it.
-    private func nudge(_ keyCode: UInt16, resize: Bool) {
-        guard var rect = selection, tool == nil else {
-            // Before selecting, arrows move the pointer for pixel-precise starts.
-            if selection == nil, let pointer {
-                let delta: CGPoint = keyCode == 123 ? CGPoint(x: -1, y: 0) : keyCode == 124 ? CGPoint(x: 1, y: 0)
-                    : keyCode == 125 ? CGPoint(x: 0, y: 1) : CGPoint(x: 0, y: -1)
-                let moved = clamp(CGPoint(x: pointer.x + delta.x, y: pointer.y + delta.y))
-                if let window {
-                    let screenPoint = window.convertPoint(toScreen: convert(moved, to: nil))
-                    CGWarpMouseCursorPosition(ScreenGeometry.topLeft(screenPoint))
-                }
-                self.pointer = moved
-                needsDisplay = true
-            }
-            return
-        }
-        switch (keyCode, resize) {
-        case (123, false): rect.origin.x -= 1
-        case (124, false): rect.origin.x += 1
-        case (125, false): rect.origin.y += 1
-        case (126, false): rect.origin.y -= 1
-        case (123, true): rect.size.width = max(4, rect.width - 1)
-        case (124, true): rect.size.width += 1
-        case (125, true): rect.size.height += 1
-        case (126, true): rect.size.height = max(4, rect.height - 1)
-        default: break
-        }
-        selection = rect.intersection(bounds)
-        placeToolbar()
-        selectionSettled()
-        needsDisplay = true
-    }
-
-    private func selectAll() {
-        guard annotations.isEmpty else { return }
-        onSelectionStarted?()
-        selection = bounds
-        hoverWindow = nil
-        placeToolbar()
-        selectionSettled()
-        needsDisplay = true
-    }
-
-    /// `,` and `.` step back and forth through regions captured before.
-    private func stepRecent(by step: Int) {
-        guard annotations.isEmpty, !recent.isEmpty else { return }
-        recentIndex = min(max(recentIndex + step, 0), recent.count - 1)
-        onSelectionStarted?()
-        selection = recent[recentIndex]
-        placeToolbar()
-        selectionSettled()
-        needsDisplay = true
-    }
-
-    /// C copies the color under the pointer in the highlighted format; capture carries on.
-    private func copyColor() {
-        guard let pointer, let swatch = color(at: pointer) else { return }
-        let value = copiesHex ? swatch.hexString : Self.rgb(swatch).replacingOccurrences(of: "RGB ", with: "")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(value, forType: .string)
-        copiedFlash = "Copied \(value)"
-        clearFlash?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.copiedFlash = nil
-            self?.needsDisplay = true
-        }
-        clearFlash = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
-        needsDisplay = true
-    }
-
-    /// Pressing Shift (on its own) switches the color format C copies.
-    override func flagsChanged(with event: NSEvent) {
-        let shiftDown = event.modifierFlags.contains(.shift)
-        if shiftDown, !shiftWasDown, showsMagnifier {
-            copiesHex.toggle()
-            needsDisplay = true
-        }
-        shiftWasDown = shiftDown
-    }
-}
-
-/// Borderless, above everything including the menu bar, and able to take keys.
-final class CaptureWindow: NSPanel {
-    init(screen: NSScreen) {
-        super.init(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        level = .screenSaver
-        isOpaque = true
-        hasShadow = false
-        backgroundColor = .black
-        acceptsMouseMovedEvents = true
-        isReleasedWhenClosed = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        setFrame(screen.frame, display: false)
-    }
-
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-}
-
-/// A cubic Bézier timing curve from (0, 0) to (1, 1), as in CSS `cubic-bezier()`: the outline's
-/// glide and the handles' growth follow these.
-struct BezierCurve {
-    let x1, y1, x2, y2: Double
-
-    /// Quick to leave, gentle to arrive.
-    static let easeOut = BezierCurve(x1: 0.33, y1: 1, x2: 0.68, y2: 1)
-    /// Goes a little past the end and settles back.
-    static let overshoot = BezierCurve(x1: 0.34, y1: 1.45, x2: 0.64, y2: 1)
-
-    /// Progress at time `t` (0…1, clamped): the curve's y where its x is `t`.
-    func value(at t: Double) -> CGFloat {
-        let t = min(max(t, 0), 1)
-        func bezier(_ a: Double, _ b: Double, _ s: Double) -> Double { 3 * a * s * (1 - s) * (1 - s) + 3 * b * s * s * (1 - s) + s * s * s }
-        // Solve x(s) = t: a few Newton steps, then bisection if the slope is too flat.
-        var s = t
-        for _ in 0..<6 {
-            let x = bezier(x1, x2, s) - t
-            let slope = 3 * x1 * (1 - s) * (1 - s) + 6 * (x2 - x1) * s * (1 - s) + 3 * (1 - x2) * s * s
-            if abs(x) < 1e-5 { break }
-            guard abs(slope) > 1e-6 else { break }
-            s = min(max(s - x / slope, 0), 1)
-        }
-        if abs(bezier(x1, x2, s) - t) > 1e-3 {
-            var low = 0.0, high = 1.0
-            for _ in 0..<30 {
-                s = (low + high) / 2
-                if bezier(x1, x2, s) < t { low = s } else { high = s }
-            }
-        }
-        return CGFloat(bezier(y1, y2, s))
-    }
-}
-
-extension CGRect {
-    init(center: CGPoint, size: CGFloat) {
-        self.init(x: center.x - size / 2, y: center.y - size / 2, width: size, height: size)
-    }
-
-    init(corners a: CGPoint, _ b: CGPoint) {
-        self.init(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(b.x - a.x), height: abs(b.y - a.y))
-    }
-}
-
-/// The live text box of the text tool. No padding or insets, so its origin is where the committed
-/// annotation draws its first line.
-@MainActor
-final class TextAnnotationEditor: NSTextView {
-    init(origin: CGPoint) {
-        let storage = NSTextStorage()
-        let layout = NSLayoutManager()
-        storage.addLayoutManager(layout)
-        let container = NSTextContainer(size: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        container.widthTracksTextView = false
-        layout.addTextContainer(container)
-        super.init(frame: CGRect(origin: origin, size: CGSize(width: 2, height: 20)), textContainer: container)
-        textContainerInset = .zero
-        drawsBackground = false
-        isRichText = false
-        allowsUndo = true
-        isHorizontallyResizable = true
-        isVerticallyResizable = true
-        isAutomaticQuoteSubstitutionEnabled = false
-        isAutomaticDashSubstitutionEnabled = false
-        isAutomaticSpellingCorrectionEnabled = false
-        focusRingType = .none
-    }
-
-    override init(frame: NSRect, textContainer: NSTextContainer?) { super.init(frame: frame, textContainer: textContainer) }
-    required init?(coder: NSCoder) { fatalError("Use init(origin:)") }
-
-    /// Restyles everything typed so far and what comes next.
-    func apply(_ style: CaptureStyle, color: NSColor) {
-        let attributes = style.textAttributes(color: color)
-        typingAttributes = attributes
-        insertionPointColor = color
-        if let storage = textStorage, storage.length > 0 {
-            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
-        }
-        fitToText()
-    }
-
-    /// Grows with the text; never narrower than the caret, never shorter than one line.
-    func fitToText() {
-        guard let layout = layoutManager, let container = textContainer else { return }
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        let font = typingAttributes[.font] as? NSFont ?? .systemFont(ofSize: 20)
-        let lineHeight = layout.defaultLineHeight(for: font)
-        setFrameSize(CGSize(width: ceil(max(used.width, 1)) + 2, height: ceil(max(used.height, lineHeight))))
-        superview?.needsDisplay = true
-    }
 }

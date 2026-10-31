@@ -23,4 +23,48 @@ final class CaptureRenderTests: XCTestCase {
         XCTAssertFalse(log.contains("Unable to simultaneously satisfy constraints"), String(log.prefix(600)))
         XCTAssertLessThan(toolbar.fittingSize.width, 720, "the bar should fit beside most selections")
     }
+
+    /// A pointer move redraws around the pointer and the outline, not the whole screen.
+    func testPointerMovesRedrawOnlyNearby() throws {
+        let screen = NSScreen.screens[0]
+        let context = CGContext(data: nil, width: Int(screen.frame.width), height: Int(screen.frame.height), bitsPerComponent: 8,
+                                bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let frozen = FrozenScreen(screen: screen, image: try XCTUnwrap(context.makeImage()),
+                                  windows: [.init(rect: CGRect(x: 100, y: 100, width: 300, height: 200), pid: 1)])
+        let view = CaptureView(frozen: frozen, recent: [], palette: [.systemRed], color: .systemRed, stroke: 3, style: CaptureStyle()) { _, _, _ in }
+        view.pointer = CGPoint(x: 200, y: 200)
+        view.hoverWindow = frozen.windows[0].rect
+        Render.check(view, "capture-view")
+        // Invalid regions are tracked by a window; this one is never shown.
+        let window = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        // As CaptureSession builds it: a plain container holding the frozen pixels, the view inside.
+        let container = NSView(frame: view.frame)
+        container.wantsLayer = true
+        view.frame = container.bounds
+        container.addSubview(view)
+        window.contentView = container
+        window.displayIfNeeded()
+        XCTAssertFalse(view.needsDisplay)
+        view.lastDirtyRect = .zero
+        view.pointer = CGPoint(x: 220, y: 210)
+        view.refreshDynamic()
+        window.displayIfNeeded()
+        XCTAssertEqual(view.lastDirtyRect, .zero, "a pointer move doesn't redraw the full-screen view")
+        XCTAssertTrue(view.magnifierView.frame.insetBy(dx: -30, dy: -30).contains(CGPoint(x: 220, y: 210)), "the magnifier follows the pointer")
+        XCTAssertFalse(view.sizeLabelView.isHidden, "the outline's size shows")
+        let magnifier = try XCTUnwrap(Render.check(view.magnifierView, "magnifier"))
+        let drawn = try XCTUnwrap(NSBitmapImageRep(data: try XCTUnwrap(magnifier.tiffRepresentation)))
+        XCTAssertGreaterThan(try XCTUnwrap(drawn.colorAt(x: 20, y: 20)).alphaComponent, 0.5, "the zoom is drawn inside its own view")
+
+        // The hole in the dimming is where the outline is (top-left coordinates), not mirrored.
+        let size = view.bounds.size
+        let canvas = try XCTUnwrap(CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        // The whole window's layers, composited as the window server would (a plain, y-up context).
+        try XCTUnwrap(container.layer).render(in: canvas)
+        let bitmap = NSBitmapImageRep(cgImage: try XCTUnwrap(canvas.makeImage()))
+        let inHole = try XCTUnwrap(bitmap.colorAt(x: 250, y: 200)), outside = try XCTUnwrap(bitmap.colorAt(x: 250, y: Int(size.height) - 150))
+        XCTAssertLessThan(inHole.alphaComponent, 0.05, "the outlined window is clear")
+        XCTAssertGreaterThan(outside.alphaComponent, 0.2, "the rest is dimmed")
+    }
 }
