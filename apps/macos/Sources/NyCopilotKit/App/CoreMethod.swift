@@ -55,6 +55,14 @@ extension NyCore {
         return try call(.recordsList, params, as: CorePage<T>.self)
     }
 
+    /// `records`, off the main thread: for searches run as you type.
+    @MainActor
+    func searchRecords<T: Decodable & Sendable>(_ collection: CoreCollection, as type: T.Type, search: String?, limit: Int) async throws -> CorePage<T> {
+        var params: [String: Any] = ["collection": collection.rawValue, "limit": limit]
+        if let search, !search.isEmpty { params["search"] = search }
+        return try await perform(.recordsList, params, as: CorePage<T>.self)
+    }
+
     func deleteRecord(_ id: String) throws { try call(.recordsDelete, ["id": id]) }
 
     func clearRecords(_ collection: CoreCollection) throws { try call(.recordsClear, ["collection": collection.rawValue]) }

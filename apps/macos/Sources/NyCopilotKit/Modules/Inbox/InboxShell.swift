@@ -40,7 +40,10 @@ final class InboxShell: ModuleShell {
             }
         }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
-        Self.images.removeUnused(core: services.core, collections: [.inboxNotes, .inboxDone, .inboxSnoozed])
+        // Finding unused screenshots reads every note: after launch, not during it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [core = services.core] in
+            Self.images.removeUnused(core: core, collections: [.inboxNotes, .inboxDone, .inboxSnoozed])
+        }
         // Snoozed notes come back on time, or at launch (or wake) when they fell due meanwhile.
         wakeDueNotes()
         snoozeObservers = [

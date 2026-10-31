@@ -36,8 +36,12 @@ final class ClipboardShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
-        _ = try? services.core.call(.clipboardPrune)
-        removeUnusedImages()
+        // Pruning and finding unused images read every entry: after launch, not during it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
+            guard let self else { return }
+            _ = try? self.services.core.call(.clipboardPrune)
+            self.removeUnusedImages()
+        }
         startWatching()
         // Nothing is copied behind a locked screen; don't wake twice a second for it.
         let center = DistributedNotificationCenter.default()

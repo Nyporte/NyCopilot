@@ -32,6 +32,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     let table = InboxTable()
     let empty = EmptyStateView()
     var rows: [Row] = []
+    private var searchGeneration = 0
     var tab: Tab { Tab(rawValue: tabs.selectedSegment) ?? .inbox }
     var showsDone: Bool { tab == .done }
     var collection: CoreCollection {
@@ -242,11 +243,25 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     // MARK: Loading
 
     func reload() {
-        let selectedID = selectedItem?.id
-        var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
         let query = search.stringValue.trimmingCharacters(in: .whitespaces)
-        if !query.isEmpty { params["search"] = query }
-        let items = (try? core.call(.recordsList, params, as: CorePage<Note>.self).records) ?? []
+        show((try? core.records(collection, as: Note.self, search: query, limit: 500).records) ?? [], query: query)
+    }
+
+    /// As you type in the search field, notes are found off the main thread; the newest search wins.
+    private func searchInBackground() {
+        searchGeneration += 1
+        let mine = searchGeneration, query = search.stringValue.trimmingCharacters(in: .whitespaces), collection = collection
+        Task { [weak self, core] in
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            guard let self, mine == searchGeneration else { return }
+            let items = (try? await core.searchRecords(collection, as: Note.self, search: query, limit: 500))?.records ?? []
+            guard mine == searchGeneration, collection == self.collection else { return }
+            show(items, query: query)
+        }
+    }
+
+    private func show(_ items: [Item], query: String) {
+        let selectedID = selectedItem?.id
         rows = []
         var lastDay: String?
         // Snoozed notes are listed by when they come back, soonest first.
@@ -289,7 +304,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         selectFirstNote()
     }
 
-    @objc func searchChanged() { reload() }
+    @objc func searchChanged() { searchInBackground() }
 
     func selectFirstNote() {
         guard let row = rows.firstIndex(where: { if case .note = $0 { true } else { false } }) else { showSelected(); return }

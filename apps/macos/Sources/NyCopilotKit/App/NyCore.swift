@@ -138,3 +138,6 @@ struct CorePage<Data: Decodable>: Decodable {
     let records: [CoreRecord<Data>]
     let next: String?
 }
+
+extension CoreRecord: Sendable where Data: Sendable {}
+extension CorePage: Sendable where Data: Sendable {}

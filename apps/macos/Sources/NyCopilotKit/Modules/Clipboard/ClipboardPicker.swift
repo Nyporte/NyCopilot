@@ -135,13 +135,32 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private func reload() {
         let query = search.stringValue.trimmingCharacters(in: .whitespaces)
         func list(_ collection: CoreCollection, limit: Int) -> [Item] {
-            var params: [String: Any] = ["collection": collection.rawValue, "limit": limit]
-            if !query.isEmpty { params["search"] = query }
-            return (try? core.call(.recordsList, params, as: CorePage<ClipboardEntry>.self).records) ?? []
+            (try? core.records(collection, as: ClipboardEntry.self, search: query, limit: limit).records) ?? []
         }
-        let pinned = list(.clipboardPinned, limit: 100)
+        show(pinned: list(.clipboardPinned, limit: 100), history: list(.clipboardItems, limit: 200), query: query)
+    }
+
+    /// As you type, the search runs off the main thread; only the newest answer is shown.
+    private var searchGeneration = 0
+
+    private func search(for query: String) {
+        searchGeneration += 1
+        let mine = searchGeneration
+        Task { [weak self, core] in
+            // A pause in typing, so each keystroke doesn't start a search of its own.
+            try? await Task.sleep(nanoseconds: 60_000_000)
+            guard let self, mine == searchGeneration else { return }
+            async let pinned = core.searchRecords(.clipboardPinned, as: ClipboardEntry.self, search: query, limit: 100)
+            async let history = core.searchRecords(.clipboardItems, as: ClipboardEntry.self, search: query, limit: 200)
+            let found = ((try? await pinned)?.records ?? [], (try? await history)?.records ?? [])
+            guard mine == searchGeneration else { return }
+            show(pinned: found.0, history: found.1, query: query)
+        }
+    }
+
+    private func show(pinned: [Item], history: [Item], query: String) {
         pinnedCount = pinned.count
-        items = pinned + list(.clipboardItems, limit: 200)
+        items = pinned + history
         table.reloadData()
         if !items.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false); table.scrollRowToVisible(0) }
         empty.stringValue = query.isEmpty ? "Copy some text or an image and it shows up here." : "Nothing matches “\(query)”."
@@ -219,7 +238,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
 
     // MARK: Search field
 
-    func controlTextDidChange(_ notification: Notification) { reload() }
+    func controlTextDidChange(_ notification: Notification) { search(for: search.stringValue.trimmingCharacters(in: .whitespaces)) }
 
     /// ↑↓ move through the list and Return pastes, while typing stays in the search field.
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
