@@ -60,7 +60,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
             FormSection("Capturing", rows: [
                 FormRow("Hide NyCopilot windows", subtitle: "Leave pins and other NyCopilot windows out of captures.", accessory: hideSwitch)
             ]),
-            FormSection("GIF Recording", footer: "G in a capture arms the selection; Record (or the capture shortcut) starts, the shortcut again stops. Up to a minute. Esc in the preview saves to the folder below.", rows: [
+            FormSection("GIF Recording", footer: "G in a capture arms the selection; Record (or the capture shortcut) starts, the shortcut again stops. Up to a minute. GIFs save to the folder below.", rows: [
                 FormRow("Frame rate", subtitle: "More frames move more smoothly and make bigger files.", accessory: gifRate),
                 FormRow("Full Retina resolution", subtitle: "Off records one pixel per point: sharp enough, and a quarter of the size.", accessory: gifRetinaSwitch),
                 FormRow("Show the pointer", accessory: gifCursorSwitch)

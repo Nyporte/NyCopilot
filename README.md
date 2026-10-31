@@ -197,8 +197,7 @@ dragging it to the edge of the screen.
   recording, no key is taken from your apps, so Return and Esc can be part of what you show; the
   pointer is recorded. The GIF then plays in a panel, the likeliest choice on the right: **Return**
   copies it (chat apps and documents take it as an animated GIF), **⌘S** saves it, **I** keeps it in
-  the inbox; discarding takes the trash button or **⌘⌫**. **Esc** puts the panel away and saves the
-  GIF to your folder, so nothing is lost by accident. Settings → Screenshot sets the frame rate (15 a
+  the inbox; **Esc**, the trash button, or **⌘⌫** discards it. Settings → Screenshot sets the frame rate (15 a
   second by default), full Retina resolution (off: one pixel per point, a quarter of the size), and
   whether the pointer shows. Frames are encoded as they come, so finishing is instant and memory stays
   low; NyCopilot's own windows never appear in a recording.

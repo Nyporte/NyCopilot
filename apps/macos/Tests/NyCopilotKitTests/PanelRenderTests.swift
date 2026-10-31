@@ -113,6 +113,17 @@ final class PanelRenderTests: XCTestCase {
         let preview = GifPreview(clip: clip, near: NSRect(x: 200, y: 200, width: 120, height: 60), on: NSScreen.screens[0])
         Render.check(preview.panel.contentView!, "gif-preview")
 
+        // Esc throws the recording away; it never saves.
+        var discarded = false, acted = false
+        preview.onDiscard = { _ in discarded = true }
+        preview.onAction = { _, _ in acted = true }
+        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                                    context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                                                    isARepeat: false, keyCode: 53))
+        preview.panel.keyDown(with: escape)
+        XCTAssertTrue(discarded)
+        XCTAssertFalse(acted)
+
         let scroll = ScrollCapturePanel(beside: NSRect(x: 200, y: 200, width: 400, height: 300), on: NSScreen.screens[0])
         Render.check(scroll.contentView!, "scroll-panel")
     }

@@ -5,8 +5,8 @@ enum GifAction { case copy, save, quickSave, inbox }
 
 /// The finished GIF, playing on a loop above the region it was recorded from, with what it is (length,
 /// size, file size) and what to do with it, the likeliest on the right: ↩ copy (the default), ⌘S
-/// save…, I keep in the inbox. Discarding takes the trash button or ⌘⌫. Esc puts the preview away and
-/// saves the GIF to your folder, and a click elsewhere leaves it up, so nothing is lost by accident.
+/// save…, I keep in the inbox. Esc, the trash button, or ⌘⌫ discards it — Return copies, so Esc is
+/// never the default — and a click elsewhere leaves it up.
 @MainActor
 final class GifPreview {
     var onAction: ((GifAction, GifClip) -> Void)?
@@ -57,9 +57,9 @@ final class GifPreview {
         let discard = NSButton(image: NSImage(systemSymbolName: "trash", accessibilityDescription: "Discard")!, target: self,
                                action: #selector(discardTapped))
         discard.bezelStyle = .rounded
-        discard.toolTip = "Discard (⌘⌫)"
+        discard.toolTip = "Discard (Esc or ⌘⌫)"
         let inbox = button("Inbox", "I", #selector(inboxTapped))
-        let save = button("Save…", "⌘S · ⇧⌘S quick save · Esc saves to your folder", #selector(saveTapped))
+        let save = button("Save…", "⌘S · ⇧⌘S quick save", #selector(saveTapped))
         let copy = button("Copy", "↩", #selector(copyTapped))
         // The default: Return, drawn in the accent color.
         copy.keyEquivalent = "\r"
@@ -88,7 +88,7 @@ final class GifPreview {
     private func key(_ key: PreviewPanel.Key) -> Bool {
         switch key {
         case .returnKey: act(.copy)
-        case .escape: act(.quickSave)
+        case .escape: discardTapped()
         case .character("i"): act(.inbox)
         case .command("c"): act(.copy)
         case .command("s"): act(.save)
