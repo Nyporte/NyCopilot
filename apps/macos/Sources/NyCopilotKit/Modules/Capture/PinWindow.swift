@@ -19,12 +19,12 @@ final class PinWindow: NSPanel {
     var isFocused = false { didSet { if isFocused != oldValue { pinView.showsFocus = isFocused } } }
 
     let original: NSImage
-    private let pinView: PinView
-    private(set) var zoom: CGFloat = 1
-    private var quarterTurns = 0
-    private var flippedHorizontally = false
-    private var flippedVertically = false
-    private(set) var isClickThrough = false
+    let pinView: PinView
+    var zoom: CGFloat = 1
+    var quarterTurns = 0
+    var flippedHorizontally = false
+    var flippedVertically = false
+    var isClickThrough = false
 
     /// Names the pin's files while it's kept between launches.
     let id: UUID
@@ -49,9 +49,9 @@ final class PinWindow: NSPanel {
 
     /// The pixels as currently shown — rotated and flipped — rendered once per change. Zooming only
     /// resizes the layer that shows them, so the GPU scales the bitmap and nothing is redrawn.
-    private var rendered: CGImage?
+    var rendered: CGImage?
 
-    private var pointSize: NSSize {
+    var pointSize: NSSize {
         quarterTurns % 2 == 1 ? NSSize(width: original.size.height, height: original.size.width) : original.size
     }
 
@@ -60,7 +60,7 @@ final class PinWindow: NSPanel {
         rendered.map { NSImage(cgImage: $0, size: pointSize) } ?? original
     }
 
-    private func redraw() {
+    func redraw() {
         guard let source = original.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         let turned = quarterTurns % 2 == 1
         let width = turned ? source.height : source.width, height = turned ? source.width : source.height
@@ -196,362 +196,17 @@ final class PinWindow: NSPanel {
         return menu
     }
 
-    @objc private func copyFromMenu() { copyImage() }
-    @objc private func saveFromMenu() { onSave?(displayedImage) }
-    @objc private func selectTextFromMenu() { toggleReadingText() }
-    @objc private func actualSize() { setZoom(1) }
-    @objc private func pickOpacity(_ sender: NSMenuItem) { setOpacity(CGFloat(sender.tag) / 100) }
-    @objc private func rotateLeft() { rotate(clockwise: false) }
-    @objc private func rotateRight() { rotate(clockwise: true) }
-    @objc private func flipH() { flip(horizontally: true) }
-    @objc private func flipV() { flip(horizontally: false) }
-    @objc private func toggleShadow() { hasShadow.toggle(); invalidateShadow() }
-    @objc private func toggleClickThrough() { setClickThrough(true) }
-    @objc private func closeFromMenu() { close() }
-    @objc private func closeAllFromMenu() { onCloseAll?() }
-}
-
-/// Shows the pin and turns gestures into pin actions. The pixels live in a layer that the GPU scales,
-/// so zooming never redraws them.
-private final class PinView: NSView {
-    weak var pin: PinWindow?
-    private let imageLayer = CALayer()
-    private let badge = Design.label("", size: 12, weight: .semibold, color: .white)
-    private var hideBadge: DispatchWorkItem?
-
-    /// The accent border fades in faintly while the pointer is over the pin and turns solid once the
-    /// pin is selected.
-    private let borderLayer = CALayer()
-    var showsFocus = false { didSet { if showsFocus != oldValue { updateBorder() } } }
-    private var isHovered = false { didSet { if isHovered != oldValue { updateBorder() } } }
-
-    private func updateBorder() {
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.18)
-        borderLayer.opacity = showsFocus ? 0.85 : isHovered ? 0.3 : 0
-        CATransaction.commit()
-    }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        autoresizingMask = [.width, .height]
-        wantsLayer = true
-        layerContentsRedrawPolicy = .never
-        imageLayer.frame = bounds
-        imageLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        imageLayer.contentsGravity = .resize
-        imageLayer.minificationFilter = .trilinear
-        imageLayer.magnificationFilter = .linear
-        imageLayer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
-        layer?.addSublayer(imageLayer)
-        borderLayer.frame = bounds
-        borderLayer.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
-        borderLayer.borderWidth = 1
-        borderLayer.borderColor = NSColor.controlAccentColor.cgColor
-        borderLayer.opacity = 0
-        // Only opacity animates; the border follows zooming exactly.
-        borderLayer.actions = ["bounds": NSNull(), "position": NSNull()]
-        layer?.addSublayer(borderLayer)
-        // Pins float over other apps, so track the pointer even while NyCopilot isn't active.
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self, userInfo: nil))
-        badge.wantsLayer = true
-        badge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.6).cgColor
-        badge.layer?.cornerRadius = 5
-        badge.alphaValue = 0
-        badge.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(badge)
-        NSLayoutConstraint.activate([
-            badge.centerXAnchor.constraint(equalTo: centerXAnchor),
-            badge.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
-
-    func show(_ image: CGImage?) {
-        imageLayer.contentsScale = window?.backingScaleFactor ?? 2
-        imageLayer.contents = image
-    }
-
-    /// A short-lived label for zoom, opacity, and copy feedback; afterwards the hint, if any, returns.
-    func flash(_ text: String) {
-        badge.stringValue = "  \(text)  "
-        hideBadge?.cancel()
-        badge.alphaValue = 1
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            if let hint { badge.stringValue = "  \(hint)  "; return }
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.3; self.badge.animator().alphaValue = 0 }
-        }
-        hideBadge = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: work)
-    }
-
-    /// Stays on the badge while set.
-    private var hint: String? {
-        didSet {
-            guard let hint else { badge.alphaValue = 0; return }
-            hideBadge?.cancel()
-            badge.stringValue = "  \(hint)  "
-            badge.alphaValue = 1
-        }
-    }
-
-    // MARK: Live Text
-
-    private var textOverlay: ImageAnalysisOverlayView?
-    private var copyWhenRead = false
-    var isReadingText: Bool { textOverlay != nil }
-
-    func toggleReadingText(_ image: CGImage?) {
-        if isReadingText { endReadingText(); return }
-        guard let image else { return }
-        let overlay = LiveText.overlay(frame: bounds)
-        overlay.autoresizingMask = [.width, .height]
-        addSubview(overlay, positioned: .below, relativeTo: badge)
-        textOverlay = overlay
-        hint = "Reading text…"
-        Task { [weak self] in
-            let analysis = try? await LiveText.analyze(image)
-            guard let self, textOverlay === overlay else { return }
-            LiveText.show(analysis, on: overlay)
-            if analysis.map(LiveText.lineCount) ?? 0 > 0 {
-                hint = "Drag to select · ⌘C copy · T copy all · Esc done"
-                if copyWhenRead { copyAllText() }
-            } else {
-                endReadingText()
-                flash("No text found")
-            }
-        }
-    }
-
-    func endReadingText() {
-        guard let overlay = textOverlay else { return }
-        overlay.removeFromSuperview()
-        textOverlay = nil
-        copyWhenRead = false
-        hint = nil
-        window?.makeFirstResponder(self)
-    }
-
-    /// T twice or Return: every line, then back to the plain pin. A double tap faster than
-    /// recognition copies as soon as the text is read.
-    private func copyAllText() {
-        guard let analysis = textOverlay?.analysis else { copyWhenRead = true; return }
-        guard !analysis.transcript.isEmpty else { return }
-        LiveText.copy(analysis.transcript)
-        endReadingText()
-        flash("Copied all text")
-    }
-
-    /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
-    private func readingTextKeyDown(_ event: NSEvent) -> Bool {
-        guard let overlay = textOverlay else { return false }
-        let command = event.modifierFlags.contains(.command)
-        switch (event.keyCode, event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
-        case (53, _, _): endReadingText()
-        case (_, "t", false), (36, _, _), (76, _, _): copyAllText()
-        case (_, "c", true):
-            let text = LiveText.textToCopy(from: overlay)
-            guard !text.isEmpty else { break }
-            LiveText.copy(text)
-            flash("Copied")
-        default: return false
-        }
-        return true
-    }
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override var acceptsFirstResponder: Bool { true }
-
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false }
-
-    /// The pointer and the pin's origin when a drag began, in screen coordinates.
-    private var dragStart: (pointer: NSPoint, origin: NSPoint)?
-
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 { pin?.close(); return }
-        focus()
-        // Dragged by hand rather than by the system, which won't take a window's top past the menu bar.
-        guard let window else { return }
-        dragStart = (window.convertPoint(toScreen: event.locationInWindow), window.frame.origin)
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let window, let start = dragStart else { return }
-        let pointer = window.convertPoint(toScreen: event.locationInWindow)
-        window.setFrameOrigin(NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + pointer.y - start.pointer.y))
-    }
-
-    override func mouseUp(with event: NSEvent) { dragStart = nil }
-
-    override func rightMouseDown(with event: NSEvent) {
-        guard let pin else { return }
-        focus()
-        NSMenu.popUpContextMenu(pin.menu(), with: event, for: self)
-    }
-
-    private func focus() {
-        guard let pin else { return }
-        pin.makeKey()
-        pin.isFocused = true
-        pin.onFocus?(pin)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        guard let pin else { return }
-        let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 120 : event.scrollingDeltaY / 12
-        if event.modifierFlags.contains(.option) { pin.setOpacity(pin.alphaValue + delta) }
-        else { pin.setZoom(pin.zoom * (1 + delta), around: NSEvent.mouseLocation) }
-    }
-
-    override func keyDown(with event: NSEvent) {
-        guard let pin else { return }
-        if readingTextKeyDown(event) { return }
-        if event.characters == "?" { KeySheet.shared.toggle("Pin keys", groups: KeyGuide.pin, over: pin); return }
-        let command = event.modifierFlags.contains(.command)
-        switch (event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
-        case ("c", true): pin.copyImage()
-        case ("s", true): pin.onSave?(pin.displayedImage)
-        case ("w", true): pin.close()
-        case ("t", false): pin.toggleReadingText()
-        case ("r", false): pin.onVerb?(.translate, pin)
-        case ("i", false): pin.onVerb?(.inbox, pin)
-        case ("a", false): pin.onVerb?(.ask, pin)
-        case ("0", _): pin.setZoom(1)
-        case ("1", false): pin.rotate(clockwise: false)
-        case ("2", false): pin.rotate(clockwise: true)
-        case ("3", false): pin.flip(horizontally: true)
-        case ("4", false): pin.flip(horizontally: false)
-        case ("=", _), ("+", _): pin.setZoom(pin.zoom * 1.1)
-        case ("-", _): pin.setZoom(pin.zoom / 1.1)
-        default:
-            if event.keyCode == 53 { pin.close() } else { super.keyDown(with: event) }
-        }
-    }
-}
-
-/// Every open pin: create, hide and show together, close together, restore clicks.
-@MainActor
-final class PinBoard {
-    var onSave: ((NSImage) -> Void)?
-    var onVerb: ((Verb, PinWindow) -> Void)?
-    private(set) var pins: [PinWindow] = []
-    private(set) var areHidden = false
-    /// Clicks in other apps, which unfocus every pin; installed only while pins exist.
-    private var outsideClicks: Any?
-
-    /// Where open pins are kept between launches: each image as a PNG, and `pins.json` with how
-    /// each looks and where it is.
-    private let folder = Preferences.dataDirectory.appendingPathComponent("Pins", isDirectory: true)
-    private var index: URL { folder.appendingPathComponent("pins.json") }
-
-    @discardableResult
-    func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) -> PinWindow {
-        let pin = add(PinWindow(image: image, frame: frame, shadow: shadow))
-        keep(image, as: pin.id)
-        persist()
-        return pin
-    }
-
-    private func add(_ pin: PinWindow) -> PinWindow {
-        pin.onSave = { [weak self] image in self?.onSave?(image) }
-        pin.onVerb = { [weak self] verb, pin in self?.onVerb?(verb, pin) }
-        pin.onClose = { [weak self] closed in
-            self?.pins.removeAll { $0 === closed }
-            self?.updateMonitor()
-            if let folder = self?.folder { try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(closed.id).png")) }
-            self?.persist()
-        }
-        pin.onCloseAll = { [weak self] in self?.closeAll() }
-        pin.onFocus = { [weak self] focused in
-            for other in self?.pins ?? [] where other !== focused { other.isFocused = false }
-        }
-        pins.append(pin)
-        updateMonitor()
-        if areHidden { showAll() }
-        pin.orderFrontRegardless()
-        return pin
-    }
-
-    /// Writes where every pin is and how it looks; called as pins come and go, and on quit.
-    func persist() {
-        let entries = pins.map { Entry(id: $0.id, state: $0.state) }
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? data.write(to: index, options: .atomic)
-    }
-
-    /// The pins open at the last quit, back where they were; images no pin uses are cleared away.
-    func restore() {
-        let entries = (try? Data(contentsOf: index)).flatMap { try? JSONDecoder().decode([Entry].self, from: $0) } ?? []
-        for entry in entries {
-            let file = folder.appendingPathComponent("\(entry.id).png")
-            guard let image = NSImage(contentsOf: file) else { continue }
-            image.size = NSSize(width: entry.state.width, height: entry.state.height)
-            let pin = add(PinWindow(image: image, frame: NSRect(origin: .zero, size: image.size), shadow: entry.state.shadow, id: entry.id))
-            pin.apply(entry.state)
-            // A display that's gone takes no pins with it.
-            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(pin.frame) }), let screen = NSScreen.main {
-                pin.setFrameTopLeftPoint(NSPoint(x: screen.visibleFrame.midX - pin.frame.width / 2, y: screen.visibleFrame.maxY - 40))
-            }
-        }
-        let kept = Set(pins.map { "\($0.id).png" })
-        for file in (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? [] where file.hasSuffix(".png") && !kept.contains(file) {
-            try? FileManager.default.removeItem(at: folder.appendingPathComponent(file))
-        }
-        persist()
-    }
-
-    private struct Entry: Codable {
-        let id: UUID
-        let state: PinWindow.State
-    }
-
-    /// The pin's original image, written off the main thread.
-    private func keep(_ image: NSImage, as id: UUID) {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-        let file = folder.appendingPathComponent("\(id).png"), folder = folder
-        DispatchQueue.global(qos: .utility).async {
-            guard let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else { return }
-            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try? data.write(to: file, options: .atomic)
-        }
-    }
-
-    func toggleVisibility() { areHidden ? showAll() : hideAll() }
-
-    /// Whether a visible pin overlaps `rect` (AppKit screen coordinates).
-    func covers(_ rect: NSRect) -> Bool { !areHidden && pins.contains { $0.isVisible && $0.frame.intersects(rect) } }
-
-    private func hideAll() {
-        pins.forEach { $0.orderOut(nil) }
-        areHidden = true
-    }
-
-    private func showAll() {
-        pins.forEach { $0.orderFrontRegardless() }
-        areHidden = false
-    }
-
-    func closeAll() { pins.forEach { $0.close() } }
-
-    var hasClickThrough: Bool { pins.contains { $0.isClickThrough } }
-
-    private func updateMonitor() {
-        if pins.isEmpty, let monitor = outsideClicks {
-            NSEvent.removeMonitor(monitor)
-            outsideClicks = nil
-        } else if !pins.isEmpty, outsideClicks == nil {
-            outsideClicks = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                MainActor.assumeIsolated { self?.unfocusAll() }
-            }
-        }
-    }
-
-    func unfocusAll() { pins.forEach { $0.isFocused = false } }
-
-    func makeAllClickable() { pins.forEach { $0.setClickThrough(false) } }
+    @objc func copyFromMenu() { copyImage() }
+    @objc func saveFromMenu() { onSave?(displayedImage) }
+    @objc func selectTextFromMenu() { toggleReadingText() }
+    @objc func actualSize() { setZoom(1) }
+    @objc func pickOpacity(_ sender: NSMenuItem) { setOpacity(CGFloat(sender.tag) / 100) }
+    @objc func rotateLeft() { rotate(clockwise: false) }
+    @objc func rotateRight() { rotate(clockwise: true) }
+    @objc func flipH() { flip(horizontally: true) }
+    @objc func flipV() { flip(horizontally: false) }
+    @objc func toggleShadow() { hasShadow.toggle(); invalidateShadow() }
+    @objc func toggleClickThrough() { setClickThrough(true) }
+    @objc func closeFromMenu() { close() }
+    @objc func closeAllFromMenu() { onCloseAll?() }
 }

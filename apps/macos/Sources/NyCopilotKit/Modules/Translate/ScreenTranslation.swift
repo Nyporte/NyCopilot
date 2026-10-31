@@ -17,25 +17,25 @@ import MacPlatform
 /// you point at is translated, once the pointer rests on it, and never twice in a session.
 @MainActor
 final class ScreenTranslator {
-    private let services: CopilotServices
-    private var displays: [Display] = []
-    private var watching: Task<Void, Never>?
-    private var escape: GlobalHotKey?
+    let services: CopilotServices
+    var displays: [Display] = []
+    var watching: Task<Void, Never>?
+    var escape: GlobalHotKey?
     /// Pointer movement, watched (never caught), so cards follow the pointer while clicks go through.
-    private var pointerMonitors: [Any] = []
-    private let card = TranslationCard()
-    private let bar = ScreenTranslationBar()
+    var pointerMonitors: [Any] = []
+    let card = TranslationCard()
+    let bar = ScreenTranslationBar()
     /// The block under the pointer, and the card about to show for it.
-    private var hovered: (display: Display, paragraph: Paragraph)?
-    private var pendingCard: DispatchWorkItem?
+    var hovered: (display: Display, paragraph: Paragraph)?
+    var pendingCard: DispatchWorkItem?
     /// The last pointer movement or screen change: glances come quickly after it and ease off later.
-    private var lastActivity = Date()
-    private var language = "", nativeLanguage = ""
+    var lastActivity = Date()
+    var language = "", nativeLanguage = ""
     /// Blocks translated this session, by language and text, so switching back costs nothing.
-    private var translations: [String: String] = [:]
+    var translations: [String: String] = [:]
     /// Blocks out for translation right now, so none is asked for twice.
-    private var requested: Set<String> = []
-    private func key(_ text: String) -> String { language + "\u{1}" + text }
+    var requested: Set<String> = []
+    func key(_ text: String) -> String { language + "\u{1}" + text }
 
     var isActive: Bool { watching != nil }
 
@@ -100,7 +100,7 @@ final class ScreenTranslator {
 
     /// Reads into `name` from now on: highlights recount what needs translating, and a card showing
     /// re-translates. `remember` keeps the choice for next time.
-    private func choose(_ name: String, remember: Bool) {
+    func choose(_ name: String, remember: Bool) {
         language = name
         nativeLanguage = services.core.nativeName(of: name)
         if remember { try? services.core.setSetting(.screenLanguage, name) }
@@ -109,7 +109,7 @@ final class ScreenTranslator {
     }
 
     /// The menu: favourites first, then every other language NyCopilot knows, in their own scripts.
-    private func languages() -> [[ScreenTranslationBar.Language]] {
+    func languages() -> [[ScreenTranslationBar.Language]] {
         struct Known: Decodable { let name: String; let native: String }
         let known = (try? services.core.call(.translateLanguages, as: [Known].self)) ?? []
         let favorites: [String] = services.core.setting(.favoriteLanguages, default: [String]())
@@ -123,113 +123,12 @@ final class ScreenTranslator {
         return [first, rest].filter { !$0.isEmpty }
     }
 
-    // MARK: Blocks of text
-
-    private final class Display {
-        let screen: NSScreen
-        let overlay: TranslationOverlay
-        /// The last glance: one grey byte per 8 × 8 points.
-        var glance: (pixels: [UInt8], width: Int, height: Int)?
-        /// Lines on screen, and the blocks they make up.
-        var entries: [Entry] = []
-        var paragraphs: [Paragraph] = []
-        /// What needs reading again (screen points, top-left), and when it last changed.
-        var pending: CGRect?
-        var changedAt = Date.distantPast
-        var lastRead = Date.distantPast
-        var reading = false
-        /// Changes while a read was under way: the lines it found there may already be gone.
-        var changedDuringRead: [CGRect] = []
-
-        init(screen: NSScreen, overlay: TranslationOverlay) {
-            self.screen = screen
-            self.overlay = overlay
-            pending = CGRect(origin: .zero, size: screen.frame.size)
-        }
-    }
-
-    struct Entry {
-        let line: ScreenText.Line
-        let background: NSColor
-        /// The original's font size, as best it can be told.
-        let fontSize: CGFloat
-    }
-
-    /// Lines wrapped from one paragraph: pointed at and translated as one block.
-    struct Paragraph {
-        let entries: [Entry]
-        let text: String
-        let rect: CGRect
-        /// Not already in the target language (nor just numbers or symbols): it gets a card.
-        let needsTranslation: Bool
-    }
-
-    /// Lines into paragraphs: directly below one another at line spacing, in the same column, the
-    /// same size, on the same background. Only a line long enough to have wrapped carries on to the
-    /// next — short labels stacked in a sidebar or a menu stay apart, and a paragraph's short last line
-    /// ends it — and a bullet or number starts a new one.
-    /// The text in an image, paragraph by paragraph, read the way the screen is: for translating a
-    /// screenshot. `scale` is the image's pixels per point.
-    static func paragraphs(in image: CGImage, scale: CGFloat) async throws -> [String] {
-        let lines = try await ScreenText.lines(in: image, scale: scale)
-        return paragraphs(entries(lines, from: PixelSampler(image, scale: scale, origin: .zero)), language: nil).map(\.text)
-    }
-
-    /// Lines with what grouping them takes: the background around each and its font size.
-    private static func entries(_ lines: [ScreenText.Line], from pixels: PixelSampler) -> [Entry] {
-        lines.map { Entry(line: $0, background: pixels.background(around: $0.rect), fontSize: ScreenText.fontSize(of: $0)) }
-    }
-
-    static func paragraphs(_ entries: [Entry], language code: String?) -> [Paragraph] {
-        var groups: [[Entry]] = []
-        for entry in entries.sorted(by: { $0.line.rect.minY < $1.line.rect.minY }) {
-            let candidates = groups.indices.filter { continues(groups[$0], with: entry) }
-            // The paragraph whose last line sits closest above.
-            if let index = candidates.max(by: { groups[$0].last!.line.rect.maxY < groups[$1].last!.line.rect.maxY }) {
-                groups[index].append(entry)
-            } else {
-                groups.append([entry])
-            }
-        }
-        return groups.map { group in
-            let text = ScreenText.joined(group.map(\.line.text))
-            return Paragraph(entries: group, text: text, rect: group.map(\.line.rect).reduce(group[0].line.rect) { $0.union($1) },
-                             needsTranslation: ScreenText.needsTranslation(text, into: code))
-        }
-    }
-
-    private static func continues(_ group: [Entry], with next: Entry) -> Bool {
-        let last = group.last!, above = last.line.rect, below = next.line.rect, size = last.fontSize
-        guard abs(next.fontSize - size) <= size * 0.2 else { return false }
-        let gap = below.minY - above.maxY
-        guard gap >= -size * 0.3, gap <= size * 0.75 else { return false }
-        let overlap = min(above.maxX, below.maxX) - max(above.minX, below.minX)
-        guard abs(above.minX - below.minX) <= max(size * 1.2, 8) || overlap >= min(above.width, below.width) * 0.8 else { return false }
-        guard last.background.resembles(next.background) else { return false }
-        let widest = max(group.map(\.line.rect.width).max()!, below.width)
-        guard above.width >= widest * 0.75, above.width >= size * 12 else { return false }
-        let start = next.line.text.trimmingCharacters(in: .whitespaces)
-        if let first = start.first, "•·-–—*▪◦●".contains(first) || (first.isNumber && start.dropFirst().prefix(2).contains { ".)、".contains($0) }) {
-            return false
-        }
-        return true
-    }
-
-    /// The lines left once every block touching a change is taken down whole, and the areas of those
-    /// blocks (to read again).
-    static func removing(blocksTouching changed: [CGRect], from entries: [Entry], in blocks: [Paragraph]) -> (kept: [Entry], touched: [CGRect]) {
-        let touched = blocks.filter { block in block.entries.contains { entry in changed.contains { $0.intersects(entry.line.rect) } } }
-        let gone = touched.flatMap { $0.entries.map(\.line.rect) }
-        let kept = entries.filter { entry in !gone.contains(entry.line.rect) && !changed.contains { $0.intersects(entry.line.rect) } }
-        return (kept, touched.map(\.rect))
-    }
-
     // MARK: Watching
 
-    private static let glanceScale: CGFloat = 1.0 / 8
-    private static let cell = 2 // glance pixels per side of a cell: 16 points
+    static let glanceScale: CGFloat = 1.0 / 8
+    static let cell = 2 // glance pixels per side of a cell: 16 points
 
-    private func watch() async {
+    func watch() async {
         while !Task.isCancelled {
             for display in displays { await glance(at: display) }
             // Checked often, so moving the pointer after a still spell brings the next glance at once.
@@ -242,14 +141,14 @@ final class ScreenTranslator {
 
     /// The wait between glances: a tenth of a second while the screen or pointer moves, easing to
     /// half a second once both have been still a while, and twice that on battery or in Low Power Mode.
-    private var glanceInterval: TimeInterval {
+    var glanceInterval: TimeInterval {
         let still = Date().timeIntervalSince(lastActivity)
         let base = still < 2 ? 0.1 : still < 10 ? 0.25 : 0.5
         let onBattery = IOPSGetProvidingPowerSourceType(nil)?.takeUnretainedValue() as String? == kIOPMBatteryPowerKey
         return onBattery || ProcessInfo.processInfo.isLowPowerModeEnabled ? base * 2 : base
     }
 
-    private func glance(at display: Display) async {
+    func glance(at display: Display) async {
         guard let image = try? await ScreenGrabber.snapshot(of: display.screen, pixelsPerPoint: Self.glanceScale),
               let grey = Self.grey(image), isActive else { return }
         if let last = display.glance, last.width == grey.width, last.height == grey.height {
@@ -277,7 +176,7 @@ final class ScreenTranslator {
     }
 
     /// Reads a band of the screen again — the full width, so lines aren't cut — then translates what's new.
-    private func read(_ region: CGRect, on display: Display) async {
+    func read(_ region: CGRect, on display: Display) async {
         defer {
             display.reading = false
             display.lastRead = Date()
@@ -307,7 +206,7 @@ final class ScreenTranslator {
     }
 
     /// Regroups a display's blocks and redraws its highlights; the card follows if its block went away.
-    private func update(_ display: Display) {
+    func update(_ display: Display) {
         display.paragraphs = Self.paragraphs(display.entries, language: ScreenText.code(for: language))
         display.overlay.show(display.paragraphs.map { $0.entries.map(\.line.rect) })
         pointerMoved()
@@ -317,7 +216,7 @@ final class ScreenTranslator {
 
     /// The block pointed at, unless it's already translated or on its way; the card updates if it's
     /// still showing that block when the translation arrives.
-    private func translate(_ text: String) async {
+    func translate(_ text: String) async {
         let language = language, key = key(text)
         guard translations[key] == nil, !requested.contains(key) else { return }
         requested.insert(key)
@@ -341,7 +240,7 @@ final class ScreenTranslator {
     // MARK: Pointing
 
     /// The block under the pointer, if any, becomes the hovered one.
-    private func pointerMoved() {
+    func pointerMoved() {
         let location = NSEvent.mouseLocation
         guard let display = displays.first(where: { $0.screen.frame.contains(location) }) else { hover(nil); return }
         let point = CGPoint(x: location.x - display.screen.frame.minX, y: display.screen.frame.maxY - location.y)
@@ -351,7 +250,7 @@ final class ScreenTranslator {
     /// Brightens the block's highlight at once; its card — and its translation, if it needs one —
     /// follows once the pointer has rested a moment, so sweeping across a page neither flickers cards
     /// nor sends a request for every block passed over.
-    private func hover(_ target: (display: Display, paragraph: Paragraph)?) {
+    func hover(_ target: (display: Display, paragraph: Paragraph)?) {
         if target?.display === hovered?.display, target?.paragraph.text == hovered?.paragraph.text, target?.paragraph.rect == hovered?.paragraph.rect { return }
         hovered = target
         displays.forEach { $0.overlay.hovered = $0 === target?.display ? target?.paragraph.entries.map(\.line.rect) ?? [] : [] }
@@ -364,7 +263,7 @@ final class ScreenTranslator {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
     }
 
-    private func present(_ target: (display: Display, paragraph: Paragraph)) {
+    func present(_ target: (display: Display, paragraph: Paragraph)) {
         let frame = target.display.screen.frame, rect = target.paragraph.rect
         let source = NSRect(x: frame.minX + rect.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
         card.present(language: nativeLanguage, beside: source, on: target.display.screen)
@@ -415,10 +314,10 @@ final class ScreenTranslator {
 
 /// Reads the colour around a line out of a screenshot, by screen point, to tell blocks on different
 /// backgrounds apart.
-private struct PixelSampler {
-    private let pixels: [UInt8]
-    private let width: Int, height: Int
-    private let scale: CGFloat, origin: CGPoint
+struct PixelSampler {
+    let pixels: [UInt8]
+    let width: Int, height: Int
+    let scale: CGFloat, origin: CGPoint
 
     init(_ image: CGImage, scale: CGFloat, origin: CGPoint) {
         width = image.width
@@ -434,7 +333,7 @@ private struct PixelSampler {
         self.pixels = pixels
     }
 
-    private func sample(_ point: CGPoint) -> (Int, Int, Int)? {
+    func sample(_ point: CGPoint) -> (Int, Int, Int)? {
         let x = Int((point.x - origin.x) * scale), y = Int((point.y - origin.y) * scale)
         guard (0..<width).contains(x), (0..<height).contains(y) else { return nil }
         let p = (y * width + x) * 4
@@ -457,320 +356,10 @@ private struct PixelSampler {
     }
 }
 
-private extension NSColor {
+extension NSColor {
     /// Near enough to be the same background.
     func resembles(_ other: NSColor) -> Bool {
         guard let a = usingColorSpace(.sRGB), let b = other.usingColorSpace(.sRGB) else { return false }
         return abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent) + abs(a.blueComponent - b.blueComponent) < 0.25
-    }
-}
-
-/// One display's overlay, in the manner of Live Text: the screen dimmed a little except for its text,
-/// each block (a paragraph's lines together) one glowing shape; the block under the pointer outlined;
-/// and a glow along the screen's edges. Every click and scroll goes through to what's underneath.
-@MainActor
-final class TranslationOverlay: NSWindow {
-    /// The lines of the block under the pointer, in this display's points (top-left).
-    var hovered: [CGRect] = [] { didSet { if hovered != oldValue { canvas.hovered = hovered } } }
-    private let canvas: Canvas
-
-    init(screen: NSScreen) {
-        canvas = Canvas()
-        super.init(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-        float(at: .screenOverlay, shadow: false, clickThrough: true, behavior: [.stationary, .ignoresCycle])
-        contentView = canvas
-        setFrame(screen.frame, display: false)
-    }
-
-    /// The blocks to highlight, each as its lines, in this display's points (top-left).
-    func show(_ blocks: [[CGRect]]) { canvas.show(blocks) }
-
-    private final class Canvas: NSView {
-        /// Each block's shape, keyed by where it is, and when it appeared — new blocks fade in.
-        private var blocks: [(key: String, outline: NSBezierPath)] = []
-        private var appeared: [String: CFTimeInterval] = [:]
-        private var fading: Timer?
-        private static let fadeIn: CFTimeInterval = 0.25
-        var hovered: [CGRect] = [] { didSet { needsDisplay = true } }
-
-        init() {
-            super.init(frame: .zero)
-        }
-
-        required init?(coder: NSCoder) { fatalError("Use init()") }
-
-        override var isFlipped: Bool { true }
-
-        /// One shape around a block's lines: each line padded a little, neighbours meeting halfway between
-        /// them, the left edge running down the lines' starts and the right edge back up their ends, every
-        /// corner rounded (less on small steps). A single line is a rounded rectangle.
-        static func outline(of lines: [CGRect]) -> NSBezierPath {
-            let rows = smoothed(lines.map { $0.insetBy(dx: -3, dy: -2) }.sorted { $0.minY < $1.minY })
-            guard let first = rows.first else { return NSBezierPath() }
-            guard rows.count > 1 else { return NSBezierPath(roundedRect: first, xRadius: 4, yRadius: 4) }
-            // Where each row starts and ends vertically, with no gaps between neighbours.
-            var edges = [first.minY]
-            for (upper, lower) in zip(rows, rows.dropFirst()) { edges.append((upper.maxY + lower.minY) / 2) }
-            edges.append(rows.last!.maxY)
-            // Around the shape clockwise (top-left origin): across the top, down the right, back along the
-            // bottom, up the left.
-            var corners = [CGPoint(x: first.minX, y: edges[0])]
-            for (index, row) in rows.enumerated() {
-                corners.append(CGPoint(x: row.maxX, y: edges[index]))
-                corners.append(CGPoint(x: row.maxX, y: edges[index + 1]))
-            }
-            for (index, row) in rows.enumerated().reversed() {
-                corners.append(CGPoint(x: row.minX, y: edges[index + 1]))
-                corners.append(CGPoint(x: row.minX, y: edges[index]))
-            }
-            // Drop repeats and points in the middle of a straight run.
-            var points: [CGPoint] = []
-            for point in corners where points.last.map({ hypot($0.x - point.x, $0.y - point.y) > 0.5 }) ?? true { points.append(point) }
-            if let last = points.last, hypot(last.x - points[0].x, last.y - points[0].y) <= 0.5 { points.removeLast() }
-            points = points.indices.compactMap { index in
-                let before = points[(index + points.count - 1) % points.count], point = points[index], after = points[(index + 1) % points.count]
-                let straight = (abs(before.x - point.x) < 0.5 && abs(point.x - after.x) < 0.5) || (abs(before.y - point.y) < 0.5 && abs(point.y - after.y) < 0.5)
-                return straight ? nil : point
-            }
-            guard points.count >= 3 else { return NSBezierPath(roundedRect: rows.reduce(first) { $0.union($1) }, xRadius: 4, yRadius: 4) }
-            let path = NSBezierPath()
-            let count = points.count
-            func middle(_ a: CGPoint, _ b: CGPoint) -> CGPoint { CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2) }
-            path.move(to: middle(points[count - 1], points[0]))
-            for index in 0..<count {
-                let point = points[index], before = points[(index + count - 1) % count], after = points[(index + 1) % count]
-                let room = min(hypot(point.x - before.x, point.y - before.y), hypot(after.x - point.x, after.y - point.y)) / 2
-                path.appendArc(from: point, to: middle(point, after), radius: min(4, room))
-            }
-            path.close()
-            return path
-        }
-
-        /// Edges evened out: consecutive lines whose starts (or ends) lie within about two characters of
-        /// each other share one edge, at the outermost of them so no text is cut — only real differences,
-        /// like a short last line or an indent, make a step.
-        static func smoothed(_ rows: [CGRect]) -> [CGRect] {
-            guard rows.count > 1 else { return rows }
-            let heights = rows.map(\.height).sorted()
-            let tolerance = heights[heights.count / 2] * 1.4
-            func even(_ values: [CGFloat], outermost: (CGFloat, CGFloat) -> CGFloat) -> [CGFloat] {
-                var result = values, start = 0
-                while start < values.count {
-                    var end = start + 1, edge = values[start]
-                    while end < values.count, abs(values[end] - edge) <= tolerance {
-                        edge = outermost(edge, values[end])
-                        end += 1
-                    }
-                    for index in start..<end { result[index] = edge }
-                    start = end
-                }
-                return result
-            }
-            let starts = even(rows.map(\.minX), outermost: min), ends = even(rows.map(\.maxX), outermost: max)
-            return rows.indices.map { CGRect(x: starts[$0], y: rows[$0].minY, width: ends[$0] - starts[$0], height: rows[$0].height) }
-        }
-
-        /// New blocks fade in; blocks still there keep their place in the fade; blocks gone are gone at once.
-        func show(_ lines: [[CGRect]]) {
-            let now = CACurrentMediaTime()
-            blocks = lines.map { block in
-                let box = block.reduce(block[0]) { $0.union($1) }
-                return ("\(Int(box.minX)),\(Int(box.minY)),\(Int(box.width)),\(Int(box.height))", Self.outline(of: block))
-            }
-            appeared = Dictionary(blocks.map { ($0.key, appeared[$0.key] ?? now) }, uniquingKeysWith: { first, _ in first })
-            needsDisplay = true
-            guard fading == nil, appeared.values.contains(where: { now - $0 < Self.fadeIn }) else { return }
-            fading = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] timer in
-                MainActor.assumeIsolated {
-                    guard let self else { return timer.invalidate() }
-                    self.needsDisplay = true
-                    if !self.appeared.values.contains(where: { CACurrentMediaTime() - $0 < Self.fadeIn }) {
-                        timer.invalidate()
-                        self.fading = nil
-                    }
-                }
-            }
-        }
-
-        /// How far a block has faded in, eased.
-        private func opacity(_ key: String, at now: CFTimeInterval) -> CGFloat {
-            let progress = min(1, max(0, (now - (appeared[key] ?? 0)) / Self.fadeIn))
-            return CGFloat(progress * progress * (3 - 2 * progress))
-        }
-
-        override func draw(_ dirtyRect: NSRect) {
-            guard let context = NSGraphicsContext.current?.cgContext else { return }
-            let now = CACurrentMediaTime()
-            // Dim the screen, then cut every block back out, so the text stands out as with Live Text.
-            NSColor.black.withAlphaComponent(0.2).setFill()
-            bounds.fill()
-            context.setBlendMode(.destinationOut)
-            for block in blocks {
-                NSColor.black.withAlphaComponent(opacity(block.key, at: now)).setFill()
-                block.outline.fill()
-            }
-            context.setBlendMode(.normal)
-            // A soft white glow along each block's edge.
-            for block in blocks {
-                let shown = opacity(block.key, at: now)
-                NSGraphicsContext.saveGraphicsState()
-                let glow = NSShadow()
-                glow.shadowColor = NSColor.white.withAlphaComponent(0.9 * shown)
-                glow.shadowBlurRadius = 5
-                glow.set()
-                NSColor.white.withAlphaComponent(0.75 * shown).setStroke()
-                block.outline.lineWidth = 1
-                block.outline.stroke()
-                NSGraphicsContext.restoreGraphicsState()
-            }
-            // The block under the pointer, outlined.
-            if !hovered.isEmpty {
-                let outline = Self.outline(of: hovered)
-                NSColor.controlAccentColor.setStroke()
-                outline.lineWidth = 2
-                outline.stroke()
-            }
-            drawEdges()
-        }
-
-        /// A soft accent glow fading in from every edge: the screen is being translated.
-        private func drawEdges() {
-            let accent = NSColor.controlAccentColor
-            for inset in 0..<6 {
-                accent.withAlphaComponent(0.42 - CGFloat(inset) * 0.07).setStroke()
-                let path = NSBezierPath(rect: bounds.insetBy(dx: CGFloat(inset) + 0.5, dy: CGFloat(inset) + 0.5))
-                path.lineWidth = 1
-                path.stroke()
-            }
-        }
-    }
-}
-
-/// The small capsule at the bottom while the screen is translated: what it reads into, as a menu, and
-/// the way out. The translate icon turns into a spinner while the screen is being read. It never takes
-/// the keyboard from the app in front.
-@MainActor
-final class ScreenTranslationBar: FloatingPanel {
-    struct Language {
-        let name: String
-        let native: String
-    }
-
-    var onPick: ((String) -> Void)?
-    var onExit: (() -> Void)?
-    var reading = false {
-        didSet {
-            guard reading != oldValue else { return }
-            icon.isHidden = reading
-            spinner.isHidden = !reading
-            reading ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
-        }
-    }
-    private let icon = Design.symbol("translate", size: 12, color: .white.withAlphaComponent(0.85))
-    private let spinner = NSProgressIndicator()
-    private let picker = FirstClickPopUp()
-    /// Each language's own name, by its English one, for the capsule's title.
-    private var natives: [String: String] = [:]
-    private let content: NSStackView
-
-    init() {
-        content = Design.hstack([], spacing: 6)
-        super.init(size: NSSize(width: 160, height: 30), level: .screenOverlayControls, behavior: [.stationary, .ignoresCycle])
-        takesKeys = false
-        becomesKeyOnlyIfNeeded = true
-        appearance = NSAppearance(named: .darkAqua)
-        spinner.style = .spinning
-        spinner.controlSize = .small
-        spinner.isDisplayedWhenStopped = false
-        spinner.isHidden = true
-        for view in [icon, spinner] as [NSView] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            view.widthAnchor.constraint(equalToConstant: 16).isActive = true
-        }
-        // A pull-down, so the capsule shows just the language's own name while the menu can say more.
-        picker.pullsDown = true
-        picker.isBordered = false
-        picker.font = .systemFont(ofSize: 12, weight: .medium)
-        picker.contentTintColor = .white
-        picker.target = self
-        picker.action = #selector(picked)
-        let escape = Design.label("esc", size: 10, weight: .medium, color: .white.withAlphaComponent(0.6))
-        let key = ExitKey()
-        key.toolTip = "Esc ends screen translation"
-        key.onClick = { [weak self] in self?.onExit?() }
-        key.translatesAutoresizingMaskIntoConstraints = false
-        escape.translatesAutoresizingMaskIntoConstraints = false
-        key.addSubview(escape)
-        NSLayoutConstraint.activate([
-            escape.leadingAnchor.constraint(equalTo: key.leadingAnchor, constant: 4), escape.trailingAnchor.constraint(equalTo: key.trailingAnchor, constant: -4),
-            escape.centerYAnchor.constraint(equalTo: key.centerYAnchor), key.heightAnchor.constraint(equalToConstant: 16)
-        ])
-        key.wantsLayer = true
-        key.layer?.borderColor = NSColor.white.withAlphaComponent(0.3).cgColor
-        key.layer?.borderWidth = 1
-        key.layer?.cornerRadius = 4
-        [icon, spinner, picker, key].forEach(content.addArrangedSubview)
-        let material = NSVisualEffectView.roundedMaterial(.hudWindow, radius: 15)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        material.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: material.leadingAnchor, constant: 12),
-            content.trailingAnchor.constraint(equalTo: material.trailingAnchor, constant: -8),
-            content.centerYAnchor.constraint(equalTo: material.centerYAnchor),
-            material.heightAnchor.constraint(equalToConstant: 30)
-        ])
-        contentView = material
-    }
-
-    /// Fills the menu — groups of languages, a divider between groups — and shows the capsule at the
-    /// bottom of `screen`, just above the Dock.
-    func present(languages groups: [[Language]], selected: String, on screen: NSScreen) {
-        picker.removeAllItems()
-        picker.addItem(withTitle: "")
-        for (index, group) in groups.enumerated() {
-            if index > 0 { picker.menu?.addItem(.separator()) }
-            for language in group {
-                let item = NSMenuItem(title: language.native, action: nil, keyEquivalent: "")
-                item.representedObject = language.name
-                item.state = language.name == selected ? .on : .off
-                natives[language.name] = language.native
-                if language.native.caseInsensitiveCompare(language.name) != .orderedSame {
-                    let title = NSMutableAttributedString(string: language.native, attributes: [.font: NSFont.menuFont(ofSize: 13)])
-                    title.append(NSAttributedString(string: "  \(language.name)", attributes: [
-                        .font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]))
-                    item.attributedTitle = title
-                }
-                picker.menu?.addItem(item)
-            }
-        }
-        picker.itemArray.first?.title = natives[selected] ?? selected
-        content.layoutSubtreeIfNeeded()
-        let size = NSSize(width: content.fittingSize.width + 20, height: 30)
-        let visible = screen.visibleFrame
-        setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.minY + 14, width: size.width, height: size.height), display: true)
-        orderFrontRegardless()
-    }
-
-    @objc private func picked() {
-        guard let chosen = picker.selectedItem, let name = chosen.representedObject as? String else { return }
-        picker.itemArray.forEach { $0.state = $0 === chosen ? .on : .off }
-        picker.itemArray.first?.title = natives[name] ?? name
-        onPick?(name)
-        // The capsule follows the shorter or longer name.
-        content.layoutSubtreeIfNeeded()
-        let width = content.fittingSize.width + 20
-        setFrame(NSRect(x: frame.midX - width / 2, y: frame.minY, width: width, height: frame.height), display: true)
-    }
-
-    /// Opens on the first click, though the capsule never becomes the key window.
-    private final class FirstClickPopUp: NSPopUpButton {
-        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    }
-
-    /// The `esc` keycap, which also ends screen translation when clicked.
-    private final class ExitKey: NSView {
-        var onClick: (() -> Void)?
-        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-        override func mouseUp(with event: NSEvent) { if bounds.contains(convert(event.locationInWindow, from: nil)) { onClick?() } }
     }
 }

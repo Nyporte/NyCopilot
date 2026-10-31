@@ -19,22 +19,22 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         let until: Int64?
     }
     typealias Item = CoreRecord<Note>
-    private enum Row { case day(String), note(Item) }
-    private enum Tab: Int { case inbox, later, done }
+    enum Row { case day(String), note(Item) }
+    enum Tab: Int { case inbox, later, done }
 
-    private let core: NyCore
-    private let images: ImageFolder
-    private let toast: Toast
+    let core: NyCore
+    let images: ImageFolder
+    let toast: Toast
     /// R, A, P on a note: translate it, ask about it, pin it to the screen.
     var onVerb: ((Verb, String, NSImage?) -> Void)?
-    private let tabs = NSSegmentedControl(labels: ["Inbox", "Later", "Done"], trackingMode: .selectOne, target: nil, action: nil)
-    private let search = NSSearchField()
-    private let table = InboxTable()
-    private let empty = EmptyStateView()
-    private var rows: [Row] = []
-    private var tab: Tab { Tab(rawValue: tabs.selectedSegment) ?? .inbox }
-    private var showsDone: Bool { tab == .done }
-    private var collection: CoreCollection {
+    let tabs = NSSegmentedControl(labels: ["Inbox", "Later", "Done"], trackingMode: .selectOne, target: nil, action: nil)
+    let search = NSSearchField()
+    let table = InboxTable()
+    let empty = EmptyStateView()
+    var rows: [Row] = []
+    var tab: Tab { Tab(rawValue: tabs.selectedSegment) ?? .inbox }
+    var showsDone: Bool { tab == .done }
+    var collection: CoreCollection {
         switch tab {
         case .inbox: .inboxNotes
         case .later: .inboxSnoozed
@@ -43,28 +43,28 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     }
 
     // The selected note.
-    private let detail = NSStackView()
-    private let preview = NSImageView()
-    private let editor = NSTextView()
-    private let editorScroll = NSScrollView()
-    private let sourceLabel = Design.label("", size: 12, color: .secondaryLabelColor)
-    private let timeLabel = Design.label("", size: 12, color: .secondaryLabelColor)
-    private let doneButton = Design.button("Done", target: nil, action: nil)
-    private let sendButton = Design.button("Send To", target: nil, action: nil)
-    private let laterButton = Design.button("Later", target: nil, action: nil)
-    private let copyButton = Design.button("Copy", target: nil, action: nil)
-    private let openButton = Design.button("Open Source", target: nil, action: nil)
-    private let deleteButton = Design.button("Delete", target: nil, action: nil)
-    private let nothingSelected = Design.label("Select a note", size: 13, color: .tertiaryLabelColor)
-    private var shownID: String?
-    private var pendingSave: DispatchWorkItem?
+    let detail = NSStackView()
+    let preview = NSImageView()
+    let editor = NSTextView()
+    let editorScroll = NSScrollView()
+    let sourceLabel = Design.label("", size: 12, color: .secondaryLabelColor)
+    let timeLabel = Design.label("", size: 12, color: .secondaryLabelColor)
+    let doneButton = Design.button("Done", target: nil, action: nil)
+    let sendButton = Design.button("Send To", target: nil, action: nil)
+    let laterButton = Design.button("Later", target: nil, action: nil)
+    let copyButton = Design.button("Copy", target: nil, action: nil)
+    let openButton = Design.button("Open Source", target: nil, action: nil)
+    let deleteButton = Design.button("Delete", target: nil, action: nil)
+    let nothingSelected = Design.label("Select a note", size: 13, color: .tertiaryLabelColor)
+    var shownID: String?
+    var pendingSave: DispatchWorkItem?
 
     /// Undo for the last few done, back, and delete actions; a deleted note's screenshot is kept
     /// until its undo can no longer happen.
-    private var undoStack: [(String, () -> String?)] = []
-    private var keptImages: [String] = []
-    private var observer: NSObjectProtocol?
-    private let clock: DateFormatter = {
+    var undoStack: [(String, () -> String?)] = []
+    var keptImages: [String] = []
+    var observer: NSObjectProtocol?
+    let clock: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         formatter.dateStyle = .none
@@ -122,7 +122,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     // MARK: Layout
 
-    private func makeContent() -> NSView {
+    func makeContent() -> NSView {
         let root = NSView()
         tabs.target = self
         tabs.action = #selector(switchTab)
@@ -273,7 +273,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         showSelected()
     }
 
-    private static func day(of date: Date) -> String {
+    static func day(of date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return "Today" }
         if calendar.isDateInYesterday(date) { return "Yesterday" }
@@ -282,16 +282,16 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         return formatter.string(from: date)
     }
 
-    @objc private func switchTab() {
+    @objc func switchTab() {
         saveNow()
         table.deselectAll(nil)
         reload()
         selectFirstNote()
     }
 
-    @objc private func searchChanged() { reload() }
+    @objc func searchChanged() { reload() }
 
-    private func selectFirstNote() {
+    func selectFirstNote() {
         guard let row = rows.firstIndex(where: { if case .note = $0 { true } else { false } }) else { showSelected(); return }
         table.selectRowIndexes([row], byExtendingSelection: false)
         table.scrollRowToVisible(row)
@@ -299,12 +299,12 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     // MARK: The selected note
 
-    private var selectedItem: Item? {
+    var selectedItem: Item? {
         guard rows.indices.contains(table.selectedRow), case .note(let item) = rows[table.selectedRow] else { return nil }
         return item
     }
 
-    private func showSelected() {
+    func showSelected() {
         guard let item = selectedItem else {
             detail.isHidden = true
             nothingSelected.isHidden = rows.isEmpty
@@ -361,7 +361,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     }
 
     /// The edited text, saved (an image note may have no text; a text note keeps at least some).
-    private func saveNow() {
+    func saveNow() {
         pendingSave?.cancel()
         pendingSave = nil
         guard let id = shownID, let item = rows.lazy.compactMap({ if case .note(let item) = $0, item.id == id { item } else { nil } }).first,
@@ -369,14 +369,14 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         _ = try? core.call(.inboxUpdate, ["id": id, "text": editor.string])
     }
 
-    @objc private func editSelected() {
+    @objc func editSelected() {
         guard selectedItem != nil else { return }
         window?.makeFirstResponder(editor)
     }
 
     // MARK: Actions
 
-    private func handleKey(_ key: InboxTable.Key) -> Bool {
+    func handleKey(_ key: InboxTable.Key) -> Bool {
         switch key {
         case .space: toggleDoneSelected()
         case .character("s") where tab == .inbox: showSendMenu()
@@ -397,7 +397,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     }
 
     /// Inbox: done. Later: back to the inbox now. Done: back to the inbox.
-    @objc private func toggleDoneSelected() {
+    @objc func toggleDoneSelected() {
         guard let item = selectedItem else { return }
         saveNow()
         let row = table.selectedRow
@@ -420,159 +420,20 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         selectNear(row)
     }
 
-    private func verb(_ verb: Verb) {
+    func verb(_ verb: Verb) {
         guard let item = selectedItem else { return }
         saveNow()
         onVerb?(verb, editor.string, item.data.image.flatMap(images.image))
     }
 
-    // MARK: Sending and snoozing
-
-    @objc private func showSendMenu() {
-        guard selectedItem != nil, tab == .inbox else { return }
-        let menu = NSMenu()
-        for destination in NoteExport.Destination.allCases {
-            let item = NSMenuItem(title: destination.title, action: #selector(sendSelected(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = destination.rawValue
-            item.image = NSImage(systemSymbolName: destination.symbol, accessibilityDescription: nil)
-            menu.addItem(item)
-        }
-        if let folder = NoteExport.markdownFolder(core: core, choosingIfNeeded: false) {
-            menu.items.last?.toolTip = folder.path
-        }
-        menu.addItem(.separator())
-        let share = NSMenuItem(title: "Share…", action: #selector(shareSelected), keyEquivalent: "")
-        share.target = self
-        share.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)
-        menu.addItem(share)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sendButton.bounds.height + 4), in: sendButton)
-    }
-
-    @objc private func showLaterMenu() {
-        guard selectedItem != nil, tab == .inbox else { return }
-        let menu = NSMenu()
-        let format = DateFormatter()
-        format.setLocalizedDateFormatFromTemplate("EEEjmm")
-        for choice in SnoozeChoice.allCases {
-            guard let date = choice.date() else { continue }
-            let item = NSMenuItem(title: "\(choice.title)  —  \(format.string(from: date))", action: #selector(snoozeSelected(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = date
-            menu.addItem(item)
-        }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: laterButton.bounds.height + 4), in: laterButton)
-    }
-
-    @objc private func snoozeSelected(_ sender: NSMenuItem) {
-        guard let item = selectedItem, let date = sender.representedObject as? Date else { return }
-        saveNow()
-        let row = table.selectedRow
-        do {
-            let reply = try core.call(.inboxSnooze, ["id": item.id, "until": Int64(date.timeIntervalSince1970 * 1000)]) as? [String: Any]
-            if let snoozedID = (reply?["record"] as? [String: Any])?["id"] as? String {
-                remember("Snooze") { [core] in
-                    ((try? core.call(.inboxWake, ["id": snoozedID]) as? [String: Any])?["woken"] as? [[String: Any]])?.first?["id"] as? String
-                }
-            }
-        } catch {
-            NSSound.beep()
-        }
-        reload()
-        selectNear(row)
-    }
-
-    /// What a destination gets from the selected note.
-    private func exportContent(_ item: Item) -> NoteExport.Content {
-        let app = item.data.app ?? "", title = item.data.title ?? ""
-        let place = [app, title == app ? "" : title].filter { !$0.isEmpty }.joined(separator: " — ")
-        let address = item.data.url.flatMap { SourceContext.isMeaningful(address: $0) ? URL(string: $0) : nil }
-        return NoteExport.Content(text: editor.string, image: item.data.image.map(images.file), source: place, address: address,
-                                  created: Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000))
-    }
-
-    /// Sent notes are handed off, so they're marked done (⌘Z brings one back).
-    @objc private func sendSelected(_ sender: NSMenuItem) {
-        guard let item = selectedItem, let raw = sender.representedObject as? String,
-              let destination = NoteExport.Destination(rawValue: raw) else { return }
-        saveNow()
-        let content = exportContent(item)
-        Task {
-            do {
-                let done = try await NoteExport.send(content, to: destination, core: core)
-                if selectedItem?.id == item.id { toggleDoneSelected() }
-                else if (try? core.call(.inboxDone, ["id": item.id])) != nil { reload() }
-                toast.show(done, detail: "Marked done · ⌘Z in the inbox brings it back", style: .success)
-            } catch {
-                let alert = NSAlert()
-                alert.messageText = "Couldn’t send the note to \(destination.title)"
-                alert.informativeText = error.localizedDescription
-                if let window { alert.beginSheetModal(for: window, completionHandler: nil) } else { alert.runModal() }
-            }
-        }
-    }
-
-    @objc private func shareSelected() {
-        guard let item = selectedItem else { return }
-        let content = exportContent(item)
-        var things: [Any] = []
-        if !content.text.isEmpty { things.append(content.text) }
-        if let image = content.image.flatMap({ NSImage(contentsOf: $0) }) { things.append(image) }
-        if let address = content.address { things.append(address) }
-        NSSharingServicePicker(items: things).show(relativeTo: sendButton.bounds, of: sendButton, preferredEdge: .minY)
-    }
-
-    @objc private func deleteSelected() {
-        guard let item = selectedItem else { return }
-        let row = table.selectedRow
-        _ = try? core.deleteRecord(item.id)
-        if let image = item.data.image { keptImages.append(image) }
-        let note = item.data, done = showsDone
-        remember("Delete") { [core] in
-            var params: [String: Any] = ["text": note.text, "app": note.app ?? "", "title": note.title ?? "", "url": note.url ?? "",
-                                         "source": note.source ?? "typed"]
-            if let image = note.image { params["image"] = image }
-            guard let id = ((try? core.call(.inboxAdd, params) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String else { return nil }
-            return done ? ((try? core.call(.inboxDone, ["id": id]) as? [String: Any])?["record"] as? [String: Any])?["id"] as? String : id
-        }
-        reload()
-        selectNear(row)
-    }
-
-    @objc private func copySelected() {
-        guard let item = selectedItem else { return }
-        NSPasteboard.general.clearContents()
-        if let image = item.data.image.flatMap(images.image) {
-            NSPasteboard.general.writeObjects([image])
-        }
-        if !item.data.text.isEmpty { NSPasteboard.general.setString(item.data.text, forType: .string) }
-    }
-
-    /// The page or document it came from; else the app, if it's running.
-    @objc private func openSelectedSource() {
-        guard let item = selectedItem else { return }
-        if let address = item.data.url, SourceContext.isMeaningful(address: address), let url = URL(string: address) {
-            NSWorkspace.shared.open(url)
-        } else if let app = runningApp(named: item.data.app) {
-            app.activate(options: [])
-        } else {
-            NSSound.beep()
-        }
-    }
-
-    private func runningApp(named name: String?) -> NSRunningApplication? {
-        guard let name, !name.isEmpty else { return nil }
-        return NSWorkspace.shared.runningApplications.first { $0.localizedName == name }
-    }
-
     // MARK: Undo
 
-    private func remember(_ name: String, undo: @escaping () -> String?) {
+    func remember(_ name: String, undo: @escaping () -> String?) {
         undoStack.append((name, undo))
         if undoStack.count > 20 { undoStack.removeFirst() }
     }
 
-    private func undo() {
+    func undo() {
         guard let (_, action) = undoStack.popLast() else { NSSound.beep(); return }
         let restored = action()
         reload()
@@ -583,7 +444,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     }
 
     /// After a note leaves the list, the one that took its place (or the one above).
-    private func selectNear(_ row: Int) {
+    func selectNear(_ row: Int) {
         let candidates = rows.indices.filter { if case .note = rows[$0] { true } else { false } }
         guard let next = candidates.first(where: { $0 >= row }) ?? candidates.last else { showSelected(); return }
         table.selectRowIndexes([next], byExtendingSelection: false)
@@ -629,66 +490,4 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             return cell
         }
     }
-}
-
-private extension String {
-    /// "Today" reads as "today" mid-sentence; a date stays as it is.
-    var lowercasedIfRelative: String { self == "Today" || self == "Yesterday" ? lowercased() : "on \(self)" }
-}
-
-/// The list: its keys go to the window's actions first.
-private final class InboxTable: NSTableView {
-    enum Key: Equatable { case space, returnKey, delete, command(String), character(String) }
-    var onKey: ((Key) -> Bool)?
-
-    override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        let key: Key? = switch (event.keyCode, flags) {
-        case (49, []): .space
-        case (36, []), (76, []): .returnKey
-        case (51, []), (117, []), (51, [.command]): .delete
-        case (_, []), (_, [.shift]): event.charactersIgnoringModifiers.map { .character($0.lowercased()) }
-        default: nil
-        }
-        if let key, onKey?(key) == true { return }
-        super.keyDown(with: event)
-    }
-
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if window?.firstResponder === self, flags == [.command], let key = event.charactersIgnoringModifiers?.lowercased(),
-           onKey?(.command(key)) == true { return true }
-        return super.performKeyEquivalent(with: event)
-    }
-}
-
-private final class InboxRow: NSTableCellView {
-    let icon = NSImageView()
-    let title = Design.label("", size: 13)
-    let metadata = Design.label("", size: 11, color: .secondaryLabelColor)
-
-    init() {
-        super.init(frame: .zero)
-        icon.contentTintColor = .secondaryLabelColor
-        icon.symbolConfiguration = .init(pointSize: 12, weight: .regular)
-        title.lineBreakMode = .byTruncatingTail
-        let text = Design.vstack([title, metadata], spacing: 2)
-        let stack = Design.hstack([icon, text], spacing: 8)
-        stack.alignment = .centerY
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
-            icon.widthAnchor.constraint(equalToConstant: 16)
-        ])
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init()") }
-}
-
-/// Escape closes the window, as in History.
-private final class InboxWindowPanel: NSWindow {
-    override func cancelOperation(_ sender: Any?) { performClose(sender) }
 }
