@@ -90,7 +90,7 @@ final class SettingsWindow: NSWindowController, NSToolbarDelegate, NSWindowDeleg
         let target = panes.first(where: { $0.paneID == id }) ?? current ?? panes[0]
         select(target, animated: window?.isVisible == true)
         if window?.isVisible != true { window?.center() }
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
     }

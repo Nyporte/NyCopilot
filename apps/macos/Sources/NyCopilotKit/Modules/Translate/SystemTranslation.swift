@@ -28,7 +28,7 @@ enum SystemTranslation {
         }, closed: { close() }))
         host = panel
         // SwiftUI presents its panel from an active app.
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         panel.orderFrontRegardless()
         panel.makeKey()
         Diagnostics.note("translate", "no service set up; opened macOS’s translation panel")

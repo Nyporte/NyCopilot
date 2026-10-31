@@ -190,7 +190,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         }
         wasOverflowing = false
         resizeToContent()
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         window.alphaValue = 0
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(editor)
@@ -198,7 +198,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
     }
 
     func bringToFront() {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         window?.makeKeyAndOrderFront(nil)
     }
 

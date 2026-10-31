@@ -137,7 +137,7 @@ enum NoteExport {
         panel.canCreateDirectories = true
         panel.prompt = "Choose"
         panel.message = "Inbox notes you send as Markdown are saved here, one file each."
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         try? core.setSetting(.inboxMarkdownFolder, url.path)
         return url

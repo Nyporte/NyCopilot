@@ -124,7 +124,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
     func present() {
         prepare()
         window?.center()
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         // Permission is granted in System Settings and the model in Settings, so re-check while open.

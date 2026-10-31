@@ -254,7 +254,7 @@ final class CaptureShell: ModuleShell {
             NSPasteboard.general.writeObjects([item])
             services.toast.show("GIF copied", detail: "Paste it into a chat or a document.", style: .success, near: region)
         case .save:
-            NSApp.activate(ignoringOtherApps: true)
+            NSApp.bringForward()
             let panel = NSSavePanel()
             panel.directoryURL = saveFolder
             panel.nameFieldStringValue = fileName(extension: "gif")
@@ -371,7 +371,7 @@ final class CaptureShell: ModuleShell {
     }
 
     private func saveWithPanel(_ image: NSImage, region: (CGRect, NSScreen)?) {
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         let panel = NSSavePanel()
         panel.directoryURL = saveFolder
         panel.nameFieldStringValue = fileName()

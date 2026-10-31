@@ -102,7 +102,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     func present() {
         reload()
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(table)
         if table.selectedRow < 0 { selectFirstNote() }

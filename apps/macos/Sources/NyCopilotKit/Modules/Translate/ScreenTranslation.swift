@@ -650,7 +650,7 @@ final class TranslationOverlay: NSWindow {
 /// the way out. The translate icon turns into a spinner while the screen is being read. It never takes
 /// the keyboard from the app in front.
 @MainActor
-final class ScreenTranslationBar: NSPanel {
+final class ScreenTranslationBar: FloatingPanel {
     struct Language {
         let name: String
         let native: String
@@ -675,9 +675,8 @@ final class ScreenTranslationBar: NSPanel {
 
     init() {
         content = Design.hstack([], spacing: 6)
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 160, height: 30), styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: true)
-        float(at: .screenOverlayControls, shadow: true, behavior: [.stationary, .ignoresCycle])
+        super.init(size: NSSize(width: 160, height: 30), level: .screenOverlayControls, behavior: [.stationary, .ignoresCycle])
+        takesKeys = false
         becomesKeyOnlyIfNeeded = true
         appearance = NSAppearance(named: .darkAqua)
         spinner.style = .spinning

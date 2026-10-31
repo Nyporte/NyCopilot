@@ -5,7 +5,7 @@ import AppKit
 /// interactive one (for a selection) takes clicks, so its text can be selected and copied, without
 /// taking focus from the app you're in.
 @MainActor
-final class TranslationCard: NSPanel {
+final class TranslationCard: FloatingPanel {
     private let interactive: Bool
     private let caption = Design.label("", size: 12, weight: .medium, color: .secondaryLabelColor)
     private let text = SelectableLabel(wrappingLabelWithString: "")
@@ -22,9 +22,10 @@ final class TranslationCard: NSPanel {
     init(interactive: Bool = false) {
         self.interactive = interactive
         column = Design.vstack([], spacing: 7, alignment: .leading)
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60), styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: true)
-        float(at: .screenOverlayControls, shadow: true, clickThrough: !interactive, behavior: [.stationary, .ignoresCycle])
+        super.init(size: NSSize(width: 300, height: 60), level: .screenOverlayControls, behavior: [.stationary, .ignoresCycle])
+        // Only the selection card takes clicks and keys; the screen-translation card is see-through.
+        ignoresMouseEvents = !interactive
+        takesKeys = interactive
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 12)
         text.font = .systemFont(ofSize: 15.5)
         text.textColor = .labelColor
@@ -51,7 +52,6 @@ final class TranslationCard: NSPanel {
 
     /// Where the card belongs: `source` is the block, in AppKit screen coordinates.
     /// Selecting text needs keystrokes and a field editor; only an interactive card takes them.
-    override var canBecomeKey: Bool { interactive }
 
     /// The part of the translation selected on the card, if any.
     var selectedText: String? {

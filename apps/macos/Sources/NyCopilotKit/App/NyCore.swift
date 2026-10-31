@@ -63,7 +63,11 @@ final class NyCore: @unchecked Sendable {
         let envelope = try JSONSerialization.jsonObject(with: Data(bytes: raw, count: strlen(raw)), options: [.fragmentsAllowed]) as? [String: Any]
         if let error = envelope?["error"] {
             let data = try JSONSerialization.data(withJSONObject: error)
-            throw try JSONDecoder().decode(Failure.self, from: data)
+            let failure = try JSONDecoder().decode(Failure.self, from: data)
+            // Many callers can only shrug (`try?`); the failure is still on record for a bug report.
+            // Cancellations are expected, not failures.
+            if failure.code != "cancelled" { Diagnostics.note("core", "\(method) failed: \(failure.code)") }
+            throw failure
         }
         return envelope?["ok"] ?? NSNull()
     }

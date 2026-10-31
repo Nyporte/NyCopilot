@@ -152,7 +152,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
 
     func present() {
         reload()
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.bringForward()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(table)
