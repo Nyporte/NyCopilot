@@ -25,7 +25,13 @@ final class CaptureToolbar: NSView {
     var canUndo = false { didSet { undoButton.isEnabled = canUndo } }
     var canRedo = false { didSet { redoButton.isEnabled = canRedo } }
     /// Lines of text found in the selection; nil while still reading.
-    var recognizedLines: Int? { didSet { refreshTextButton() } }
+    var recognizedLines: Int? {
+        didSet {
+            refreshTextButton()
+            // Text just turned up: the button turns blue with a bounce, worth a glance.
+            if let lines = recognizedLines, lines > 0, (oldValue ?? 0) == 0 { textButton.pop() }
+        }
+    }
 
     private var toolButtons: [AnnotationTool: NSButton] = [:]
     private var swatches: [(NSColor, Swatch)] = []
@@ -319,16 +325,8 @@ final class CaptureToolbar: NSView {
     }
     @objc private func cancelTapped() { onCancel?() }
 
-    private static func icon(_ symbol: String, _ tip: String) -> NSButton {
-        let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: nil, action: nil)
-        button.isBordered = false
-        button.symbolConfiguration = .init(pointSize: 14, weight: .medium)
-        button.contentTintColor = .white
-        button.toolTip = tip
-        button.setAccessibilityLabel(tip)
-        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        button.heightAnchor.constraint(equalToConstant: 26).isActive = true
-        return button
+    private static func icon(_ symbol: String, _ tip: String) -> ToolbarButton {
+        ToolbarButton(symbol: symbol, tip: tip)
     }
 
     private static func divider() -> NSView {
