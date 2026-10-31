@@ -41,6 +41,33 @@ final class CaptureRenderTests: XCTestCase {
         XCTAssertEqual(NSCursor.current, .arrow, "outside a finished selection, the pointer")
     }
 
+    /// The toolbar hides while text is read, with the pointer still on the button that started it;
+    /// shown again with the pointer elsewhere, that button must not still look hovered.
+    func testHiddenToolbarButtonDropsItsHover() {
+        let button = ToolbarButton(symbol: "text.viewfinder", tip: "Select text")
+        let window = NSWindow(contentRect: NSRect(x: -3000, y: -3000, width: 40, height: 40), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.contentView = button
+        button.mouseEntered(with: NSEvent())
+        XCTAssertTrue(button.isHovered)
+        button.isHidden = true
+        XCTAssertFalse(button.isHovered)
+        button.isHidden = false
+        XCTAssertFalse(button.isHovered, "the pointer is nowhere near this off-screen window")
+    }
+
+    /// AppKit flips `state` on every click; only the toolbar's choice of tool may show the plate.
+    func testClickingAButtonDoesNotMarkItSelected() {
+        let button = ToolbarButton(symbol: "text.viewfinder", tip: "Select text")
+        button.performClick(nil)
+        XCTAssertEqual(button.state, .on, "AppKit still flips it")
+        XCTAssertFalse(button.showsPlate)
+        button.isSelected = true
+        XCTAssertTrue(button.showsPlate)
+        button.isSelected = false
+        XCTAssertFalse(button.showsPlate)
+    }
+
     /// A pointer move redraws around the pointer and the outline, not the whole screen.
     func testPointerMovesRedrawOnlyNearby() throws {
         let screen = NSScreen.screens[0]

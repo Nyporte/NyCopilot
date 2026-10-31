@@ -33,7 +33,7 @@ final class CaptureToolbar: NSView {
         }
     }
 
-    private var toolButtons: [AnnotationTool: NSButton] = [:]
+    private var toolButtons: [AnnotationTool: ToolbarButton] = [:]
     private var swatches: [(NSColor, Swatch)] = []
     private let undoButton: NSButton
     private let redoButton: NSButton
@@ -286,7 +286,7 @@ final class CaptureToolbar: NSView {
         for (tool, button) in toolButtons {
             let active = tool == selectedTool
             button.contentTintColor = active ? .controlAccentColor : .white
-            button.state = active ? .on : .off
+            button.isSelected = active
         }
     }
 

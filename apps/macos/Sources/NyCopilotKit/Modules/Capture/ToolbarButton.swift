@@ -1,17 +1,30 @@
 import AppKit
 import QuartzCore
 
-/// An icon button for the capture toolbar that answers the pointer. A soft plate fades in behind it
-/// and the symbol lifts a little; pressing sinks it, and it springs back. The selected tool keeps
-/// a faint accent plate. Tint changes cross-fade, and `pop()` bounces the symbol and sends one ring
-/// out, for news worth a glance (text found in the selection). With Reduce Motion, only fades.
+/// An icon button for the capture toolbar that answers the pointer with light, not size: icons
+/// rest a little dimmed, and the one under the pointer brightens as a soft plate fades in behind
+/// it; pressing dims it, as if pushed in. The selected tool keeps a faint accent plate. Tint
+/// changes blend from one color to the next, and `pop()` sends one ring out, for news worth a
+/// glance (text found in the selection).
+///
+/// The symbol is one bitmap, drawn once at the screen's resolution on the pixel grid, filled with
+/// the tint through a mask. It never changes size, so it is always as sharp as AppKit's own icons:
+/// a scaled bitmap goes soft, and redrawing at every size jitters between pixels.
 @MainActor
 final class ToolbarButton: NSButton, CALayerDelegate {
     private let plate = CALayer()
     private let icon = CALayer()
+    private let glyph = CALayer()
     private let ring = CAShapeLayer()
     private let symbol: NSImage
     private var hovering = false
+    /// Whether it shows the hovered look now.
+    var isHovered: Bool { hovering }
+    /// Whether the plate behind it shows (once any fade ends).
+    var showsPlate: Bool { plate.opacity > 0 }
+
+    /// How bright the icon is: resting, under the pointer, and pressed.
+    private static let resting: Float = 0.8, lit: Float = 1, pressed: Float = 0.55
 
     init(symbol name: String, tip: String) {
         let image = NSImage(systemSymbolName: name, accessibilityDescription: tip) ?? NSImage()
@@ -28,8 +41,10 @@ final class ToolbarButton: NSButton, CALayerDelegate {
         ring.fillColor = nil
         ring.lineWidth = 1.5
         ring.opacity = 0
-        icon.delegate = self
-        icon.needsDisplayOnBoundsChange = true
+        icon.opacity = Self.resting
+        glyph.delegate = self
+        glyph.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        icon.mask = glyph
         for sublayer in [plate, ring, icon] { layer?.addSublayer(sublayer) }
         widthAnchor.constraint(equalToConstant: 28).isActive = true
         heightAnchor.constraint(equalToConstant: 26).isActive = true
@@ -43,18 +58,26 @@ final class ToolbarButton: NSButton, CALayerDelegate {
     // MARK: Look
 
     override var contentTintColor: NSColor? {
-        didSet { if contentTintColor != oldValue { drawIcon(fading: window != nil) } }
+        didSet { if contentTintColor != oldValue { showTint(animated: window != nil) } }
     }
 
-    override var state: NSControl.StateValue { didSet { showPlate() } }
+    /// The active drawing tool: a faint accent plate stays behind it. Not `state`, which AppKit
+    /// flips on every click of any button.
+    var isSelected = false {
+        didSet {
+            guard isSelected != oldValue else { return }
+            showPlate()
+            light(hovering ? Self.lit : rest)
+        }
+    }
+
+    /// The active tool rests fully lit; the others a little dimmed.
+    private var rest: Float { isSelected ? Self.lit : Self.resting }
 
     override var isEnabled: Bool {
         didSet {
             if !isEnabled { hovering = false }
-            CATransaction.begin()
-            CATransaction.setAnimationDuration(0.15)
-            icon.opacity = isEnabled ? 1 : 0.35
-            CATransaction.commit()
+            light(hovering ? Self.lit : rest)
             showPlate()
         }
     }
@@ -64,83 +87,88 @@ final class ToolbarButton: NSButton, CALayerDelegate {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         plate.frame = bounds.insetBy(dx: 1, dy: 1)
-        let size = symbol.size
-        icon.bounds = CGRect(origin: .zero, size: size)
+        // The whole button, so the glyph is placed from whole points.
+        icon.bounds = bounds
         icon.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        glyph.frame = icon.bounds
         let side = min(bounds.width, bounds.height)
         ring.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
         ring.path = CGPath(ellipseIn: ring.bounds.insetBy(dx: 2, dy: 2), transform: nil)
         CATransaction.commit()
+        glyph.setNeedsDisplay()
     }
 
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        drawIcon(fading: false)
+        glyph.contentsScale = window?.backingScaleFactor ?? 2
+        glyph.setNeedsDisplay()
     }
 
-    private func drawIcon(fading: Bool) {
-        if fading {
-            let fade = CATransition()
-            fade.type = .fade
-            fade.duration = 0.22
-            icon.add(fade, forKey: "tint")
-        }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        icon.contentsScale = window?.backingScaleFactor ?? 2
-        icon.setNeedsDisplay()
-        icon.displayIfNeeded()
-        ring.strokeColor = (contentTintColor ?? .white).cgColor
-        CATransaction.commit()
-    }
-
-    /// The symbol, drawn through AppKit so it's upright whichever way the layer tree is flipped.
+    /// The glyph is only a mask, so its color doesn't matter. Drawn through AppKit so it's upright
+    /// whichever way the layer tree is flipped, and on the pixel grid so it's sharp at rest.
     nonisolated func draw(_ layer: CALayer, in context: CGContext) {
         MainActor.assumeIsolated {
-            let tinted = symbol.withSymbolConfiguration(.init(paletteColors: [contentTintColor ?? .white])) ?? symbol
+            let size = symbol.size
+            let centered = NSRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: layer.contentsAreFlipped())
-            tinted.draw(in: layer.bounds, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+            symbol.draw(in: backingAlignedRect(centered, options: .alignAllEdgesNearest), from: .zero, operation: .sourceOver,
+                        fraction: 1, respectFlipped: true, hints: nil)
             NSGraphicsContext.restoreGraphicsState()
         }
     }
 
-    /// Hover shows a plate; the selected tool keeps a faint accent one.
-    private func showPlate() {
-        let selected = state == .on
-        let color: NSColor = selected ? .controlAccentColor.withAlphaComponent(hovering ? 0.32 : 0.22)
-            : .white.withAlphaComponent(0.14)
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.15)
-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
-        plate.backgroundColor = color.cgColor
-        plate.opacity = selected || (hovering && isEnabled) ? 1 : 0
-        CATransaction.commit()
-    }
-
-    // MARK: Motion
-
-    /// Springs the symbol to `value` times its size, from wherever it is now.
-    private func scale(to value: CGFloat, from start: CGFloat? = nil, damping: CGFloat = 15) {
-        guard !Self.reduceMotion else { return }
-        let current = start ?? (icon.presentation()?.value(forKeyPath: "transform.scale") as? CGFloat ?? 1)
-        let spring = CASpringAnimation(keyPath: "transform.scale")
-        spring.fromValue = current
-        spring.toValue = value
-        spring.mass = 0.6
-        spring.stiffness = 300
-        spring.damping = damping
-        spring.duration = spring.settlingDuration
+    /// Blends the one icon from its color now to the new tint.
+    private func showTint(animated: Bool) {
+        let color = (contentTintColor ?? .white).cgColor
+        if animated {
+            let blend = CABasicAnimation(keyPath: "backgroundColor")
+            blend.fromValue = icon.presentation()?.backgroundColor ?? icon.backgroundColor
+            blend.toValue = color
+            blend.duration = 0.22
+            blend.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            icon.add(blend, forKey: "tint")
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        icon.setValue(value, forKeyPath: "transform.scale")
+        icon.backgroundColor = color
+        ring.strokeColor = color
         CATransaction.commit()
-        icon.add(spring, forKey: "scale")
     }
 
-    /// A bounce and one ring rippling out in the tint, to say "this just became useful".
+    /// Hover shows a plate; the selected tool keeps a faint accent one.
+    private func showPlate(animated: Bool = true) {
+        let color: NSColor = isSelected ? .controlAccentColor.withAlphaComponent(hovering ? 0.32 : 0.22)
+            : .white.withAlphaComponent(0.14)
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(0.15)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        plate.backgroundColor = color.cgColor
+        plate.opacity = isSelected || (hovering && isEnabled) ? 1 : 0
+        CATransaction.commit()
+    }
+
+    // MARK: Light
+
+    /// Fades the icon to `brightness` (a disabled icon stays faint whatever the pointer does).
+    private func light(_ brightness: Float, duration: CFTimeInterval = 0.15, animated: Bool = true) {
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(duration)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        icon.opacity = isEnabled ? brightness : 0.35
+        CATransaction.commit()
+    }
+
+    /// One ring rippling out in the tint, to say "this just became useful".
     func pop() {
-        scale(to: hovering ? 1.12 : 1, from: 1.38, damping: 9)
         guard !Self.reduceMotion else { return }
         let grow = CABasicAnimation(keyPath: "transform.scale")
         grow.fromValue = 0.6
@@ -167,20 +195,45 @@ final class ToolbarButton: NSButton, CALayerDelegate {
         guard isEnabled else { return }
         hovering = true
         showPlate()
-        scale(to: 1.12)
+        light(Self.lit)
     }
 
     override func mouseExited(with event: NSEvent) {
         hovering = false
         showPlate()
-        scale(to: 1)
+        light(rest, duration: 0.25)
     }
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return super.mouseDown(with: event) }
-        scale(to: 0.88)
+        light(Self.pressed, duration: 0.06)
         // Tracks the press until the button goes up, then acts.
         super.mouseDown(with: event)
-        scale(to: hovering ? 1.12 : 1, damping: 11)
+        light(hovering ? Self.lit : rest, duration: 0.2)
+    }
+
+    // A hidden button gets no "mouse exited" (the toolbar hides while text is read, with the
+    // pointer still on the button), so its look is set from where the pointer really is.
+    override func viewDidHide() {
+        super.viewDidHide()
+        hovering = false
+        settle()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        hovering = isEnabled && pointerIsInside
+        settle()
+    }
+
+    private var pointerIsInside: Bool {
+        guard let window else { return false }
+        return bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    }
+
+    /// Straight to the resting look for the current state, nothing animating.
+    private func settle() {
+        light(hovering ? Self.lit : rest, animated: false)
+        showPlate(animated: false)
     }
 }
