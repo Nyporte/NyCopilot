@@ -29,7 +29,7 @@ final class CaptureToolbar: NSView {
     private var swatches: [(NSColor, Swatch)] = []
     private let undoButton: NSButton
     private let redoButton: NSButton
-    private let textButton = CaptureToolbar.icon("text.viewfinder", "Recognize Text (T)")
+    private let textButton = CaptureToolbar.icon("text.viewfinder", "Select text (T)")
     private let scrollButton = CaptureToolbar.icon("rectangle.expand.vertical", "Scrolling Capture (S)")
     private let options = Design.hstack([], spacing: 8)
     private let palette: [NSColor]
@@ -62,17 +62,17 @@ final class CaptureToolbar: NSView {
         redoButton.target = self
         redoButton.action = #selector(redo)
         redoButton.isEnabled = false
-        let pin = Self.icon("pin", "Pin to screen (P or ⌘T)")
+        let pin = Self.icon("pin", "Pin to the screen (P or ⌘T)")
         pin.target = self
         pin.action = #selector(pin(_:))
         textButton.target = self
         textButton.action = #selector(showText)
         scrollButton.target = self
         scrollButton.action = #selector(scrollCapture)
-        let translate = Self.icon("character.bubble", "Translate the text (R)")
+        let translate = Self.icon("character.bubble", "Translate its text (R)")
         translate.target = self
         translate.action = #selector(translateText)
-        let inbox = Self.icon("tray.and.arrow.down", "Send to Inbox (I)")
+        let inbox = Self.icon("tray.and.arrow.down", "Keep in Inbox (I)")
         inbox.target = self
         inbox.action = #selector(sendToInbox)
         let ask = Self.icon("sparkles", "Ask AI about it (A)")
@@ -88,7 +88,10 @@ final class CaptureToolbar: NSView {
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
-        let mainRow = Design.hstack(tools + [Self.divider(), undoButton, redoButton, Self.divider(), textButton, translate, ask, scrollButton, inbox, save, pin, cancel, copy], spacing: 2)
+        // Grouped by purpose, left to right: draw, undo, understand it, keep it, finish.
+        let groups: [[NSView]] = [tools, [undoButton, redoButton], [textButton, translate, ask],
+                                  [scrollButton, pin, inbox, save], [cancel, copy]]
+        let mainRow = Design.hstack(groups.map { Design.hstack($0, spacing: 2) }.flatMap { [Self.divider(), $0] }.dropFirst().map { $0 }, spacing: 6)
         options.isHidden = true
 
         let column = Design.vstack([mainRow, options], spacing: 6, alignment: .leading)
