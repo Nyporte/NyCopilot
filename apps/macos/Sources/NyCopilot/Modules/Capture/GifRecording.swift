@@ -1,10 +1,8 @@
 import AppKit
 import Carbon
 import CoreMedia
-import ImageIO
 import MacPlatform
 import ScreenCaptureKit
-import UniformTypeIdentifiers
 import VideoToolbox
 
 /// A finished GIF recording: the file (in NyCopilot's caches until it's saved somewhere) and what to
@@ -40,6 +38,8 @@ final class GifRecording {
     private let bar: RecordingBar
     private let frames: FrameSink
     private var stream: SCStream?
+    /// Hears when macOS stops the stream itself.
+    private let watcher = StreamWatcher()
     private var keys: [GlobalHotKey] = []
     private var ticker: Timer?
     private var isOver = false
@@ -54,9 +54,13 @@ final class GifRecording {
         let frame = CaptureSession.appKitRect(region)
         border = Self.makeBorder(around: frame)
         bar = RecordingBar(beside: frame, on: screen)
-        frames = FrameSink(folder: FileManager.default.temporaryDirectory.appendingPathComponent("NyCopilot-GIF-\(UUID().uuidString)"))
+        frames = FrameSink(output: FrameSink.newRecordingURL())
         bar.onStop = { [weak self] in self?.stop() }
         bar.onPause = { [weak self] in self?.togglePause() }
+        // macOS ended the stream itself: keep what was recorded rather than wait on a dead stream.
+        watcher.onStop = { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.stop() } }
+        }
     }
 
     var isRecording: Bool { !isOver }
@@ -98,7 +102,7 @@ final class GifRecording {
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
         configuration.queueDepth = 5
         let stream = SCStream(filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-                              configuration: configuration, delegate: nil)
+                              configuration: configuration, delegate: watcher)
         try stream.addStreamOutput(frames, type: .screen, sampleHandlerQueue: frames.queue)
         frames.begin()
         try await stream.startCapture()
@@ -134,10 +138,10 @@ final class GifRecording {
         let stream = stream
         tearDown(keepingBar: true)
         bar.showMaking()
-        let frames = frames, fps = fps, scale = pixelsPerPoint
+        let frames = frames, scale = pixelsPerPoint
         Task { [weak self] in
-            if let stream { try? await stream.stopCapture() }
-            let clip = await Task.detached(priority: .userInitiated) { frames.makeGIF(fps: fps, pointsPerPixel: 1 / scale) }.value
+            if let stream { await Self.stopCapture(stream) }
+            let clip = await Task.detached(priority: .utility) { frames.makeGIF(pointsPerPixel: 1 / scale) }.value
             guard let self else { return }
             bar.orderOut(nil)
             if let clip { onFinish?(clip) } else { onFailure?(ScreenGrabber.Failure.captureFailed) }
@@ -148,9 +152,16 @@ final class GifRecording {
         guard !isOver else { return }
         let stream = stream
         tearDown()
-        Task { if let stream { try? await stream.stopCapture() } }
+        Task { if let stream { await Self.stopCapture(stream) } }
         frames.discard()
         onCancel?()
+    }
+
+    /// A stream that won't stop keeps the screen-recording indicator up; note it for diagnostics.
+    private static func stopCapture(_ stream: SCStream) async {
+        do { try await stream.stopCapture() } catch {
+            Diagnostics.note("capture", "GIF stream didn’t stop: \((error as NSError).code) \(error.localizedDescription)")
+        }
     }
 
     private func tearDown(keepingBar: Bool = false) {
@@ -184,25 +195,24 @@ final class GifRecording {
     }
 }
 
-/// Takes the stream's frames on its own queue and writes each as a PNG with its time; pausing
-/// drops frames and takes the pause out of the timeline. `makeGIF` turns the files into one GIF.
+/// Takes the stream's frames on its own queue and adds each to the GIF as it comes (see GifWriter),
+/// so stopping only has to close the file. Pausing drops frames and takes the pause out of the
+/// timeline; a frame that arrives while the last is still being encoded is dropped.
 final class FrameSink: NSObject, SCStreamOutput, @unchecked Sendable {
-    let queue = DispatchQueue(label: "dev.nycopilot.capture.gif", qos: .userInitiated)
-    private let folder: URL
+    let queue = DispatchQueue(label: "dev.nycopilot.capture.gif", qos: .utility)
+    private let output: URL
     private let lock = NSLock()
-    /// Frame files and their times on the recording's own clock (pauses taken out), in seconds.
-    private var written: [(url: URL, time: Double)] = []
+    /// Only touched on `queue`.
+    private var writer: GifWriter?
     private var started: Double?
     private var pausedAt: Double?
     private var pausedTotal: Double = 0
     private var stoppedAt: Double?
-    /// Frames still being written; more than a few behind and new ones are dropped.
-    private var backlog = 0
+    private var isEncoding = false
 
-    init(folder: URL) {
-        self.folder = folder
+    init(output: URL) {
+        self.output = output
         super.init()
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     }
 
     static var now: Double { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
@@ -235,21 +245,22 @@ final class FrameSink: NSObject, SCStreamOutput, @unchecked Sendable {
         }
     }
 
-    /// A frame shown at `hostTime` (seconds on the host clock), unless paused, stopped, or too far
-    /// behind; `image` is only made for a frame that's kept.
+    /// A frame shown at `hostTime` (seconds on the host clock), unless paused or stopped; `image`
+    /// is only made for a frame that's kept. Call on `queue`.
     func accept(at hostTime: Double, image: () -> CGImage?) {
-        let accepted: (index: Int, time: Double)? = locked {
-            guard let started, pausedAt == nil, stoppedAt == nil, backlog < 4 else { return nil }
-            backlog += 1
-            return (written.count + backlog - 1, hostTime - started - pausedTotal)
+        let time: Double? = locked {
+            guard let started, pausedAt == nil, stoppedAt == nil, !isEncoding else { return nil }
+            isEncoding = true
+            return max(0, hostTime - started - pausedTotal)
         }
-        guard let accepted else { return }
-        defer { locked { backlog -= 1 } }
-        let url = folder.appendingPathComponent(String(format: "%05d.png", accepted.index))
-        guard let image = image(),
-              let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else { return }
-        CGImageDestinationAddImage(destination, image, nil)
-        if CGImageDestinationFinalize(destination) { locked { written.append((url, max(0, accepted.time))) } }
+        guard let time else { return }
+        defer { locked { isEncoding = false } }
+        guard let image = image() else { return }
+        if writer == nil {
+            try? FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+            writer = GifWriter(url: output, width: image.width, height: image.height)
+        }
+        writer?.add(image, at: time)
     }
 
     /// Only frames whose content changed carry an image; idle frames say so in their attachments.
@@ -259,53 +270,44 @@ final class FrameSink: NSObject, SCStreamOutput, @unchecked Sendable {
         return status == .complete
     }
 
-    /// One looping GIF from the frames, each shown until the next arrived; nil without frames.
-    func makeGIF(fps: Int, pointsPerPixel: CGFloat) -> GifClip? {
-        let (frames, end): ([(url: URL, time: Double)], Double) = locked {
+    /// Closes the GIF, the last frame shown until the recording stopped; nil without frames.
+    func makeGIF(pointsPerPixel: CGFloat) -> GifClip? {
+        let end: Double = locked {
             let stop = stoppedAt ?? Self.now
             stoppedAt = stop
             // Stopped while paused: the recording ended when the pause began.
-            let end = (pausedAt ?? stop) - (started ?? stop) - pausedTotal
-            return (written.sorted { $0.time < $1.time }, end)
+            return max(0, (pausedAt ?? stop) - (started ?? stop) - pausedTotal)
         }
-        defer { discard() }
-        guard !frames.isEmpty else { return nil }
-        let output = Self.recordingsFolder.appendingPathComponent("Recording \(Self.stamp()).gif")
-        try? FileManager.default.createDirectory(at: Self.recordingsFolder, withIntermediateDirectories: true)
-        guard let destination = CGImageDestinationCreateWithURL(output as CFURL, UTType.gif.identifier as CFString, frames.count, nil) else { return nil }
-        CGImageDestinationSetProperties(destination, [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary)
-        var size: (width: Int, height: Int) = (0, 0)
-        let shortest = 1 / Double(fps)
-        for (index, frame) in frames.enumerated() {
-            guard let source = CGImageSourceCreateWithURL(frame.url as CFURL, nil) else { continue }
-            if index == 0, let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] {
-                size = (properties[kCGImagePropertyPixelWidth] as? Int ?? 0, properties[kCGImagePropertyPixelHeight] as? Int ?? 0)
-            }
-            let next = index + 1 < frames.count ? frames[index + 1].time : max(end, frame.time + shortest)
-            // GIF delays are in hundredths of a second; viewers stretch anything under 0.02 s.
-            let delay = max(0.02, (next - frame.time).rounded(toPlaces: 2))
-            CGImageDestinationAddImageFromSource(destination, source, 0,
-                                                 [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFDelayTime: delay,
-                                                                                  kCGImagePropertyGIFUnclampedDelayTime: delay]] as CFDictionary)
+        // After any frame still being encoded.
+        return queue.sync {
+            guard let writer, writer.finish(at: end) else { discardNow(); return nil }
+            let bytes = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int) ?? 0
+            Diagnostics.note("capture", "GIF: \(writer.frameCount) frames, \(writer.width)×\(writer.height), \(bytes / 1024) KB")
+            return GifClip(url: output, size: CGSize(width: CGFloat(writer.width) * pointsPerPixel, height: CGFloat(writer.height) * pointsPerPixel),
+                           pixels: (writer.width, writer.height), duration: end, bytes: bytes)
         }
-        guard CGImageDestinationFinalize(destination) else { return nil }
-        let bytes = (try? FileManager.default.attributesOfItem(atPath: output.path)[.size] as? Int) ?? 0
-        Diagnostics.note("capture", "GIF: \(frames.count) frames, \(size.width)×\(size.height), \(bytes / 1024) KB")
-        return GifClip(url: output, size: CGSize(width: CGFloat(size.width) * pointsPerPixel, height: CGFloat(size.height) * pointsPerPixel),
-                       pixels: size, duration: max(end, 0), bytes: bytes)
     }
 
-    func discard() { try? FileManager.default.removeItem(at: folder) }
+    func discard() {
+        locked { stoppedAt = stoppedAt ?? Self.now }
+        queue.async { [self] in discardNow() }
+    }
+
+    private func discardNow() {
+        writer?.finish(at: 0)
+        writer = nil
+        try? FileManager.default.removeItem(at: output)
+    }
 
     /// Finished GIFs wait here until saved or copied; the folder is emptied at launch.
     static var recordingsFolder: URL {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("NyCopilot/Recordings", isDirectory: true)
     }
 
-    private static func stamp() -> String {
+    static func newRecordingURL() -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        return formatter.string(from: Date())
+        return recordingsFolder.appendingPathComponent("Recording \(formatter.string(from: Date())).gif")
     }
 
     private func locked<T>(_ body: () -> T) -> T {
@@ -322,12 +324,6 @@ extension GifRecording {
     }
 }
 
-private extension Double {
-    func rounded(toPlaces places: Int) -> Double {
-        let factor = pow(10, Double(places))
-        return (self * factor).rounded() / factor
-    }
-}
 
 /// The bar beside a recording: a red dot, the time out of a minute, pause, and stop.
 private final class RecordingBar: NSPanel {
@@ -399,4 +395,15 @@ private final class RecordingBar: NSPanel {
 
     @objc private func pauseTapped() { onPause?() }
     @objc private func stopTapped() { onStop?() }
+}
+
+/// Notes when macOS stops a recording's stream on its own (a display change, the system's own
+/// "stop sharing"), so a stuck recording indicator can be explained.
+private final class StreamWatcher: NSObject, SCStreamDelegate, @unchecked Sendable {
+    var onStop: (() -> Void)?
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        Diagnostics.note("capture", "GIF stream stopped by macOS: \((error as NSError).code) \(error.localizedDescription)")
+        onStop?()
+    }
 }
