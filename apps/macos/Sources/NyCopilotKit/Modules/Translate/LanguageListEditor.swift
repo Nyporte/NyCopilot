@@ -34,7 +34,7 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
         table.gridStyleMask = []
         table.dataSource = self
         table.delegate = self
-        table.setAccessibilityLabel("Favorite languages, in Tab order")
+        table.setAccessibilityLabel(L("Favorite languages, in Tab order"))
         table.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
         column.resizingMask = .autoresizingMask
         // Tables load and recycle rows through their clip view, so the list lives in a scroll view
@@ -48,8 +48,8 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
         list.horizontalScrollElasticity = .none
         list.borderType = .noBorder
 
-        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add language")
-        addButton.title = "Add Language"
+        addButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: L("Add language"))
+        addButton.title = L("Add Language")
         addButton.imagePosition = .imageLeading
         addButton.bezelStyle = .rounded
         addButton.target = self
@@ -98,7 +98,7 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
         height.constant = CGFloat(max(names.count, 1)) * Self.rowHeight
         table.reloadData()
         addButton.isEnabled = names.count < Self.maximum
-        addButton.toolTip = names.count < Self.maximum ? nil : "You can keep up to \(Self.maximum) languages."
+        addButton.toolTip = names.count < Self.maximum ? nil : L("You can keep up to %ld languages.", Self.maximum)
     }
 
     /// Commit a new order or set; on rejection keep what was saved and say why.
@@ -145,7 +145,7 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     @objc private func showAddMenu() {
         let menu = NSMenu()
         for suggestion in suggestions where !names.contains(where: { $0.caseInsensitiveCompare(suggestion.name) == .orderedSame }) {
-            let title = suggestion.native == suggestion.name ? suggestion.name : "\(suggestion.native) — \(suggestion.name)"
+            let title = suggestion.native == suggestion.name ? L(suggestion.name) : "\(suggestion.native) — \(L(suggestion.name))"
             let item = NSMenuItem(title: title, action: #selector(addSuggestion(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = suggestion.name
@@ -166,13 +166,13 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     @objc private func addOther() {
         guard let window else { return }
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        field.placeholderString = "Brazilian Portuguese"
+        field.placeholderString = L("Brazilian Portuguese")
         let alert = NSAlert()
-        alert.messageText = "Add a language"
-        alert.informativeText = "Type any language or style the model understands, such as “formal Japanese”."
+        alert.messageText = L("Add a language")
+        alert.informativeText = L("Type any language or style the model understands, such as “formal Japanese”.")
         alert.accessoryView = field
-        alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("Add"))
+        alert.addButton(withTitle: L("Cancel"))
         alert.window.initialFirstResponder = field
         alert.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .alertFirstButtonReturn else { return }
@@ -200,11 +200,12 @@ private final class LanguageRow: NSView {
         badge.addSubview(code)
         badge.translatesAutoresizingMaskIntoConstraints = false
         let native = Design.label(language.native, size: 13)
-        let english = Design.label(language.native == language.name ? "" : language.name, size: 12, color: .secondaryLabelColor)
-        let up = Self.button("chevron.up", "Move \(language.name) up", enabled: !isFirst, action: #selector(moveRowUp), target: self)
-        let down = Self.button("chevron.down", "Move \(language.name) down", enabled: !isLast, action: #selector(moveRowDown), target: self)
-        let remove = Self.button("minus.circle", "Remove \(language.name)", enabled: canRemove, action: #selector(removeTapped), target: self)
-        remove.toolTip = canRemove ? "Remove" : "Keep at least one language"
+        // The core's English name, in the interface language; a name typed by hand shows as typed.
+        let english = Design.label(language.native == language.name ? "" : L(language.name), size: 12, color: .secondaryLabelColor)
+        let up = Self.button("chevron.up", L("Move %@ up", L(language.name)), enabled: !isFirst, action: #selector(moveRowUp), target: self)
+        let down = Self.button("chevron.down", L("Move %@ down", L(language.name)), enabled: !isLast, action: #selector(moveRowDown), target: self)
+        let remove = Self.button("minus.circle", L("Remove %@", L(language.name)), enabled: canRemove, action: #selector(removeTapped), target: self)
+        remove.toolTip = canRemove ? L("Remove") : L("Keep at least one language")
         let controls = Design.hstack([up, down], spacing: 2)
         let row = Design.hstack([badge, native, english, Design.spacer(), controls, remove], spacing: 10)
         row.setCustomSpacing(8, after: native)

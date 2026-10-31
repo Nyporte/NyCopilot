@@ -614,7 +614,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         let text = LiveText.textToCopy(from: overlay)
         guard !text.isEmpty else { return }
         LiveText.copy(text)
-        textBar.flash("Copied")
+        textBar.flash(L("Copied"))
     }
 
     /// T twice — the left hand never moves — or Return, or Copy All: every line, then the capture
@@ -623,7 +623,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         guard let overlay = textOverlay else { return }
         guard let analysis = overlay.analysis else { copyWhenRead = true; return }
         let transcript = analysis.transcript
-        guard !transcript.isEmpty else { textBar.flash("No text to copy"); return }
+        guard !transcript.isEmpty else { textBar.flash(L("No text to copy")); return }
         LiveText.copy(transcript)
         onTextCopied?(transcript.split(whereSeparator: \.isNewline).count)
     }

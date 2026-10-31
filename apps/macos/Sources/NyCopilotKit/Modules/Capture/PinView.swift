@@ -101,17 +101,17 @@ final class PinView: NSView {
         overlay.autoresizingMask = [.width, .height]
         addSubview(overlay, positioned: .below, relativeTo: badge)
         textOverlay = overlay
-        hint = "Reading text…"
+        hint = L("Reading text…")
         Task { [weak self] in
             let analysis = try? await LiveText.analyze(image)
             guard let self, textOverlay === overlay else { return }
             LiveText.show(analysis, on: overlay)
             if analysis.map(LiveText.lineCount) ?? 0 > 0 {
-                hint = "Drag to select · ⌘C copy · T copy all · Esc done"
+                hint = L("Drag to select · ⌘C copy · T copy all · Esc done")
                 if copyWhenRead { copyAllText() }
             } else {
                 endReadingText()
-                flash("No text found")
+                flash(L("No text found"))
             }
         }
     }
@@ -132,7 +132,7 @@ final class PinView: NSView {
         guard !analysis.transcript.isEmpty else { return }
         LiveText.copy(analysis.transcript)
         endReadingText()
-        flash("Copied all text")
+        flash(L("Copied all text"))
     }
 
     /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
@@ -146,7 +146,7 @@ final class PinView: NSView {
             let text = LiveText.textToCopy(from: overlay)
             guard !text.isEmpty else { break }
             LiveText.copy(text)
-            flash("Copied")
+            flash(L("Copied"))
         default: return false
         }
         return true
@@ -200,7 +200,7 @@ final class PinView: NSView {
     override func keyDown(with event: NSEvent) {
         guard let pin else { return }
         if readingTextKeyDown(event) { return }
-        if event.characters == "?" { KeySheet.shared.toggle("Pin keys", groups: KeyGuide.pin, over: pin); return }
+        if event.characters == "?" { KeySheet.shared.toggle(L("Pin keys"), groups: KeyGuide.pin, over: pin); return }
         let command = event.modifierFlags.contains(.command)
         switch (event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
         case ("c", true): pin.copyImage()

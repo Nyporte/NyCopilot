@@ -47,10 +47,10 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
             control.delegate = self
             control.widthAnchor.constraint(equalToConstant: 300).isActive = true
         }
-        removeKey.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Remove saved key")
+        removeKey.image = NSImage(systemSymbolName: "trash", accessibilityDescription: L("Remove saved key"))
         removeKey.isBordered = false
         removeKey.contentTintColor = .secondaryLabelColor
-        removeKey.toolTip = "Remove the saved key"
+        removeKey.toolTip = L("Remove the saved key")
         removeKey.target = self
         removeKey.action = #selector(removeSavedKey)
         testButton.target = self
@@ -86,7 +86,7 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
     }
 
     private func refreshKeyField() {
-        key.placeholderString = hasSavedKey && !removingKey ? "Saved in Keychain — type to replace" : spec.keyPlaceholder
+        key.placeholderString = hasSavedKey && !removingKey ? L("Saved in Keychain — type to replace") : spec.keyPlaceholder
         removeKey.isHidden = !hasSavedKey || removingKey
     }
 
@@ -94,14 +94,14 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
         removingKey = true
         key.stringValue = ""
         refreshKeyField()
-        status.show("The saved key will be removed when you click Save.", style: .info)
+        status.show(L("The saved key will be removed when you click Save."), style: .info)
         updateButtons()
     }
 
     @objc private func save() {
         do {
             if key.stringValue.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
-                throw NyCore.Failure(code: "invalid_key", message: "The key can’t contain line breaks or control characters.", status: nil)
+                throw NyCore.Failure(code: "invalid_key", message: L("The key can’t contain line breaks or control characters."), status: nil)
             }
             try services.core.setSetting(spec.setting, draftField)
             if !key.stringValue.isEmpty {
@@ -117,7 +117,7 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
         removingKey = false
         key.stringValue = ""
         refreshKeyField()
-        status.show("Saved.", style: .success)
+        status.show(L("Saved."), style: .success)
         updateButtons()
         onSave?()
     }
@@ -128,7 +128,7 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
         let typedKey = key.stringValue
         let removing = removingKey
         let spec = spec
-        status.showProgress("Translating a sample…")
+        status.showProgress(L("Translating a sample…"))
         let core = services.core
         struct Sample: Decodable { let text: String; let elapsedMs: Int }
         test = Task { [weak self] in
@@ -142,8 +142,8 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
             test = nil
             switch outcome {
             case .success(let sample):
-                let seconds = String(format: "%.1f", Double(sample.elapsedMs) / 1000)
-                status.show("Working — “Hello, world.” → “\(sample.text)” in \(seconds) s.", style: .success)
+                let seconds = (Double(sample.elapsedMs) / 1000).formatted(.number.precision(.fractionLength(1)))
+                status.show(L("Working — “Hello, world.” → “%@” in %@ s.", sample.text, seconds), style: .success)
             case .failure(let error):
                 status.show(error.localizedDescription, style: .error)
             }
@@ -154,19 +154,19 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
 }
 
 extension ServiceSection.Spec {
-    @MainActor static let google = ServiceSection.Spec(
-        title: "Google Translate",
+    @MainActor static var google: ServiceSection.Spec { ServiceSection.Spec(
+        title: L("Google Translate"),
         footer: L("Runs through your own Apps Script web app. Deploy it with “Execute as: Me” and “Who has access: Anyone”; with any other access setting, requests land on Google’s sign-in page. The key is stored only in your Keychain."),
-        fieldLabel: "Web app URL", fieldPlaceholder: "https://script.google.com/macros/s/…/exec", setting: .googleURL,
-        keyLabel: "Access key", keyPlaceholder: "The key your script checks", keychain: .google,
+        fieldLabel: L("Web app URL"), fieldPlaceholder: "https://script.google.com/macros/s/…/exec", setting: .googleURL,
+        keyLabel: L("Access key"), keyPlaceholder: L("The key your script checks"), keychain: .google,
         isTestable: { url, _ in !url.isEmpty },
-        test: { url, key in (.translateTestGoogle, ["url": url, "key": key]) })
+        test: { url, key in (.translateTestGoogle, ["url": url, "key": key]) }) }
 
-    @MainActor static let volcengine = ServiceSection.Spec(
-        title: "Volcengine",
+    @MainActor static var volcengine: ServiceSection.Spec { ServiceSection.Spec(
+        title: L("Volcengine"),
         footer: L("Doubao machine translation (volc.speech.mt), 32 languages. Paste the API key from the new Volcengine console, or, for old-console credentials, the App ID and access token. The key is stored only in your Keychain."),
-        fieldLabel: "App ID (old console only)", fieldPlaceholder: "Leave empty with an API key", setting: .volcengineAppID,
-        keyLabel: "API key or access token", keyPlaceholder: "From the Volcengine console", keychain: .volcengine,
+        fieldLabel: L("App ID (old console only)"), fieldPlaceholder: L("Leave empty with an API key"), setting: .volcengineAppID,
+        keyLabel: L("API key or access token"), keyPlaceholder: L("From the Volcengine console"), keychain: .volcengine,
         isTestable: { _, hasKey in hasKey },
-        test: { appID, key in (.translateTestVolcengine, ["app_id": appID, "key": key]) })
+        test: { appID, key in (.translateTestVolcengine, ["app_id": appID, "key": key]) }) }
 }

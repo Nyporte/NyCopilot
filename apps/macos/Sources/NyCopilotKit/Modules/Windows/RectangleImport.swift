@@ -62,16 +62,16 @@ enum RectangleImport {
     static func apply(_ result: Result, to services: CopilotServices) -> (summary: String, failed: Int) {
         let failures = services.hotKeys.set(Dictionary(uniqueKeysWithValues: result.shortcuts.map { ("windows.\($0.key)", $0.value) }))
         var summary = result.shortcuts.isEmpty
-            ? "Rectangle uses its default shortcuts, which NyCopilot already matches."
-            : "Imported \(result.shortcuts.count) shortcut\(result.shortcuts.count == 1 ? "" : "s") from Rectangle."
+            ? L("Rectangle uses its default shortcuts, which NyCopilot already matches.")
+            : L("Imported %ld shortcuts from Rectangle.", result.shortcuts.count)
         if let mode = result.repeatMode, (try? services.core.setSetting(.windowRepeat, mode)) != nil {
-            summary += mode == "move_across_displays" ? " Repeating a shortcut now moves the window to the next display."
-                : mode == "nothing" ? " Repeating a shortcut now does nothing." : ""
+            summary += mode == "move_across_displays" ? L(" Repeating a shortcut now moves the window to the next display.")
+                : mode == "nothing" ? L(" Repeating a shortcut now does nothing.") : ""
         }
         if !result.skipped.isEmpty {
-            summary += " Skipped \(result.skipped.count) Rectangle-only action\(result.skipped.count == 1 ? "" : "s") (\(result.skipped.joined(separator: ", ")))."
+            summary += L(" Skipped %ld Rectangle-only actions (%@).", result.skipped.count, ListFormatter.localizedString(byJoining: result.skipped))
         }
-        if !failures.isEmpty { summary += " \(failures.count) couldn’t be registered; quit Rectangle and import again." }
+        if !failures.isEmpty { summary += L(" %ld couldn’t be registered; quit Rectangle and import again.", failures.count) }
         return (summary, failures.count)
     }
 }

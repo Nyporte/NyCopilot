@@ -81,7 +81,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         editor.textContainer?.widthTracksTextView = false
         editor.frame = NSRect(x: 0, y: 0, width: 320, height: Self.lineHeight)
         editor.delegate = self
-        editor.setAccessibilityLabel("Text to translate")
+        editor.setAccessibilityLabel(L("Text to translate"))
         editor.onSubmit = { [weak self] in self?.submit() }
         editor.onCancel = { [weak self] in self?.cancel() }
         editor.onTab = { [weak self] step in self?.cycle(step) }
@@ -166,7 +166,7 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         editor.string = ""
         editor.undoManager?.removeAllActions()
         // Copy mode happens only without Accessibility; say so rather than leave it a mystery.
-        editor.placeholder = mode == .paste ? "Type to translate…" : "Type to translate and copy — Accessibility is off"
+        editor.placeholder = mode == .paste ? L("Type to translate…") : L("Type to translate and copy — Accessibility is off")
         setLanguage(language, animated: false)
         setIdle()
         hideError()

@@ -203,8 +203,13 @@ final class FormRow: NSView {
     let subtitleLabel: NSTextField?
 
     init(_ title: String, subtitle: String? = nil, accessory: NSView?) {
-        let titleLabel = Design.label(title)
+        // A long title (some languages run half again as long) wraps rather than pushing the
+        // control or being cut off: the labels give way and the control keeps its full width.
+        let titleLabel = Design.wrapping(title, size: 13, color: .labelColor)
         subtitleLabel = subtitle.map { Design.wrapping($0, size: 11.5) }
+        for label in [titleLabel] + (subtitleLabel.map { [$0] } ?? []) {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
         super.init(frame: .zero)
         let labels = Design.vstack([titleLabel] + (subtitleLabel.map { [$0] } ?? []), spacing: 2)
         labels.setContentHuggingPriority(.defaultLow, for: .horizontal)

@@ -70,8 +70,8 @@ final class TargetLanguageLabel: NSStackView {
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
     func set(_ language: ComposerPanel.Language, animated: Bool) {
-        toolTip = "Translating into \(language.name). Tab for the next language, Shift+Tab for the previous one."
-        setAccessibilityLabel("Target language: \(language.name). Press Tab to change.")
+        toolTip = L("Translating into %@. Tab for the next language, Shift+Tab for the previous one.", L(language.name))
+        setAccessibilityLabel(L("Target language: %@. Press Tab to change.", L(language.name)))
         let apply = { [weak self] in
             guard let self else { return }
             code.stringValue = language.code

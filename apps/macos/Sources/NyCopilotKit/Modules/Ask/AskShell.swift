@@ -8,7 +8,7 @@ import MacPlatform
 @MainActor
 final class AskShell: ModuleShell {
     let id = "ask"
-    let title = "Ask AI"
+    let title = L("Ask AI")
     let symbolName = "sparkles"
 
     enum Action {

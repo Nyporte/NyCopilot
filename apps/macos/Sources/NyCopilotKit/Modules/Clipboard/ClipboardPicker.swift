@@ -34,7 +34,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
     private let table = NSTableView()
     private let empty = Design.label("", size: 12.5, color: .tertiaryLabelColor)
     private let hint = Design.label("", size: 10.5, color: .tertiaryLabelColor)
-    private static let keysHint = "↩ paste   ⌘P pin   ⌘R translate   ⌘I inbox   ⌘A ask   ⌘/ keys"
+    private static let keysHint = L("↩ paste   ⌘P pin   ⌘R translate   ⌘I inbox   ⌘A ask   ⌘/ keys")
     private var items: [Item] = []
     /// The first `pinnedCount` items are pinned.
     private var pinnedCount = 0
@@ -56,7 +56,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         panel.onResignKey = { [weak self] in self?.close(returningFocus: false) }
 
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 12)
-        search.placeholderString = "Search clipboard history"
+        search.placeholderString = L("Search clipboard history")
         search.delegate = self
         search.focusRingType = .none
         search.font = .systemFont(ofSize: 14)
@@ -112,7 +112,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         self.target = target
         self.source = source
         search.stringValue = ""
-        hint.stringValue = Tips.due("clipboard.pin", after: 3, times: 2) ? "Tip: ⌘P keeps an entry at the top, for good" : Self.keysHint
+        hint.stringValue = Tips.due("clipboard.pin", after: 3, times: 2) ? L("Tip: ⌘P keeps an entry at the top, for good") : Self.keysHint
         reload()
         let pointer = NSEvent.mouseLocation
         let screen = ScreenGeometry.screen(at: pointer)
@@ -163,7 +163,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         items = pinned + history
         table.reloadData()
         if !items.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false); table.scrollRowToVisible(0) }
-        empty.stringValue = query.isEmpty ? "Copy some text or an image and it shows up here." : "Nothing matches “\(query)”."
+        empty.stringValue = query.isEmpty ? L("Copy some text or an image and it shows up here.") : L("Nothing matches “%@”.", query)
         empty.isHidden = !items.isEmpty
     }
 
@@ -203,7 +203,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
             }
             return true
         case "/":
-            KeySheet.shared.toggle("Clipboard keys", groups: KeyGuide.clipboard, over: panel)
+            KeySheet.shared.toggle(L("Clipboard keys"), groups: KeyGuide.clipboard, over: panel)
             return true
         case "r", "i", "a":
             // ⌘A selects the search text while there is some.
@@ -271,7 +271,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         let item = items[row], entry = item.data
         if let name = entry.image {
             cell.show(thumbnail: thumbnail(name))
-            cell.preview.stringValue = "Image  \(entry.width ?? 0) × \(entry.height ?? 0)"
+            cell.preview.stringValue = L("Image  %@", "\(entry.width ?? 0) × \(entry.height ?? 0)")
         } else {
             cell.show(thumbnail: nil)
             cell.preview.stringValue = (entry.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -279,7 +279,7 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         }
         // Never "in 0s": a copy made this instant is simply "now".
         let now = Date()
-        let when = row < pinnedCount ? "Pinned"
+        let when = row < pinnedCount ? L("Pinned")
             : age.localizedString(for: min(Date(timeIntervalSince1970: Double(item.createdAt) / 1000), now), relativeTo: now)
         cell.metadata.stringValue = [row < 9 ? "⌘\(row + 1)" : nil, entry.app.flatMap { $0.isEmpty ? nil : $0 }, when]
             .compactMap { $0 }.joined(separator: "  ·  ")

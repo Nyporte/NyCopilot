@@ -233,6 +233,6 @@ enum ScreenGrabber {
 
     enum Failure: LocalizedError {
         case captureFailed
-        var errorDescription: String? { "macOS didn’t return an image of the screen." }
+        var errorDescription: String? { L("macOS didn’t return an image of the screen.") }
     }
 }

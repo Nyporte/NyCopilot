@@ -7,9 +7,9 @@ final class WindowsPane: SettingsPane {
     private let actions: [WindowsShell.ActionInfo]
     private let dragSwitch = NSSwitch()
     private let repeatMode = NSPopUpButton()
-    private static let repeatModes = [("cycle_sizes", "Cycle sizes (½ → ⅔ → ⅓)"),
-                                      ("move_across_displays", "Move to the next display"),
-                                      ("nothing", "Do nothing")]
+    private static let repeatModes = [("cycle_sizes", L("Cycle sizes (½ → ⅔ → ⅓)")),
+                                      ("move_across_displays", L("Move to the next display")),
+                                      ("nothing", L("Do nothing"))]
     private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 40, target: nil, action: nil)
     private let gapValue = Design.label("", size: 12, color: .secondaryLabelColor)
     private lazy var shortcuts = ShortcutEditor(services: services)
@@ -50,7 +50,7 @@ final class WindowsPane: SettingsPane {
             else { groups.append((action.group, ["windows.\(action.id)"])) }
         }
         for (index, group) in groups.enumerated() {
-            sections.append(shortcuts.section(group.0, footer: index == 0 ? "Click a shortcut and press a new combination. Press Delete to turn it off." : nil,
+            sections.append(shortcuts.section(group.0, footer: index == 0 ? L("Click a shortcut and press a new combination. Press Delete to turn it off.") : nil,
                                               actions: group.1))
         }
         sections.append(shortcuts.errorLabel)

@@ -6,7 +6,7 @@ import MacPlatform
 @MainActor
 final class WindowsShell: ModuleShell {
     let id = "windows"
-    let title = "Window Layouts"
+    let title = L("Window Layouts")
     let symbolName = "rectangle.split.2x1"
 
     struct ActionInfo: Decodable { let id: String; let title: String; let group: String }
@@ -43,7 +43,9 @@ final class WindowsShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
-        actions = (try? services.core.call(.windowsActions, as: [ActionInfo].self)) ?? []
+        // The core names layouts in English; they show in the interface language.
+        actions = ((try? services.core.call(.windowsActions, as: [ActionInfo].self)) ?? [])
+            .map { ActionInfo(id: $0.id, title: L($0.title), group: L($0.group)) }
         snapper = SnapController(core: services.core)
         snapper.onSnap = { [weak self] window, frame, display in self?.apply(frame, to: window, on: display, action: nil) }
         snapper.isEnabled = services.core.setting(.dragSnap, default: true)
@@ -114,7 +116,7 @@ final class WindowsShell: ModuleShell {
 
     func perform(_ action: String) {
         guard Accessibility.isTrusted else {
-            services.toast.show(L("Allow Accessibility to arrange windows"), detail: "Open Settings → General to turn it on.", style: .warning)
+            services.toast.show(L("Allow Accessibility to arrange windows"), detail: L("Open Settings → General to turn it on."), style: .warning)
             return
         }
         guard let window = WindowControl.focusedWindow(), let current = WindowControl.frame(of: window) else {

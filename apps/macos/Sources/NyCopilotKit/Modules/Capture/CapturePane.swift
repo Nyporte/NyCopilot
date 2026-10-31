@@ -19,6 +19,11 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private lazy var shortcuts = ShortcutEditor(services: services)
     private static let formats = [("png", "PNG"), ("jpg", "JPEG")]
+    /// Where saves go until a folder is chosen, with the Pictures folder named as Finder names it.
+    private static var defaultFolderName: String {
+        let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first
+        return (pictures.map { FileManager.default.displayName(atPath: $0.path) } ?? "Pictures") + " › NyCopilot"
+    }
 
     init(services: CopilotServices) {
         self.services = services
@@ -44,7 +49,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         hideSwitch.target = self
         hideSwitch.action = #selector(toggleHide)
         message.isHidden = true
-        gifRate.addItems(withTitles: Self.rates.map { "\($0) frames a second" })
+        gifRate.addItems(withTitles: Self.rates.map { L("%ld frames a second", $0) })
         gifRate.target = self
         gifRate.action = #selector(changeRate)
         gifRetinaSwitch.target = self
@@ -74,7 +79,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
             FormSection(L("Pins"), rows: [
                 FormRow(L("Shadow"), subtitle: L("Draw a shadow around pinned images."), accessory: shadowSwitch)
             ]),
-            shortcuts.section("Shortcuts", footer: """
+            shortcuts.section(L("Shortcuts"), footer: """
                 In a capture: drag or click a window to select · arrows nudge, ⇧ arrows resize · 1–8 pick a tool · \
                 ⌘Z undo · T select text in place, T again copies it all · S scrolling capture · Return copy · ⌘T pin · ⌘S save · C copy the color under the pointer · , and . recall recent regions · Esc cancel.
                 On a pin: drag to move · scroll to zoom · ⌥ scroll for opacity · 1–4 rotate and flip · T select text · ⌘C copy · Esc or double-click to close.
@@ -85,7 +90,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
 
     override func paneWillAppear() {
         let granted = ScreenGrabber.hasPermission
-        permissionBadge.set(granted ? "Allowed" : "Not allowed", color: granted ? .systemGreen : .systemOrange)
+        permissionBadge.set(granted ? L("Allowed") : L("Not allowed"), color: granted ? .systemGreen : .systemOrange)
         permissionButton.isHidden = granted
         refreshFolder()
         let current: String = services.core.setting(.captureFormat, default: "png")
@@ -103,7 +108,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
 
     private func refreshFolder() {
         let chosen: String = services.core.setting(.captureSaveFolder, default: "")
-        folderLabel.stringValue = chosen.isEmpty ? "Pictures › NyCopilot" : (chosen as NSString).abbreviatingWithTildeInPath
+        folderLabel.stringValue = chosen.isEmpty ? Self.defaultFolderName : (chosen as NSString).abbreviatingWithTildeInPath
         folderLabel.toolTip = chosen.isEmpty ? nil : chosen
     }
 
@@ -115,7 +120,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Use Folder"
+        panel.prompt = L("Use Folder")
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .OK, let url = panel.url else { return }
             try? services.core.setSetting(.captureSaveFolder, url.path)

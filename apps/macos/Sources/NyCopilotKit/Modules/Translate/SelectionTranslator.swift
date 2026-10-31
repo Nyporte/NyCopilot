@@ -31,7 +31,7 @@ final class SelectionTranslator {
             ?? NSRect(x: pointer.x, y: pointer.y - 4, width: 1, height: 8)
         let screen = NSScreen.screens.first { $0.frame.intersects(source) } ?? NSScreen.main ?? NSScreen.screens[0]
         let language = Self.language(for: text, core: services.core)
-        card.present(language: services.core.nativeName(of: language), beside: source, on: screen, hint: "⌘C copy   esc close")
+        card.present(language: services.core.nativeName(of: language), beside: source, on: screen, hint: L("⌘C copy   esc close"))
         card.showWaiting()
         keys = [GlobalHotKey.claim(HotKeyCombination(keyCode: UInt32(kVK_Escape), modifiers: 0)) { [weak self] in
                     MainActor.assumeIsolated { self?.dismiss() }

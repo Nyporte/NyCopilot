@@ -95,7 +95,7 @@ final class PinWindow: NSPanel {
 
     func setOpacity(_ value: CGFloat) {
         alphaValue = min(max(value, 0.1), 1)
-        pinView.flash("Opacity \(Int(round(alphaValue * 100)))%")
+        pinView.flash(L("Opacity %@", Double(alphaValue).formatted(.percent.precision(.fractionLength(0)))))
     }
 
     /// T: the pin's text becomes selectable where it is (Live Text); T again copies all of it, Esc goes back.
@@ -117,7 +117,7 @@ final class PinWindow: NSPanel {
     func copyImage() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([displayedImage])
-        pinView.flash("Copied")
+        pinView.flash(L("Copied"))
     }
 
     func setClickThrough(_ on: Bool) {
@@ -164,15 +164,15 @@ final class PinWindow: NSPanel {
             item.state = state ? .on : .off
             menu.addItem(item)
         }
-        add("Copy", #selector(copyFromMenu), key: "c")
-        add("Save…", #selector(saveFromMenu), key: "s")
-        add("Select Text", #selector(selectTextFromMenu), key: "t", state: pinView.isReadingText)
+        add(L("Copy"), #selector(copyFromMenu), key: "c")
+        add(L("Save…"), #selector(saveFromMenu), key: "s")
+        add(L("Select Text"), #selector(selectTextFromMenu), key: "t", state: pinView.isReadingText)
         menu.addItem(.separator())
-        add("Actual Size", #selector(actualSize), key: "0")
+        add(L("Actual Size"), #selector(actualSize), key: "0")
         let opacity = NSMenuItem(title: L("Opacity"), action: nil, keyEquivalent: "")
         let levels = NSMenu()
         for level in [100, 80, 60, 40, 20] {
-            let item = NSMenuItem(title: "\(level)%", action: #selector(pickOpacity(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: (Double(level) / 100).formatted(.percent), action: #selector(pickOpacity(_:)), keyEquivalent: "")
             item.target = self
             item.tag = level
             item.state = Int(round(alphaValue * 100)) == level ? .on : .off
@@ -180,15 +180,15 @@ final class PinWindow: NSPanel {
         }
         opacity.submenu = levels
         menu.addItem(opacity)
-        add("Rotate Left", #selector(rotateLeft), key: "1")
-        add("Rotate Right", #selector(rotateRight), key: "2")
-        add("Flip Horizontal", #selector(flipH), key: "3")
-        add("Flip Vertical", #selector(flipV), key: "4")
-        add("Shadow", #selector(toggleShadow), state: hasShadow)
-        add("Click Through", #selector(toggleClickThrough))
+        add(L("Rotate Left"), #selector(rotateLeft), key: "1")
+        add(L("Rotate Right"), #selector(rotateRight), key: "2")
+        add(L("Flip Horizontal"), #selector(flipH), key: "3")
+        add(L("Flip Vertical"), #selector(flipV), key: "4")
+        add(L("Shadow"), #selector(toggleShadow), state: hasShadow)
+        add(L("Click Through"), #selector(toggleClickThrough))
         menu.addItem(.separator())
-        add("Close", #selector(closeFromMenu))
-        add("Close All Pins", #selector(closeAllFromMenu))
+        add(L("Close"), #selector(closeFromMenu))
+        add(L("Close All Pins"), #selector(closeAllFromMenu))
         // Digits and T work on their own; copy and save take ⌘.
         for item in menu.items where !item.keyEquivalent.isEmpty {
             item.keyEquivalentModifierMask = item.keyEquivalent.first!.isNumber || item.keyEquivalent == "t" ? [] : [.command]

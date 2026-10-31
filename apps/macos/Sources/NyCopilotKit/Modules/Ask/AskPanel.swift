@@ -98,7 +98,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
 
-        input.placeholderString = "Ask anything about this…"
+        input.placeholderString = L("Ask anything about this…")
         input.font = .systemFont(ofSize: 14)
         input.isBordered = false
         input.drawsBackground = false
@@ -161,10 +161,10 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         transcript.string = ""
         input.stringValue = ""
         let snippet = material.text.trimmingCharacters(in: .whitespacesAndNewlines).split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
-        let what = material.image != nil ? "Screenshot" : snippet.isEmpty ? "" : "“\(snippet)”"
+        let what = material.image != nil ? L("Screenshot") : snippet.isEmpty ? "" : "“\(snippet)”"
         subject.stringValue = [what, material.source.app].filter { !$0.isEmpty }.joined(separator: " · ")
         for chip in chips { chip.isHidden = material.isEmpty }
-        input.placeholderString = material.isEmpty ? "Ask anything…" : "Ask anything about this, or ↩ to explain"
+        input.placeholderString = material.isEmpty ? L("Ask anything…") : L("Ask anything about this, or ↩ to explain")
         if let image = material.image {
             picture.image = image
             pictureHeight.constant = min(120, image.size.height * min(1, (Self.width - 32) / max(image.size.width, 1)))
@@ -299,13 +299,13 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     }
 
     private func updateHint() {
-        var parts = [material.isEmpty ? "↩ ask" : turns.isEmpty ? "↩ ask or explain" : "↩ follow up"]
-        if !material.isEmpty { parts.append("⌘1–3 actions") }
+        var parts = [material.isEmpty ? L("↩ ask") : turns.isEmpty ? L("↩ ask or explain") : L("↩ follow up")]
+        if !material.isEmpty { parts.append(L("⌘1–3 actions")) }
         if lastAnswer != nil {
-            parts += ["⌘C copy", "⌘I inbox", "⌘P pin"]
-            if material.replaceable != nil { parts.append("⌘↩ replace selection") }
+            parts += [L("⌘C copy"), L("⌘I inbox"), L("⌘P pin")]
+            if material.replaceable != nil { parts.append(L("⌘↩ replace selection")) }
         }
-        parts.append("⌘/ keys")
+        parts.append(L("⌘/ keys"))
         hint.stringValue = parts.joined(separator: "   ")
     }
 
@@ -327,7 +327,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
             NSPasteboard.general.setString(text, forType: .string)
             return true
         case "/":
-            KeySheet.shared.toggle("Ask AI keys", groups: KeyGuide.ask, over: panel)
+            KeySheet.shared.toggle(L("Ask AI keys"), groups: KeyGuide.ask, over: panel)
             return true
         case "i":
             guard let lastAnswer else { return true }

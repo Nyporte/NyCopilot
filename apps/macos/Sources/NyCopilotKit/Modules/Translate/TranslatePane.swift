@@ -56,7 +56,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
                         footer: L("Sent to the model (Settings → AI & Engines) with each translation it makes; the other engines don’t take instructions. {language} becomes the target language. Your text is always sent separately, never inside these instructions."),
                         rows: [makeEditor()]),
             instructionsBar,
-            shortcuts.section("Shortcuts", footer: L("Click a shortcut and press a new combination. Press Delete to turn it off. Hold the translate shortcut to highlight all the text on screen, then point at a block to read its translation; Esc ends it."),
+            shortcuts.section(L("Shortcuts"), footer: L("Click a shortcut and press a new combination. Press Delete to turn it off. Hold the translate shortcut to highlight all the text on screen, then point at a block to read its translation; Esc ends it."),
                               actions: [TranslateShell.Action.compose, TranslateShell.Action.history]),
             shortcuts.errorLabel,
             FormSection(L("History"),
@@ -97,7 +97,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         instructions.isVerticallyResizable = true
         instructions.textContainer?.widthTracksTextView = true
         instructions.delegate = self
-        instructions.setAccessibilityLabel("Translation instructions")
+        instructions.setAccessibilityLabel(L("Translation instructions"))
         let scroll = NSScrollView()
         scroll.documentView = instructions
         scroll.hasVerticalScroller = true
@@ -129,7 +129,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         saveButton.isEnabled = edited
         restoreButton.isEnabled = edited || savedInstructions != defaultInstructions
         if edited {
-            instructionsStatus.stringValue = "Unsaved changes"
+            instructionsStatus.stringValue = L("Unsaved changes")
             instructionsStatus.textColor = .secondaryLabelColor
         }
     }
@@ -144,7 +144,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
             try services.core.setSetting(.instructions, instructions.string)
             savedInstructions = services.core.setting(.instructions, default: "")
             instructionsStatus.stringValue = instructions.string.contains("{language}")
-                ? "Saved" : "Saved — without {language}, the target language setting is ignored"
+                ? L("Saved") : L("Saved — without {language}, the target language setting is ignored")
             instructionsStatus.textColor = instructions.string.contains("{language}") ? .secondaryLabelColor : .systemOrange
         } catch {
             instructionsStatus.stringValue = error.localizedDescription
@@ -156,7 +156,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     @objc private func restoreInstructions() {
         try? services.core.resetSetting(.instructions)
         loadInstructions()
-        instructionsStatus.stringValue = "Default instructions restored"
+        instructionsStatus.stringValue = L("Default instructions restored")
     }
 
     /// The manifest default, so "Restore Default" can tell whether anything differs from it.
@@ -179,11 +179,11 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     @objc private func clearHistory() {
         guard let window = view.window else { return }
         let alert = NSAlert()
-        alert.messageText = "Clear translation history?"
-        alert.informativeText = "All saved translations will be permanently removed from this Mac."
+        alert.messageText = L("Clear translation history?")
+        alert.informativeText = L("All saved translations will be permanently removed from this Mac.")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Clear History").hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("Clear History")).hasDestructiveAction = true
+        alert.addButton(withTitle: L("Cancel"))
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
             _ = try? self?.services.core.clearRecords(.translateHistory)

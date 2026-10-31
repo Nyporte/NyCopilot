@@ -6,7 +6,7 @@ import MacPlatform
 @MainActor
 final class CaptureShell: ModuleShell {
     let id = "capture"
-    let title = "Screenshot & Pin"
+    let title = L("Screenshot & Pin")
     let symbolName = "camera.viewfinder"
 
     enum Action {
@@ -31,7 +31,7 @@ final class CaptureShell: ModuleShell {
         GifRecording.removeLeftovers()
         CaptureStreams.shared.onStuck = { [weak services] in
             services?.toast.show(L("macOS kept a screen capture running"),
-                                 detail: "Its recording indicator stays on. Settings → General → Restart Screen Capture Service ends it.",
+                                 detail: L("Its recording indicator stays on. Settings → General → Restart Screen Capture Service ends it."),
                                  style: .warning)
         }
         // The display lookup is the slowest part of starting a capture; have it ready.
@@ -57,7 +57,7 @@ final class CaptureShell: ModuleShell {
             services.menuItem(L("Pin Clipboard"), symbol: "pin", hotKey: Action.pinClipboard, target: self, action: #selector(pinFromMenu))
         ]
         if !board.pins.isEmpty {
-            items.append(services.menuItem(board.areHidden ? "Show Pins" : "Hide Pins", symbol: board.areHidden ? "eye" : "eye.slash",
+            items.append(services.menuItem(board.areHidden ? L("Show Pins") : L("Hide Pins"), symbol: board.areHidden ? "eye" : "eye.slash",
                                            hotKey: Action.togglePins, target: self, action: #selector(togglePins)))
             if board.hasClickThrough {
                 items.append(services.menuItem(L("Make Pins Clickable"), symbol: "cursorarrow.click", hotKey: nil, target: self,
@@ -95,7 +95,7 @@ final class CaptureShell: ModuleShell {
         guard session == nil else { return }
         guard ScreenGrabber.hasPermission else {
             ScreenGrabber.requestPermission()
-            services.toast.show(L("Allow Screen Recording to capture"), detail: "Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording, then press the shortcut again.", style: .warning)
+            services.toast.show(L("Allow Screen Recording to capture"), detail: L("Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording, then press the shortcut again."), style: .warning)
             return
         }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
@@ -136,7 +136,7 @@ final class CaptureShell: ModuleShell {
                 }
                 session.onTextCopied = { [weak self] lines, region, _ in
                     self?.end()
-                    self?.services.toast.show("Copied \(lines) line\(lines == 1 ? "" : "s") of text", style: .success,
+                    self?.services.toast.show(L("Copied %ld lines of text", lines), style: .success,
                                               near: CaptureSession.appKitRect(region))
                 }
                 session.onCancel = { [weak self] in self?.end() }
@@ -183,7 +183,7 @@ final class CaptureShell: ModuleShell {
             end()
             if let url = write(image, to: nextFileURL()) {
                 record(image, region: region, screen: screen, path: url.path)
-                services.toast.show("Saved “\(url.lastPathComponent)”", detail: url.deletingLastPathComponent().path, style: .success)
+                services.toast.show(L("Saved “%@”", url.lastPathComponent), detail: url.deletingLastPathComponent().path, style: .success)
             }
         case .pin:
             // A scrolling capture is taller than its region: it starts there and fits the screen.
@@ -202,7 +202,7 @@ final class CaptureShell: ModuleShell {
 
     private func tipAboutPins(near frame: NSRect) {
         guard Tips.due("pin.keys", times: 2) else { return }
-        services.toast.show(L("Pinned"), detail: "Scroll to zoom, ⌥-scroll for opacity. Click it and press ? for all its keys.", style: .info,
+        services.toast.show(L("Pinned"), detail: L("Scroll to zoom, ⌥-scroll for opacity. Click it and press ? for all its keys."), style: .info,
                             near: frame)
     }
 
@@ -252,7 +252,7 @@ final class CaptureShell: ModuleShell {
             item.setString(clip.url.absoluteString, forType: .fileURL)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.writeObjects([item])
-            services.toast.show(L("GIF copied"), detail: "Paste it into a chat or a document.", style: .success, near: region)
+            services.toast.show(L("GIF copied"), detail: L("Paste it into a chat or a document."), style: .success, near: region)
         case .save:
             NSApp.bringForward()
             let panel = NSSavePanel()
@@ -269,7 +269,7 @@ final class CaptureShell: ModuleShell {
         case .quickSave:
             let url = nextFileURL(extension: "gif")
             if move(clip, to: url) {
-                services.toast.show("Saved “\(url.lastPathComponent)”", detail: url.deletingLastPathComponent().path, style: .success)
+                services.toast.show(L("Saved “%@”", url.lastPathComponent), detail: url.deletingLastPathComponent().path, style: .success)
             }
         case .inbox:
             services.sendFileToInbox(clip.url, previousApp)
@@ -395,7 +395,7 @@ final class CaptureShell: ModuleShell {
         } else if let text = board.string(forType: .string), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             pin(text: text, image: nil)
         } else {
-            services.toast.show(L("Nothing to pin"), detail: "Copy an image, some text, or a color first.", style: .info)
+            services.toast.show(L("Nothing to pin"), detail: L("Copy an image, some text, or a color first."), style: .info)
         }
     }
 

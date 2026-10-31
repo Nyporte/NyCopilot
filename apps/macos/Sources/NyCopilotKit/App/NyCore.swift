@@ -14,12 +14,13 @@ final class NyCore: @unchecked Sendable {
     private var settingsCache: [String: Any] = [:]
     private var observer: NSObjectProtocol?
 
-    /// The error envelope from the core: a stable `code` plus a message suitable for display.
+    /// The error envelope from the core: a stable `code` plus an English message, shown in the
+    /// interface language.
     struct Failure: LocalizedError, Decodable {
         let code: String
         let message: String
         let status: Int?
-        var errorDescription: String? { message }
+        var errorDescription: String? { CoreText.localized(message) }
     }
 
     init(dataDirectory: URL) throws {

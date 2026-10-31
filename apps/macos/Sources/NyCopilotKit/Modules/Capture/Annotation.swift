@@ -7,14 +7,14 @@ enum AnnotationTool: CaseIterable {
 
     var title: String {
         switch self {
-        case .rectangle: return "Rectangle"
-        case .ellipse: return "Ellipse"
-        case .arrow: return "Arrow"
-        case .line: return "Line"
-        case .pen: return "Pen"
-        case .marker: return "Highlighter"
-        case .mosaic: return "Mosaic"
-        case .text: return "Text"
+        case .rectangle: return L("Rectangle")
+        case .ellipse: return L("Ellipse")
+        case .arrow: return L("Arrow")
+        case .line: return L("Line")
+        case .pen: return L("Pen")
+        case .marker: return L("Highlighter")
+        case .mosaic: return L("Mosaic")
+        case .text: return L("Text")
         }
     }
 

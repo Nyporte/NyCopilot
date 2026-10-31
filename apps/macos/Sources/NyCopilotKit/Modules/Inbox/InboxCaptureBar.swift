@@ -43,7 +43,7 @@ final class InboxCaptureBar {
         input.autoresizingMask = [.width]
         input.textContainer?.widthTracksTextView = true
         input.textContainer?.lineFragmentPadding = 0
-        input.placeholder = "Jot something down"
+        input.placeholder = L("Jot something down")
         input.onSubmit = { [weak self] in self?.save() }
         input.onCancel = { [weak self] in self?.close() }
         input.onChange = { [weak self] in self?.fit() }
@@ -85,9 +85,9 @@ final class InboxCaptureBar {
         self.context = context
         returnTo = app
         let place = [context.app, context.title].filter { !$0.isEmpty }.joined(separator: " — ")
-        source.stringValue = place.isEmpty ? "No source" : place
+        source.stringValue = place.isEmpty ? L("No source") : place
         sourceIcon.image = NSImage(systemSymbolName: context.url.hasPrefix("http") ? "globe" : "macwindow", accessibilityDescription: nil)
-        hint.stringValue = "↩ save   ⇧↩ new line   ⌘O inbox" + (waiting > 0 ? " (\(waiting))" : "")
+        hint.stringValue = L("↩ save   ⇧↩ new line   ⌘O inbox") + (waiting > 0 ? " (\(waiting))" : "")
         fit()
         let pointer = NSEvent.mouseLocation
         let screen = ScreenGeometry.screen(at: pointer)

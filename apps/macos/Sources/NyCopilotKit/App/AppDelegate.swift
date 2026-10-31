@@ -29,7 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             core = try NyCore(dataDirectory: Preferences.dataDirectory)
         } catch {
             let alert = NSAlert()
-            alert.messageText = "NyCopilot couldn’t start"
+            alert.messageText = L("NyCopilot couldn’t start")
             alert.informativeText = error.localizedDescription
             alert.runModal()
             NSApp.terminate(nil)
@@ -84,30 +84,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // A standard main menu so text editing, ⌘W, and ⌘, work in NyCopilot's own windows.
         let main = NSMenu()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About NyCopilot", action: #selector(showAbout), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: L("About NyCopilot"), action: #selector(showAbout), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(withTitle: L("Settings…"), action: #selector(openSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit NyCopilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: L("Quit NyCopilot"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let appItem = NSMenuItem()
         appItem.submenu = appMenu
         main.addItem(appItem)
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        let edit = NSMenu(title: L("Edit"))
+        edit.addItem(withTitle: L("Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: L("Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: L("Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L("Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L("Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: L("Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Find", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f").tag = 1
+        edit.addItem(withTitle: L("Find"), action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f").tag = 1
         let editItem = NSMenuItem()
         editItem.submenu = edit
         main.addItem(editItem)
-        let windowMenu = NSMenu(title: "Window")
-        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        let windowMenu = NSMenu(title: L("Window"))
+        windowMenu.addItem(withTitle: L("Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: L("Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         let windowItem = NSMenuItem()
         windowItem.submenu = windowMenu
         main.addItem(windowItem)
@@ -186,14 +186,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 services.hotKeys.combination(for: action.id).map { (KeyNames.display($0), action.title) }
             }
             guard !keys.isEmpty else { return nil }
-            if keys.count > 7 { keys = Array(keys.prefix(6)) + [("…", "\(keys.count - 6) more in Settings → \(module.title)")] }
+            if keys.count > 7 { keys = Array(keys.prefix(6)) + [("…", L("%ld more in Settings → %@", keys.count - 6, module.title))] }
             return KeySheet.Group(title: module.title, keys: keys)
         }
         groups.append(KeyGuide.verbs)
         if let combination = services.hotKeys.combination(for: Self.showShortcutsAction) {
-            groups.append(.init(title: "Help", keys: [(KeyNames.display(combination), "This sheet"), ("?", "A surface’s own keys (⌘/ where you type)")]))
+            groups.append(.init(title: L("Help"), keys: [(KeyNames.display(combination), L("This sheet")), ("?", L("A surface’s own keys (⌘/ where you type)"))]))
         }
-        KeySheet.shared.toggle("Keyboard Shortcuts", groups: groups)
+        KeySheet.shared.toggle(L("Keyboard Shortcuts"), groups: groups)
     }
 
     private func showWelcome() {
@@ -203,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Quits and opens again: a small shell waits for this process to exit (a second copy would
     /// otherwise see this one still running and quit), then opens the app.
-    @objc private func restart() {
+    @objc func restart() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.1; done; /usr/bin/open \"$2\"", "restart",
@@ -220,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func showAbout() {
         NSApp.bringForward()
-        let credits = NSAttributedString(string: "Your AI copilot for every app.\nModules: " + modules.map(\.title).joined(separator: ", "),
+        let credits = NSAttributedString(string: L("Your AI copilot for every app.") + "\n" + L("Modules: %@", ListFormatter.localizedString(byJoining: modules.map(\.title))),
                                          attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
         NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }

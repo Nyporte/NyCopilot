@@ -104,6 +104,6 @@ enum KeychainStore {
     /// Report the system status, never credential contents.
     struct Failure: LocalizedError {
         let status: OSStatus
-        var errorDescription: String? { "Couldn’t access the macOS Keychain (\(status)). Unlock it and try again." }
+        var errorDescription: String? { L("Couldn’t access the macOS Keychain (%@). Unlock it and try again.", String(status)) }
     }
 }

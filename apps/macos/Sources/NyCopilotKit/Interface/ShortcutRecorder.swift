@@ -19,12 +19,12 @@ final class ShortcutRecorder: AppearanceView {
         radius = 6
         text.alignment = .center
         text.translatesAutoresizingMaskIntoConstraints = false
-        clear.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Turn off shortcut")
+        clear.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: L("Turn off shortcut"))
         clear.isBordered = false
         clear.contentTintColor = .tertiaryLabelColor
         clear.target = self
         clear.action = #selector(clearShortcut)
-        clear.toolTip = "Turn off this shortcut"
+        clear.toolTip = L("Turn off this shortcut")
         clear.translatesAutoresizingMaskIntoConstraints = false
         addSubview(text)
         addSubview(clear)
@@ -39,7 +39,7 @@ final class ShortcutRecorder: AppearanceView {
             clear.widthAnchor.constraint(equalToConstant: 14)
         ])
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Keyboard shortcut")
+        setAccessibilityLabel(L("Keyboard shortcut"))
         refresh()
     }
 
@@ -66,7 +66,7 @@ final class ShortcutRecorder: AppearanceView {
             guard let self, recording else { return event }
             if event.type == .flagsChanged {
                 let symbols = HotKeyCombination(keyCode: 0, modifiers: KeyNames.carbonModifiers(event.modifierFlags)).modifierSymbols
-                text.stringValue = symbols.isEmpty ? "Type shortcut…" : symbols
+                text.stringValue = symbols.isEmpty ? L("Type shortcut…") : symbols
                 return nil
             }
             handle(event)
@@ -91,7 +91,7 @@ final class ShortcutRecorder: AppearanceView {
         let candidate = HotKeyCombination(keyCode: UInt32(event.keyCode), modifiers: KeyNames.carbonModifiers(flags))
         guard candidate.isValid else {
             NSSound.beep()
-            onError?("Include ⌘, ⌥, or ⌃, or use a function key, so the shortcut doesn’t interfere with typing.")
+            onError?(L("Include ⌘, ⌥, or ⌃, or use a function key, so the shortcut doesn’t interfere with typing."))
             return
         }
         finish()
@@ -120,12 +120,12 @@ final class ShortcutRecorder: AppearanceView {
 
     private func refresh() {
         if recording {
-            text.stringValue = "Type shortcut…"
+            text.stringValue = L("Type shortcut…")
             text.textColor = .controlAccentColor
             fill = NSColor.controlAccentColor.withAlphaComponent(0.12)
             border = .controlAccentColor
         } else {
-            text.stringValue = combination.map(KeyNames.display) ?? "Record Shortcut"
+            text.stringValue = combination.map(KeyNames.display) ?? L("Record Shortcut")
             text.textColor = combination == nil ? .tertiaryLabelColor : .labelColor
             fill = .controlBackgroundColor
             border = .separatorColor

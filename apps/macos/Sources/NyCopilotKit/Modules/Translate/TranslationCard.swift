@@ -77,7 +77,7 @@ final class TranslationCard: FloatingPanel {
     func showWaiting() {
         spinner.startAnimation(nil)
         text.textColor = .secondaryLabelColor
-        text.stringValue = "Translating…"
+        text.stringValue = L("Translating…")
         place()
     }
 

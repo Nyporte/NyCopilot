@@ -27,7 +27,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     let toast: Toast
     /// R, A, P on a note: translate it, ask about it, pin it to the screen.
     var onVerb: ((Verb, String, NSImage?) -> Void)?
-    let tabs = NSSegmentedControl(labels: ["Inbox", "Later", "Done"], trackingMode: .selectOne, target: nil, action: nil)
+    let tabs = NSSegmentedControl(labels: [L("Inbox"), L("Later"), L("Done")], trackingMode: .selectOne, target: nil, action: nil)
     let search = NSSearchField()
     let table = InboxTable()
     let empty = EmptyStateView()
@@ -78,7 +78,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         self.toast = toast
         let window = InboxWindowPanel(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
                                       styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
-        window.title = "Inbox"
+        window.title = L("Inbox")
         window.minSize = NSSize(width: 620, height: 380)
         window.isReleasedWhenClosed = false
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
@@ -129,7 +129,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         tabs.target = self
         tabs.action = #selector(switchTab)
         tabs.selectedSegment = 0
-        search.placeholderString = "Search notes"
+        search.placeholderString = L("Search notes")
         search.target = self
         search.action = #selector(searchChanged)
         search.sendsSearchStringImmediately = true
@@ -177,8 +177,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         laterButton.image = NSImage(systemSymbolName: "clock", accessibilityDescription: nil)
         for button in [sendButton, laterButton] { button.imagePosition = .imageLeading }
         // The rarer actions are icons, so the row fits a narrow pane.
-        for (button, symbol, tip) in [(copyButton, "doc.on.doc", "Copy (⌘C)"), (openButton, "arrow.up.forward.app", "Open Source (⌘O)"),
-                                      (deleteButton, "trash", "Delete (⌫)")] {
+        for (button, symbol, tip) in [(copyButton, "doc.on.doc", L("Copy (⌘C)")), (openButton, "arrow.up.forward.app", L("Open Source (⌘O)")),
+                                      (deleteButton, "trash", L("Delete (⌫)"))] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
             button.imagePosition = .imageOnly
             button.toolTip = tip
@@ -273,28 +273,40 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             rows.append(.note(item))
         }
         let waiting = core.inboxCount()
-        tabs.setLabel(waiting > 0 ? "Inbox (\(waiting))" : "Inbox", forSegment: 0)
+        tabs.setLabel(waiting > 0 ? L("Inbox (%ld)", waiting) : L("Inbox"), forSegment: 0)
         table.reloadData()
         if let selectedID, let row = rows.firstIndex(where: { if case .note(let item) = $0 { item.id == selectedID } else { false } }) {
             table.selectRowIndexes([row], byExtendingSelection: false)
         }
         let (symbol, title, message): (String, String, String) = switch tab {
-        case .inbox: ("tray", "All clear", "Press F3 to jot something down, or select text and press F3 to keep it.")
-        case .later: ("clock", "Nothing snoozed", "Press L on a note to put it away until later; it comes back to the top of the inbox.")
-        case .done: ("checkmark.circle", "Nothing done yet", "Notes you mark done stay here for 30 days, in case you need one back.")
+        case .inbox: ("tray", L("All clear"), L("Press F3 to jot something down, or select text and press F3 to keep it."))
+        case .later: ("clock", L("Nothing snoozed"), L("Press L on a note to put it away until later; it comes back to the top of the inbox."))
+        case .done: ("checkmark.circle", L("Nothing done yet"), L("Notes you mark done stay here for 30 days, in case you need one back."))
         }
-        empty.show(symbol: query.isEmpty ? symbol : "magnifyingglass", title: query.isEmpty ? title : "No matches",
-                   message: query.isEmpty ? message : "Nothing here mentions “\(query)”.")
+        empty.show(symbol: query.isEmpty ? symbol : "magnifyingglass", title: query.isEmpty ? title : L("No matches"),
+                   message: query.isEmpty ? message : L("Nothing here mentions “%@”.", query))
         empty.isHidden = !items.isEmpty
         showSelected()
     }
 
-    static func day(of date: Date) -> String {
+    /// A list heading: "Today", "Yesterday", or the date, in the interface language.
+    static func day(of date: Date) -> String { describe(date, time: false, context: .standalone) }
+
+    /// A day and time inside a sentence: "today at 9:41 AM", "Thu, Oct 29, 9:41 AM".
+    static func moment(_ date: Date) -> String { describe(date, time: true, context: .middleOfSentence) }
+
+    private static func describe(_ date: Date, time: Bool, context: Formatter.Context) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Today" }
-        if calendar.isDateInYesterday(date) { return "Yesterday" }
         let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate(calendar.isDate(date, equalTo: Date(), toGranularity: .year) ? "EEEMMMd" : "yMMMd")
+        formatter.formattingContext = context
+        if calendar.isDateInToday(date) || calendar.isDateInYesterday(date) || calendar.isDateInTomorrow(date) {
+            formatter.dateStyle = .medium
+            formatter.timeStyle = time ? .short : .none
+            formatter.doesRelativeDateFormatting = true
+        } else {
+            let day = calendar.isDate(date, equalTo: Date(), toGranularity: .year) ? "EEEMMMd" : "yMMMd"
+            formatter.setLocalizedDateFormatFromTemplate(day + (time ? "jmm" : ""))
+        }
         return formatter.string(from: date)
     }
 
@@ -349,17 +361,17 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         sourceLabel.toolTip = sourceLabel.stringValue
         sourceLabel.isHidden = sourceLabel.stringValue.isEmpty
         let created = Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000)
-        var when = "Added \(Self.day(of: created).lowercasedIfRelative) at \(clock.string(from: created))"
+        var when = L("Added %@", Self.moment(created))
         if let until = item.data.until {
             let back = Date(timeIntervalSince1970: Double(until) / 1000)
-            when += " · back \(Self.day(of: back).lowercasedIfRelative) at \(clock.string(from: back))"
+            when += L(" · back %@", Self.moment(back))
         }
         if let doneAt = item.data.doneAt {
             let done = Date(timeIntervalSince1970: Double(doneAt) / 1000)
-            when += " · done \(Self.day(of: done).lowercasedIfRelative) at \(clock.string(from: done))"
+            when += L(" · done %@", Self.moment(done))
         }
         timeLabel.stringValue = when
-        doneButton.title = switch tab { case .inbox: "Done"; case .later: "Back Now"; case .done: "Not Done" }
+        doneButton.title = switch tab { case .inbox: L("Done"); case .later: L("Back Now"); case .done: L("Not Done") }
         sendButton.isHidden = tab != .inbox
         laterButton.isHidden = tab != .inbox
         openButton.isEnabled = address != nil || runningApp(named: item.data.app) != nil
@@ -396,7 +408,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         switch key {
         case .space: toggleDoneSelected()
         case .character("s") where tab == .inbox: showSendMenu()
-        case .character("?"): KeySheet.shared.toggle("Inbox keys", groups: KeyGuide.inbox, over: window)
+        case .character("?"): KeySheet.shared.toggle(L("Inbox keys"), groups: KeyGuide.inbox, over: window)
         case .character("r"): verb(.translate)
         case .character("a"): verb(.ask)
         case .character("p"): verb(.pin)
@@ -496,7 +508,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             cell.identifier = .init("note")
             let firstLine = item.data.text.split(whereSeparator: \.isNewline).first.map(String.init)?.trimmingCharacters(in: .whitespaces)
             let picture = item.data.image?.hasSuffix(".gif") == true ? "Recording" : "Screenshot"
-            cell.title.stringValue = firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? (item.data.image == nil ? "Empty note" : picture)
+            cell.title.stringValue = firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? (item.data.image == nil ? L("Empty note") : picture)
             cell.icon.image = NSImage(systemSymbolName: item.data.image != nil ? "photo" : item.data.source == "selection" ? "text.quote" : "pencil",
                                       accessibilityDescription: nil)
             let time = clock.string(from: Date(timeIntervalSince1970: Double(item.data.created ?? item.createdAt) / 1000))

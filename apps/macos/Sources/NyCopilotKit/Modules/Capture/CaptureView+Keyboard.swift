@@ -6,7 +6,7 @@ extension CaptureView {
 
     override func keyDown(with event: NSEvent) {
         if isReadingText { readingTextKeyDown(event); return }
-        if event.characters == "?" { KeySheet.shared.toggle("Screenshot keys", groups: KeyGuide.capture, over: window); return }
+        if event.characters == "?" { KeySheet.shared.toggle(L("Screenshot keys"), groups: KeyGuide.capture, over: window); return }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags) {
@@ -115,7 +115,7 @@ extension CaptureView {
         let value = copiesHex ? swatch.hexString : Self.rgb(swatch).replacingOccurrences(of: "RGB ", with: "")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
-        copiedFlash = "Copied \(value)"
+        copiedFlash = L("Copied %@", value)
         clearFlash?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.copiedFlash = nil

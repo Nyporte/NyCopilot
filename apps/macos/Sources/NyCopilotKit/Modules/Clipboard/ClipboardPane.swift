@@ -9,7 +9,14 @@ final class ClipboardPane: SettingsPane {
     private let atMost = NSPopUpButton()
     private let clearButton = Design.button(L("Clear History…"), target: nil, action: nil)
     private lazy var shortcuts = ShortcutEditor(services: services)
-    private static let days = [(1, "1 day"), (7, "1 week"), (30, "30 days"), (90, "90 days"), (365, "1 year")]
+    private static let days = [(1, DateComponents(day: 1)), (7, DateComponents(weekOfMonth: 1)), (30, DateComponents(day: 30)),
+                                (90, DateComponents(day: 90)), (365, DateComponents(year: 1))]
+        .map { ($0.0, ClipboardPane.duration.string(from: $0.1) ?? "\($0.0)") }
+    private static let duration: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
     private static let counts = [100, 500, 1000, 5000]
 
     init(services: CopilotServices) {
@@ -25,7 +32,7 @@ final class ClipboardPane: SettingsPane {
         keepFor.addItems(withTitles: Self.days.map(\.1))
         keepFor.target = self
         keepFor.action = #selector(changeDays)
-        atMost.addItems(withTitles: Self.counts.map { "\($0) entries" })
+        atMost.addItems(withTitles: Self.counts.map { L("%ld entries", $0) })
         atMost.target = self
         atMost.action = #selector(changeCount)
         clearButton.target = self
@@ -37,7 +44,7 @@ final class ClipboardPane: SettingsPane {
                 FormRow(L("Keep at most"), accessory: atMost),
                 FormRow(L("Forget everything"), accessory: clearButton)
             ]),
-            shortcuts.section("Shortcuts", footer: L("Type to search, ↩ pastes into the app you were in, ⌘1–9 picks one of the first nine, ⌘P pins."),
+            shortcuts.section(L("Shortcuts"), footer: L("Type to search, ↩ pastes into the app you were in, ⌘1–9 picks one of the first nine, ⌘P pins."),
                               actions: [ClipboardShell.Action.open]),
             shortcuts.errorLabel
         ]
@@ -68,10 +75,10 @@ final class ClipboardPane: SettingsPane {
 
     @objc private func clearHistory() {
         let alert = NSAlert()
-        alert.messageText = "Clear clipboard history?"
-        alert.informativeText = "Every kept copy is removed; pinned entries and what’s on the clipboard now stay."
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L("Clear clipboard history?")
+        alert.informativeText = L("Every kept copy is removed; pinned entries and what’s on the clipboard now stay.")
+        alert.addButton(withTitle: L("Clear"))
+        alert.addButton(withTitle: L("Cancel"))
         alert.buttons.first?.hasDestructiveAction = true
         guard let window = view.window else { return }
         alert.beginSheetModal(for: window) { [weak self] response in

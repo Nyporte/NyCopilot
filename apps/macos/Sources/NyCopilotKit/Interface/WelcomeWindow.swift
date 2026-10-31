@@ -17,24 +17,24 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
 
     private static let goals: [Goal] = [
         Goal(module: "translate", title: L("Translate what I write and read"),
-             detail: "Write in any language; read selections and the whole screen in yours.", action: TranslateShell.Action.compose),
+             detail: L("Write in any language; read selections and the whole screen in yours."), action: TranslateShell.Action.compose),
         Goal(module: "capture", title: L("Capture and mark up the screen"),
-             detail: "Screenshots with arrows and text; pin them; capture long pages.", action: CaptureShell.Action.capture),
+             detail: L("Screenshots with arrows and text; pin them; capture long pages."), action: CaptureShell.Action.capture),
         Goal(module: "ask", title: L("Ask AI about anything"),
-             detail: "Explain, summarize, or rewrite what you select or capture.", action: AskShell.Action.open),
+             detail: L("Explain, summarize, or rewrite what you select or capture."), action: AskShell.Action.open),
         Goal(module: "inbox", title: L("Catch thoughts for later"),
-             detail: "One key to jot a thought or keep a selection; deal with it later.", action: InboxShell.Action.capture),
+             detail: L("One key to jot a thought or keep a selection; deal with it later."), action: InboxShell.Action.capture),
         Goal(module: "clipboard", title: L("Remember what I copy"),
-             detail: "Everything you copy, text and images, ready to paste again.", action: ClipboardShell.Action.open),
+             detail: L("Everything you copy, text and images, ready to paste again."), action: ClipboardShell.Action.open),
         Goal(module: "windows", title: L("Arrange windows"),
-             detail: "Halves, thirds, and corners, by shortcut or by dragging.", action: nil, fixedKeys: "⌃⌥ ← →")
+             detail: L("Halves, thirds, and corners, by shortcut or by dragging."), action: nil, fixedKeys: "⌃⌥ ← →")
     ]
 
     private let services: CopilotServices
     private var goalRows: [(goal: Goal, box: NSButton, keys: NSTextField)] = []
     private let scheme = NSSegmentedControl(labels: KeyScheme.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
     private let accessStep = StepRow(number: 1, title: L("Allow Accessibility"),
-                                     detail: "To read what you select, paste results back, and move windows.")
+                                     detail: L("To read what you select, paste results back, and move windows."))
     private let modelStep = StepRow(number: 2, title: L("Connect a model (optional)"), detail: "")
     private var poll: Timer?
     var onFinish: (() -> Void)?
@@ -64,14 +64,14 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         scheme.target = self
         scheme.action = #selector(schemeChanged)
         let keyboard = FormSection(L("Shortcuts"), footer: KeyScheme.functionKeysAreStandard
-            ? "Your F-keys send F1, F2…, so F1 and F3 are one press. ⌥⌘/ shows every shortcut any time."
-            : "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time.",
+            ? L("Your F-keys send F1, F2…, so F1 and F3 are one press. ⌥⌘/ shows every shortcut any time.")
+            : L("Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time."),
             rows: [FormRow(L("One-press keys"), subtitle: L("Screenshot and Inbox"), accessory: scheme)])
 
-        accessStep.button.title = "Allow…"
+        accessStep.button.title = L("Allow…")
         accessStep.button.target = self
         accessStep.button.action = #selector(allowAccess)
-        modelStep.button.title = "Set Up…"
+        modelStep.button.title = L("Set Up…")
         modelStep.button.target = self
         modelStep.button.action = #selector(setUpModel)
         let setup = FormSection(L("Setup"), rows: [accessStep, modelStep])
@@ -154,8 +154,8 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         accessStep.isComplete = Accessibility.isTrusted
         modelStep.isComplete = services.preferences.provider.isComplete
         modelStep.detail = SystemTranslation.isAvailable
-            ? "Translation already works through macOS. A model adds Ask AI and screen translation."
-            : "Any OpenAI-compatible endpoint, hosted or local. Translation and Ask AI need it, or Google or Volcengine for translation."
+            ? L("Translation already works through macOS. A model adds Ask AI and screen translation.")
+            : L("Any OpenAI-compatible endpoint, hosted or local. Translation and Ask AI need it, or Google or Volcengine for translation.")
         let schemeKeys = chosenScheme.combinations
         for row in goalRows {
             let combination = row.goal.action.flatMap { schemeKeys[$0] ?? services.hotKeys.combination(for: $0)
@@ -180,9 +180,9 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         window?.close()
         let help = services.hotKeys.combination(for: AppDelegate.showShortcutsAction).map(KeyNames.display) ?? "⌥⌘/"
         if failures.isEmpty {
-            services.toast.show(L("You’re set"), detail: "\(help) shows every shortcut; ? shows the keys of whatever you’re in.", style: .success)
+            services.toast.show(L("You’re set"), detail: L("%@ shows every shortcut; ? shows the keys of whatever you’re in.", help), style: .success)
         } else {
-            services.toast.show(L("Some shortcuts are taken by another app"), detail: "Choose others in Settings. \(help) shows them all.", style: .warning)
+            services.toast.show(L("Some shortcuts are taken by another app"), detail: L("Choose others in Settings. %@ shows them all.", help), style: .warning)
         }
     }
 

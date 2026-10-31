@@ -11,6 +11,8 @@ final class GeneralPane: SettingsPane {
     private let diagnosticsButton = Design.button(L("Copy Diagnostics"), target: nil, action: nil)
     private let captureServiceButton = Design.button(L("Restart"), target: nil, action: nil)
     private let loginSwitch = NSSwitch()
+    private let languagePopup = NSPopUpButton()
+    private let restartButton = Design.button(L("Restart Now"), target: nil, action: nil)
     private let loginNote = Design.wrapping("", size: 11.5)
     private var poll: Timer?
     private lazy var shortcuts = ShortcutEditor(services: services)
@@ -48,6 +50,19 @@ final class GeneralPane: SettingsPane {
         loginNote.isHidden = true
         let login = FormRow(L("Open at login"), subtitle: nil, accessory: loginSwitch)
 
+        languagePopup.addItem(withTitle: L("System — %@", InterfaceLanguage.name(of: InterfaceLanguage.system)))
+        languagePopup.menu?.addItem(.separator())
+        for language in InterfaceLanguage.available {
+            languagePopup.addItem(withTitle: language.name)
+            languagePopup.lastItem?.representedObject = language.code
+        }
+        languagePopup.target = self
+        languagePopup.action = #selector(changeLanguage)
+        restartButton.target = self
+        restartButton.action = #selector(restartApp)
+        let language = FormRow(L("Language"), subtitle: L("NyCopilot’s menus, settings, and messages. A new language takes effect when NyCopilot restarts."),
+                               accessory: Design.hstack([restartButton, languagePopup], spacing: 8))
+
         moduleSwitches = services.moduleList().map { module in
             let toggle = NSSwitch()
             toggle.target = self
@@ -62,8 +77,8 @@ final class GeneralPane: SettingsPane {
         var sections: [NSView] = [
             FormSection(L("Permissions"), rows: [access, recording]),
             modules,
-            FormSection(L("Startup"), rows: [login]),
-            shortcuts.section("Shortcuts", footer: L("Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys."),
+            FormSection(L("Startup"), rows: [language, login]),
+            shortcuts.section(L("Shortcuts"), footer: L("Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys."),
                               actions: [AppDelegate.showShortcutsAction]),
             shortcuts.errorLabel,
             FormSection(L("Troubleshooting"), rows: [diagnostics, captureService]),
@@ -80,6 +95,7 @@ final class GeneralPane: SettingsPane {
         shortcuts.refresh()
         for entry in moduleSwitches { entry.toggle.state = services.isModuleOn(entry.id) ? .on : .off }
         refreshAccess()
+        showLanguage()
         loginSwitch.state = LaunchAtLogin.isEnabled || LaunchAtLogin.needsApproval ? .on : .off
         showLoginNote()
         // Permission is granted in another app; re-check while this pane is on screen.
@@ -99,17 +115,34 @@ final class GeneralPane: SettingsPane {
 
     private func refreshAccess() {
         let trusted = Accessibility.isTrusted
-        accessBadge.set(trusted ? "Allowed" : "Not allowed", color: trusted ? .systemGreen : .systemOrange)
+        accessBadge.set(trusted ? L("Allowed") : L("Not allowed"), color: trusted ? .systemGreen : .systemOrange)
         accessButton.isHidden = trusted
         let recording = ScreenGrabber.hasPermission
-        recordingBadge.set(recording ? "Allowed" : "Not allowed", color: recording ? .systemGreen : .systemOrange)
+        recordingBadge.set(recording ? L("Allowed") : L("Not allowed"), color: recording ? .systemGreen : .systemOrange)
         recordingButton.isHidden = recording
     }
 
     private func showLoginNote() {
         loginNote.isHidden = !LaunchAtLogin.needsApproval
-        loginNote.stringValue = "Approve NyCopilot in System Settings → General → Login Items to finish."
+        loginNote.stringValue = L("Approve NyCopilot in System Settings → General → Login Items to finish.")
     }
+
+    private func showLanguage() {
+        let chosen = InterfaceLanguage.chosen
+        if let item = languagePopup.itemArray.first(where: { ($0.representedObject as? String) == chosen }) {
+            languagePopup.select(item)
+        } else {
+            languagePopup.selectItem(at: 0)
+        }
+        restartButton.isHidden = (chosen ?? InterfaceLanguage.system) == InterfaceLanguage.running
+    }
+
+    @objc private func changeLanguage() {
+        InterfaceLanguage.chosen = languagePopup.selectedItem?.representedObject as? String
+        showLanguage()
+    }
+
+    @objc private func restartApp() { (NSApp.delegate as? AppDelegate)?.restart() }
 
     @objc private func requestAccess() { Accessibility.requestAccess() }
     @objc private func requestRecording() { ScreenGrabber.requestPermission() }
@@ -121,21 +154,21 @@ final class GeneralPane: SettingsPane {
 
     @objc private func restartCaptureService() {
         let done = CaptureStreams.restartCaptureService()
-        services.toast.show(done ? "Screen capture service restarted" : "Couldn’t restart the screen capture service", style: done ? .success : .warning)
+        services.toast.show(done ? L("Screen capture service restarted") : L("Couldn’t restart the screen capture service"), style: done ? .success : .warning)
     }
 
     @objc private func copyDiagnostics() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Diagnostics.report(), forType: .string)
-        diagnosticsButton.title = "Copied"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.diagnosticsButton.title = "Copy Diagnostics" }
+        diagnosticsButton.title = L("Copied")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.diagnosticsButton.title = L("Copy Diagnostics") }
     }
     @objc private func showGuide() { services.showWelcome() }
 
     @objc private func toggleLogin() {
         do { try LaunchAtLogin.set(loginSwitch.state == .on) } catch {
             loginSwitch.state = LaunchAtLogin.isEnabled ? .on : .off
-            loginNote.stringValue = "Couldn’t change the login item: \(error.localizedDescription)"
+            loginNote.stringValue = L("Couldn’t change the login item: %@", error.localizedDescription)
             loginNote.isHidden = false
             return
         }

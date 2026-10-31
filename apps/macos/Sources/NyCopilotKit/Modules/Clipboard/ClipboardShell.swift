@@ -8,7 +8,7 @@ import MacPlatform
 @MainActor
 final class ClipboardShell: ModuleShell {
     let id = "clipboard"
-    let title = "Clipboard"
+    let title = L("Clipboard")
     let symbolName = "doc.on.clipboard"
 
     enum Action {
@@ -168,7 +168,7 @@ final class ClipboardShell: ModuleShell {
     private func paste(_ entry: ClipboardEntry, into target: InputTarget?) {
         guard put(entry) else { return }
         guard let target else {
-            services.toast.show(L("Copied"), detail: "Press ⌘V to paste.", style: .success)
+            services.toast.show(L("Copied"), detail: L("Press ⌘V to paste."), style: .success)
             return
         }
         Task {
@@ -179,7 +179,7 @@ final class ClipboardShell: ModuleShell {
                 Diagnostics.note("clipboard", "pasted from history")
             } catch {
                 Diagnostics.note("clipboard", "didn’t paste: \(error.localizedDescription)")
-                services.toast.show(L("Copied"), detail: "Press ⌘V to paste.", style: .success)
+                services.toast.show(L("Copied"), detail: L("Press ⌘V to paste."), style: .success)
             }
             // Pasting puts the clipboard back as it was: the pick itself.
             lastChange = NSPasteboard.general.changeCount

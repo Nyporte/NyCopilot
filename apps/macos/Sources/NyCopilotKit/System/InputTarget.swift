@@ -437,11 +437,11 @@ final class InputTarget: @unchecked Sendable {
         case pasteUnavailable
         var errorDescription: String? {
             switch self {
-            case .permissionRequired: return "NyCopilot needs Accessibility access to work with text fields."
-            case .secureField: return "NyCopilot never reads or writes password fields."
-            case .targetChanged: return "The original field closed while you were typing, so NyCopilot didn’t paste."
-            case .focusChanged: return "Focus moved to another field, so NyCopilot didn’t paste."
-            case .pasteUnavailable: return "macOS couldn’t create a paste event."
+            case .permissionRequired: return L("NyCopilot needs Accessibility access to work with text fields.")
+            case .secureField: return L("NyCopilot never reads or writes password fields.")
+            case .targetChanged: return L("The original field closed while you were typing, so NyCopilot didn’t paste.")
+            case .focusChanged: return L("Focus moved to another field, so NyCopilot didn’t paste.")
+            case .pasteUnavailable: return L("macOS couldn’t create a paste event.")
             }
         }
     }

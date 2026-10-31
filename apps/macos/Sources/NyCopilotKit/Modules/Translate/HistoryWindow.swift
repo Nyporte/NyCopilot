@@ -27,7 +27,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         let window = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 500),
                                   styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
                                   backing: .buffered, defer: true)
-        window.title = "Translation History"
+        window.title = L("Translation History")
         window.minSize = NSSize(width: 560, height: 360)
         window.isReleasedWhenClosed = false
         window.titlebarSeparatorStyle = .automatic
@@ -79,7 +79,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         table.doubleAction = #selector(copySelected)
         table.onCopy = { [weak self] in self?.copySelected() }
         table.onDelete = { [weak self] in self?.deleteSelected() }
-        table.setAccessibilityLabel("Translations, newest first")
+        table.setAccessibilityLabel(L("Translations, newest first"))
         let menu = NSMenu()
         menu.delegate = self
         table.menu = menu
@@ -108,7 +108,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
         detail.defaultParagraphStyle = paragraph
-        detail.setAccessibilityLabel("Full translation")
+        detail.setAccessibilityLabel(L("Full translation"))
         let textScroll = NSScrollView()
         textScroll.documentView = detail
         textScroll.hasVerticalScroller = true
@@ -120,9 +120,9 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         copyButton.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
         copyButton.imagePosition = .imageLeading
         copyButton.keyEquivalent = "\r"
-        deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Delete")
+        deleteButton.image = NSImage(systemSymbolName: "trash", accessibilityDescription: L("Delete"))
         deleteButton.bezelStyle = .rounded
-        deleteButton.toolTip = "Delete this translation (⌫)"
+        deleteButton.toolTip = L("Delete this translation (⌫)")
         deleteButton.target = self
         deleteButton.action = #selector(deleteSelected)
         let bar = Design.hstack([detailMeta, Design.spacer(), deleteButton, copyButton])
@@ -195,8 +195,8 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         guard let item else { return }
         detail.string = item.data.text
         detail.scrollToBeginningOfDocument(nil)
-        detailMeta.stringValue = "\(item.data.targetLanguage) · \(Self.longDate.string(from: date(item)))"
-        copyButton.title = "Copy"
+        detailMeta.stringValue = "\(L(item.data.targetLanguage)) · \(Self.longDate.string(from: date(item)))"
+        copyButton.title = L("Copy")
     }
 
     private func date(_ item: Item) -> Date { Date(timeIntervalSince1970: Double(item.createdAt) / 1000) }
@@ -211,7 +211,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         cell.identifier = identifier
         let item = items[row]
         cell.preview.stringValue = item.data.text.replacingOccurrences(of: "\n", with: " ")
-        cell.metadata.stringValue = "\(Self.shortDate(date(item))) · \(item.data.targetLanguage)"
+        cell.metadata.stringValue = "\(Self.shortDate(date(item))) · \(L(item.data.targetLanguage))"
         // Page in older entries as the user scrolls near the end.
         if row >= items.count - 10 { DispatchQueue.main.async { [weak self] in self?.load(reset: false) } }
         return cell
@@ -223,8 +223,8 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         menu.removeAllItems()
         guard table.clickedRow >= 0 else { return }
         table.selectRowIndexes(IndexSet(integer: table.clickedRow), byExtendingSelection: false)
-        menu.addItem(withTitle: "Copy", action: #selector(copySelected), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "Delete", action: #selector(deleteSelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("Copy"), action: #selector(copySelected), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L("Delete"), action: #selector(deleteSelected), keyEquivalent: "").target = self
     }
 
     // MARK: Actions
@@ -233,8 +233,8 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         guard let item = selectedItem else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(item.data.text, forType: .string)
-        copyButton.title = "Copied"
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in self?.copyButton.title = "Copy" }
+        copyButton.title = L("Copied")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak self] in self?.copyButton.title = L("Copy") }
     }
 
     @objc private func deleteSelected() {
@@ -262,7 +262,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         guard identifier == searchItem else { return nil }
         let item = NSSearchToolbarItem(itemIdentifier: identifier)
-        item.searchField.placeholderString = "Search translations"
+        item.searchField.placeholderString = L("Search translations")
         item.searchField.delegate = self
         searchField = item.searchField
         return item
@@ -365,8 +365,8 @@ final class EmptyStateView: NSStackView {
     }
 
     func configure(searching: Bool, query: String) {
-        show(symbol: searching ? "magnifyingglass" : "clock.arrow.circlepath", title: searching ? "No Results" : "No Translations Yet",
-             message: searching ? "Nothing matches “\(query)”." : "Translations you make in any app will appear here.")
+        show(symbol: searching ? "magnifyingglass" : "clock.arrow.circlepath", title: searching ? L("No Results") : L("No Translations Yet"),
+             message: searching ? L("Nothing matches “%@”.", query) : L("Translations you make in any app will appear here."))
     }
 
     func configure(error: String) {

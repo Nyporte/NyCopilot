@@ -10,9 +10,9 @@ enum NoteExport {
 
         var title: String {
             switch self {
-            case .reminders: "Reminders"
-            case .notes: "Notes"
-            case .markdown: "Markdown Folder"
+            case .reminders: L("Reminders")
+            case .notes: L("Notes")
+            case .markdown: L("Markdown Folder")
             }
         }
 
@@ -49,10 +49,10 @@ enum NoteExport {
 
         var errorDescription: String? {
             switch self {
-            case .remindersDenied: "NyCopilot isn’t allowed to add reminders. Allow it in System Settings → Privacy & Security → Reminders."
-            case .noReminderList: "Reminders has no list to add to."
-            case .notesFailed(let why): "Notes didn’t take the note: \(why)"
-            case .noFolder: "Choose a folder for Markdown notes first."
+            case .remindersDenied: L("NyCopilot isn’t allowed to add reminders. Allow it in System Settings → Privacy & Security → Reminders.")
+            case .noReminderList: L("Reminders has no list to add to.")
+            case .notesFailed(let why): L("Notes didn’t take the note: %@", why)
+            case .noFolder: L("Choose a folder for Markdown notes first.")
             }
         }
     }
@@ -65,9 +65,9 @@ enum NoteExport {
         case .markdown:
             guard let folder = markdownFolder(core: core, choosingIfNeeded: true) else { throw Failure.noFolder }
             let file = try toMarkdown(content, in: folder)
-            return "Saved as \(file.lastPathComponent)"
+            return L("Saved as %@", file.lastPathComponent)
         }
-        return "Sent to \(destination.title)"
+        return L("Sent to %@", destination.title)
     }
 
     // MARK: Reminders
@@ -135,8 +135,8 @@ enum NoteExport {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
-        panel.prompt = "Choose"
-        panel.message = "Inbox notes you send as Markdown are saved here, one file each."
+        panel.prompt = L("Choose")
+        panel.message = L("Inbox notes you send as Markdown are saved here, one file each.")
         NSApp.bringForward()
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         try? core.setSetting(.inboxMarkdownFolder, url.path)
@@ -181,11 +181,11 @@ enum SnoozeChoice: CaseIterable {
 
     var title: String {
         switch self {
-        case .laterToday: "Later Today"
-        case .thisEvening: "This Evening"
-        case .tomorrow: "Tomorrow"
-        case .weekend: "This Weekend"
-        case .nextWeek: "Next Week"
+        case .laterToday: L("Later Today")
+        case .thisEvening: L("This Evening")
+        case .tomorrow: L("Tomorrow")
+        case .weekend: L("This Weekend")
+        case .nextWeek: L("Next Week")
         }
     }
 

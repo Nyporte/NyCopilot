@@ -366,14 +366,14 @@ final class RecordingBar: FloatingPanel {
         recordButton.wantsLayer = true
         recordButton.layer?.backgroundColor = NSColor.systemRed.cgColor
         recordButton.layer?.cornerRadius = 12
-        recordButton.attributedTitle = NSAttributedString(string: "  ● Record  ", attributes: [
+        recordButton.attributedTitle = NSAttributedString(string: L("  ● Record  "), attributes: [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.white])
         recordButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
-        recordButton.toolTip = "Start recording (\(shortcut))"
+        recordButton.toolTip = L("Start recording (%@)", shortcut)
         recordButton.target = self
         recordButton.action = #selector(recordTapped)
-        for (button, symbol, tip, action) in [(pauseButton, "pause.fill", "Pause", #selector(pauseTapped)),
-                                              (stopButton, "stop.fill", "Stop (\(shortcut))", #selector(stopTapped))] {
+        for (button, symbol, tip, action) in [(pauseButton, "pause.fill", L("Pause"), #selector(pauseTapped)),
+                                              (stopButton, "stop.fill", L("Stop (%@)", shortcut), #selector(stopTapped))] {
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)
             button.isBordered = false
             button.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
@@ -407,14 +407,14 @@ final class RecordingBar: FloatingPanel {
 
 
     private func showReady() {
-        hint.stringValue = "\(shortcut) start   esc cancel"
+        hint.stringValue = L("%@ start   esc cancel", shortcut)
         for view in [dot, time, pauseButton, stopButton] as [NSView] { view.isHidden = true }
     }
 
     func showRecording() {
         recordButton.isHidden = true
         for view in [dot, time, pauseButton, stopButton] as [NSView] { view.isHidden = false }
-        hint.stringValue = "\(shortcut) stop"
+        hint.stringValue = L("%@ stop", shortcut)
         show(elapsed: 0, paused: false)
     }
 
@@ -422,12 +422,12 @@ final class RecordingBar: FloatingPanel {
         let seconds = Int(elapsed)
         time.stringValue = String(format: "%d:%02d", seconds / 60, seconds % 60) + (seconds >= Int(GifRecording.maximumDuration) - 10 ? " / 1:00" : "")
         dot.alphaValue = paused ? 0.35 : (dot.alphaValue < 1 ? 1 : 0.55)
-        pauseButton.image = NSImage(systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: paused ? "Resume" : "Pause")
-        pauseButton.toolTip = paused ? "Resume" : "Pause"
+        pauseButton.image = NSImage(systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: paused ? L("Resume") : L("Pause"))
+        pauseButton.toolTip = paused ? L("Resume") : L("Pause")
     }
 
     func showMaking() {
-        hint.stringValue = "Making the GIF…"
+        hint.stringValue = L("Making the GIF…")
         pauseButton.isHidden = true
         stopButton.isHidden = true
         spinner.startAnimation(nil)

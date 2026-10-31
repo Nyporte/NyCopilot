@@ -365,10 +365,10 @@ final class ScrollCapturePanel: FloatingPanel {
             return button
         }
         // As in the GIF preview: discard apart on the left, the likeliest on the right, Copy the default.
-        let discard = icon("trash", "Discard (Esc)", #selector(cancelTapped))
-        let buttons = [discard, icon("tray.and.arrow.down", "Keep in Inbox", #selector(inboxTapped)),
-                       icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)", #selector(saveTapped)),
-                       icon("pin", "Pin to screen (⌘T)", #selector(pinTapped))]
+        let discard = icon("trash", L("Discard (Esc)"), #selector(cancelTapped))
+        let buttons = [discard, icon("tray.and.arrow.down", L("Keep in Inbox"), #selector(inboxTapped)),
+                       icon("square.and.arrow.down", L("Save… (⌘S) · Quick save (⇧⌘S)"), #selector(saveTapped)),
+                       icon("pin", L("Pin to screen (⌘T)"), #selector(pinTapped))]
         let actions = Design.hstack([discard, Design.spacer()] + buttons.dropFirst().map { $0 as NSView } + [copyButton], spacing: 2)
         let column = Design.vstack([preview, size, hint, actions], spacing: 8, alignment: .leading)
         column.translatesAutoresizingMaskIntoConstraints = false
@@ -386,12 +386,12 @@ final class ScrollCapturePanel: FloatingPanel {
 
     func show(_ outcome: ScrollStitcher.Outcome, height: Int, thumbnail: CGImage?) {
         if let thumbnail { preview.image = thumbnail }
-        size.stringValue = height > 0 ? "\(height.formatted()) px tall" : "Starting…"
+        size.stringValue = height > 0 ? L("%@ px tall", height.formatted()) : L("Starting…")
         copyButton.isEnabled = height > 0
         switch outcome {
-        case .lost: hint.stringValue = "Too fast — scroll back a little to fill the gap."
-        case .full: hint.stringValue = "That’s the maximum length. Copy, save, or pin it."
-        case .added: hint.stringValue = "Keep scrolling either way, or press Return to copy."
+        case .lost: hint.stringValue = L("Too fast — scroll back a little to fill the gap.")
+        case .full: hint.stringValue = L("That’s the maximum length. Copy, save, or pin it.")
+        case .added: hint.stringValue = L("Keep scrolling either way, or press Return to copy.")
         default: break
         }
     }

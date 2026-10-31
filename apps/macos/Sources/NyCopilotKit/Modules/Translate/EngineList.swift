@@ -20,13 +20,13 @@ final class EngineList: NSStackView {
         let core = services.core
         engines = [
             Engine(id: "google", name: "Google Translate", enabled: .googleEnabled) {
-                core.setting(.googleURL, default: "").isEmpty ? "Add a web app URL below" : "Ready"
+                core.setting(.googleURL, default: "").isEmpty ? L("Add a web app URL below") : L("Ready")
             },
             Engine(id: "volcengine", name: "Volcengine", enabled: .volcengineEnabled) {
-                KeychainStore.hasKey(.volcengine) ? "Ready" : "Add a key below"
+                KeychainStore.hasKey(.volcengine) ? L("Ready") : L("Add a key below")
             },
-            Engine(id: "model", name: "Model", enabled: .modelEnabled) {
-                services.preferences.provider.isComplete ? "Ready — \(services.preferences.provider.model)" : "Connect one above"
+            Engine(id: "model", name: L("Model"), enabled: .modelEnabled) {
+                services.preferences.provider.isComplete ? L("Ready — %@", services.preferences.provider.model) : L("Connect one above")
             }
         ]
         super.init(frame: .zero)
@@ -53,13 +53,13 @@ final class EngineList: NSStackView {
             toggle.identifier = NSUserInterfaceItemIdentifier(engine.id)
             toggle.target = self
             toggle.action = #selector(toggle(_:))
-            let up = arrow("chevron.up", "Try earlier", index: index, enabled: index > 0, action: #selector(tryEarlier(_:)))
-            let down = arrow("chevron.down", "Try later", index: index, enabled: index < order.count - 1, action: #selector(tryLater(_:)))
-            let status = enabled ? engine.status() : "Off"
+            let up = arrow("chevron.up", L("Try earlier"), index: index, enabled: index > 0, action: #selector(tryEarlier(_:)))
+            let down = arrow("chevron.down", L("Try later"), index: index, enabled: index < order.count - 1, action: #selector(tryLater(_:)))
+            let status = enabled ? engine.status() : L("Off")
             return FormRow("\(index + 1).  \(engine.name)", subtitle: status, accessory: Design.hstack([up, down, toggle], spacing: 4))
         }
         let fallback = SystemTranslation.isAvailable
-            ? " With none ready, macOS’s own translation panel translates what you write or select, on this Mac." : ""
+            ? L(" With none ready, macOS’s own translation panel translates what you write or select, on this Mac.") : ""
         let section = FormSection(L("Translation Engines"),
             footer: L("Each translation goes to the first ready engine. If it fails, or doesn’t offer the language, the next one takes over and a short note says so. Only the model follows Translate’s instructions.") + fallback,
             rows: rows)

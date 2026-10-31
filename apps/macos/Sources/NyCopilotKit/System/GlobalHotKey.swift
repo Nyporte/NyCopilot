@@ -76,8 +76,8 @@ final class GlobalHotKey {
         let status: OSStatus
         var errorDescription: String? {
             status == eventHotKeyExistsErr
-                ? "That shortcut is already used by another app. Choose a different one."
-                : "macOS couldn’t register that shortcut (\(status)). Choose a different one."
+                ? L("That shortcut is already used by another app. Choose a different one.")
+                : L("macOS couldn’t register that shortcut (%@). Choose a different one.", String(status))
         }
     }
 }

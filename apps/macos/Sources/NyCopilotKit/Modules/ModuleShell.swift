@@ -40,10 +40,10 @@ enum Verb: CaseIterable {
 
     var title: String {
         switch self {
-        case .translate: "Translate"
-        case .inbox: "Keep in Inbox"
-        case .ask: "Ask AI"
-        case .pin: "Pin to Screen"
+        case .translate: L("Translate")
+        case .inbox: L("Keep in Inbox")
+        case .ask: L("Ask AI")
+        case .pin: L("Pin to Screen")
         }
     }
 }

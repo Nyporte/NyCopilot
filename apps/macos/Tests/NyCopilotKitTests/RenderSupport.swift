@@ -57,3 +57,31 @@ enum Render {
         return image
     }
 }
+
+extension Render {
+    /// The text of every single-line label, button, and segmented control that is narrower than
+    /// its own text, so it shows cut off. Wrapping labels grow instead, so they never count.
+    @MainActor
+    static func clipped(_ view: NSView) -> [String] {
+        view.layoutSubtreeIfNeeded()
+        var found: [String] = []
+        func visit(_ view: NSView) {
+            guard !view.isHidden, view.alphaValue > 0 else { return }
+            let room = view.bounds.width + 1
+            if view.bounds.width > 0 {
+                if let field = view as? NSTextField, !field.isEditable, !field.stringValue.isEmpty, let cell = field.cell, !cell.wraps,
+                   cell.cellSize.width > room {
+                    found.append(field.stringValue)
+                } else if let button = view as? NSButton, !(view is NSPopUpButton), !button.title.isEmpty, button.imagePosition != .imageOnly,
+                          button.intrinsicContentSize.width > room {
+                    found.append(button.title)
+                } else if let control = view as? NSSegmentedControl, control.intrinsicContentSize.width > room {
+                    found.append((0..<control.segmentCount).compactMap { control.label(forSegment: $0) }.joined(separator: " | "))
+                }
+            }
+            view.subviews.forEach(visit)
+        }
+        visit(view)
+        return found
+    }
+}

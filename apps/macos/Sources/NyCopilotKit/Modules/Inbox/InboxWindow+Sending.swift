@@ -46,7 +46,7 @@ extension InboxWindow {
         let row = table.selectedRow
         do {
             if let snoozedID = try core.inboxSnooze(item.id, until: Int64(date.timeIntervalSince1970 * 1000)) {
-                remember("Snooze") { [core] in (try? core.inboxWake(snoozedID))?.first?.id }
+                remember(L("Snooze")) { [core] in (try? core.inboxWake(snoozedID))?.first?.id }
             }
         } catch {
             NSSound.beep()
@@ -75,10 +75,10 @@ extension InboxWindow {
                 let done = try await NoteExport.send(content, to: destination, core: self.core)
                 if selectedItem?.id == item.id { toggleDoneSelected() }
                 else if (try? self.core.inboxMove(.inboxDone, item.id)) != nil { reload() }
-                toast.show(done, detail: "Marked done · ⌘Z in the inbox brings it back", style: .success)
+                toast.show(done, detail: L("Marked done · ⌘Z in the inbox brings it back"), style: .success)
             } catch {
                 let alert = NSAlert()
-                alert.messageText = "Couldn’t send the note to \(destination.title)"
+                alert.messageText = L("Couldn’t send the note to %@", destination.title)
                 alert.informativeText = error.localizedDescription
                 if let window { alert.beginSheetModal(for: window, completionHandler: nil) } else { alert.runModal() }
             }
@@ -101,7 +101,7 @@ extension InboxWindow {
         _ = try? core.deleteRecord(item.id)
         if let image = item.data.image { keptImages.append(image) }
         let note = item.data, done = showsDone
-        remember("Delete") { [core] in
+        remember(L("Delete")) { [core] in
             var params: [String: Any] = ["text": note.text, "app": note.app ?? "", "title": note.title ?? "", "url": note.url ?? "",
                                          "source": note.source ?? "typed"]
             if let image = note.image { params["image"] = image }

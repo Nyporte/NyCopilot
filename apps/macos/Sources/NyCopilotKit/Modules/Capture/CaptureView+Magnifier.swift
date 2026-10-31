@@ -35,15 +35,15 @@ extension CaptureView {
         if let copiedFlash {
             lines.append((text([(copiedFlash, smallBold, .systemGreen)]), nil))
         } else {
-            lines.append((text([("C", smallBold, .white), (" copy  ·  ", small, dim), ("⇧", smallBold, .white), (" switch format", small, dim)]), nil))
+            lines.append((text([("C", smallBold, .white), (L(" copy  ·  "), small, dim), ("⇧", smallBold, .white), (L(" switch format"), small, dim)]), nil))
         }
         // While hovering: what's being outlined, and how to switch.
         if selection == nil {
-            lines.append((text([(Self.detectsWindows ? "Windows" : "Elements", smallBold, .white),
+            lines.append((text([(Self.detectsWindows ? L("Windows") : L("Elements"), smallBold, .white),
                                 ("  ·  ", small, dim), ("Tab", smallBold, .white),
-                                (Self.detectsWindows ? " for elements" : " for windows", small, dim)]), nil))
+                                (Self.detectsWindows ? L(" for elements") : L(" for windows"), small, dim)]), nil))
             if Self.showsKeysTip {
-                lines.append((text([("?", smallBold, .white), (" all keys  ·  then ", small, dim), ("A", smallBold, .white), (" asks AI", small, dim)]), nil))
+                lines.append((text([("?", smallBold, .white), (L(" all keys  ·  then "), small, dim), ("A", smallBold, .white), (L(" asks AI"), small, dim)]), nil))
             }
         }
         let textWidth = lines.map { $0.text.size().width + ($0.swatch == nil ? 0 : Self.swatchIndent) }.max() ?? 0

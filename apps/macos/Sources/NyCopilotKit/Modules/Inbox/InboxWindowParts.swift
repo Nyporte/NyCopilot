@@ -1,11 +1,6 @@
 import AppKit
 
 // The inbox window's list, its rows, and the window itself.
-extension String {
-    /// "Today" reads as "today" mid-sentence; a date stays as it is.
-    var lowercasedIfRelative: String { self == "Today" || self == "Yesterday" ? lowercased() : "on \(self)" }
-}
-
 /// The list: its keys go to the window's actions first.
 final class InboxTable: NSTableView {
     enum Key: Equatable { case space, returnKey, delete, command(String), character(String) }

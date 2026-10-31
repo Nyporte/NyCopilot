@@ -54,13 +54,13 @@ final class GifPreview {
         let info = Design.label("\(String(format: "%d:%02d", seconds / 60, seconds % 60))  ·  \(clip.pixels.width) × \(clip.pixels.height)  ·  "
                                 + ByteCountFormatter.string(fromByteCount: Int64(clip.bytes), countStyle: .file),
                                 size: 12, color: NSColor.white.withAlphaComponent(0.75))
-        let discard = NSButton(image: NSImage(systemSymbolName: "trash", accessibilityDescription: "Discard")!, target: self,
+        let discard = NSButton(image: NSImage(systemSymbolName: "trash", accessibilityDescription: L("Discard"))!, target: self,
                                action: #selector(discardTapped))
         discard.bezelStyle = .rounded
-        discard.toolTip = "Discard (Esc or ⌘⌫)"
-        let inbox = button("Inbox", "I", #selector(inboxTapped))
-        let save = button("Save…", "⌘S · ⇧⌘S quick save", #selector(saveTapped))
-        let copy = button("Copy", "↩", #selector(copyTapped))
+        discard.toolTip = L("Discard (Esc or ⌘⌫)")
+        let inbox = button(L("Inbox"), "I", #selector(inboxTapped))
+        let save = button(L("Save…"), L("⌘S · ⇧⌘S quick save"), #selector(saveTapped))
+        let copy = button(L("Copy"), "↩", #selector(copyTapped))
         // The default: Return, drawn in the accent color.
         copy.keyEquivalent = "\r"
         let actions = Design.hstack([discard, Design.spacer(), inbox, save, copy], spacing: 8)

@@ -30,7 +30,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
 
     override func makeSections() -> [NSView] {
         for (field, placeholder) in [(endpoint, "https://api.example.com/v1/chat/completions"),
-                                     (model, "e.g. gpt-4o-mini, claude-sonnet-4-5, llama3.1")] as [(NSTextField, String)] {
+                                     (model, L("e.g. gpt-4o-mini, claude-sonnet-4-5, llama3.1"))] as [(NSTextField, String)] {
             field.placeholderString = placeholder
             field.delegate = self
             field.lineBreakMode = .byTruncatingTail
@@ -38,10 +38,10 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         }
         key.delegate = self
         key.widthAnchor.constraint(equalToConstant: 300).isActive = true
-        removeKey.image = NSImage(systemSymbolName: "trash", accessibilityDescription: "Remove saved key")
+        removeKey.image = NSImage(systemSymbolName: "trash", accessibilityDescription: L("Remove saved key"))
         removeKey.isBordered = false
         removeKey.contentTintColor = .secondaryLabelColor
-        removeKey.toolTip = "Remove the saved API key"
+        removeKey.toolTip = L("Remove the saved API key")
         removeKey.target = self
         removeKey.action = #selector(removeSavedKey)
 
@@ -65,7 +65,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
             FormRow(L("Send screenshots as images"), subtitle: L("The model must accept images. Off sends only the text read from them, on this Mac."), accessory: imagesSwitch)
         ])
         return [connection, bar, engines] + google.makeViews() + volcengine.makeViews()
-            + [ask, shortcuts.section("Ask AI Shortcut", actions: [AskShell.Action.open]), shortcuts.errorLabel]
+            + [ask, shortcuts.section(L("Ask AI Shortcut"), actions: [AskShell.Action.open]), shortcuts.errorLabel]
     }
 
     override func paneWillAppear() {
@@ -76,7 +76,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         hasSavedKey = KeychainStore.hasKey()
         removingKey = false
         refreshKeyField()
-        status.show(provider.isComplete ? nil : "Add an endpoint and model to use Ask AI. Translation can use the engines below instead.", style: .info)
+        status.show(provider.isComplete ? nil : L("Add an endpoint and model to use Ask AI. Translation can use the engines below instead."), style: .info)
         updateButtons()
         engines.refresh()
         google.refresh()
@@ -99,7 +99,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
     }
 
     private func refreshKeyField() {
-        key.placeholderString = hasSavedKey && !removingKey ? "Saved in Keychain — type to replace" : "Optional for local servers"
+        key.placeholderString = hasSavedKey && !removingKey ? L("Saved in Keychain — type to replace") : L("Optional for local servers")
         removeKey.isHidden = !hasSavedKey || removingKey
     }
 
@@ -107,14 +107,14 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         removingKey = true
         key.stringValue = ""
         refreshKeyField()
-        status.show("The saved key will be removed when you click Save.", style: .info)
+        status.show(L("The saved key will be removed when you click Save."), style: .info)
         updateButtons()
     }
 
     @objc private func save() {
         do {
             if key.stringValue.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
-                throw NyCore.Failure(code: "invalid_key", message: "The API key can’t contain line breaks or control characters.", status: nil)
+                throw NyCore.Failure(code: "invalid_key", message: L("The API key can’t contain line breaks or control characters."), status: nil)
             }
             try services.preferences.setProvider(draft)
             if !key.stringValue.isEmpty {
@@ -130,7 +130,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         removingKey = false
         key.stringValue = ""
         refreshKeyField()
-        status.show("Saved.", style: .success)
+        status.show(L("Saved."), style: .success)
         updateButtons()
         engines.refresh()
     }
@@ -140,7 +140,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         let configuration = draft
         let typedKey = key.stringValue
         let removing = removingKey
-        status.showProgress("Connecting…")
+        status.showProgress(L("Connecting…"))
         let core = services.core
         struct Timing: Decodable { let elapsedMs: Int }
         test = Task { [weak self] in
@@ -154,8 +154,8 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
             test = nil
             switch outcome {
             case .success(let timing):
-                let seconds = String(format: "%.1f", Double(timing.elapsedMs) / 1000)
-                status.show("Connected — \(configuration.model) replied in \(seconds) s.", style: .success)
+                let seconds = (Double(timing.elapsedMs) / 1000).formatted(.number.precision(.fractionLength(1)))
+                status.show(L("Connected — %@ replied in %@ s.", configuration.model, seconds), style: .success)
             case .failure(let error):
                 status.show(error.localizedDescription, style: .error)
             }

@@ -9,7 +9,7 @@ import MacPlatform
 @MainActor
 final class InboxShell: ModuleShell {
     let id = "inbox"
-    let title = "Inbox"
+    let title = L("Inbox")
     let symbolName = "tray"
 
     enum Action {
@@ -35,8 +35,8 @@ final class InboxShell: ModuleShell {
         bar.onSave = { [weak self] text, context in
             guard let self, add(["text": text, "source": "typed"], context: context) else { return }
             if Tips.due("inbox.selection", after: 3, times: 2) {
-                let key = services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? "the shortcut"
-                services.toast.show(L("Saved to Inbox"), detail: "Tip: select text in any app and press \(key) to keep it without typing.", style: .success)
+                let key = services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? L("the shortcut")
+                services.toast.show(L("Saved to Inbox"), detail: L("Tip: select text in any app and press %@ to keep it without typing.", key), style: .success)
             }
         }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
@@ -89,7 +89,7 @@ final class InboxShell: ModuleShell {
 
     func menuItems() -> [NSMenuItem] {
         [services.menuItem(L("Jot Down…"), symbol: "square.and.pencil", hotKey: Action.capture, target: self, action: #selector(captureFromMenu)),
-         services.menuItem(waiting > 0 ? "Inbox (\(waiting))" : "Inbox", symbol: waiting > 0 ? "tray.full" : "tray",
+         services.menuItem(waiting > 0 ? L("Inbox (%ld)", waiting) : L("Inbox"), symbol: waiting > 0 ? "tray.full" : "tray",
                            hotKey: Action.open, target: self, action: #selector(openFromMenu))]
     }
 
@@ -107,9 +107,9 @@ final class InboxShell: ModuleShell {
         defer { scheduleAlarm() }
         guard let woken = try? services.core.inboxWake(), !woken.isEmpty else { return }
         let first = woken[0].text?
-            .split(whereSeparator: \.isNewline).first.map { "“\($0.prefix(50))”" } ?? "A snoozed note"
-        services.toast.show(woken.count == 1 ? "Back in your inbox" : "\(woken.count) notes are back in your inbox",
-                            detail: woken.count == 1 ? first : "\(first) and more · ⇧F3 to open", style: .info)
+            .split(whereSeparator: \.isNewline).first.map { L("“%@”", String($0.prefix(50))) } ?? L("A snoozed note")
+        services.toast.show(woken.count == 1 ? L("Back in your inbox") : L("%ld notes are back in your inbox", woken.count),
+                            detail: woken.count == 1 ? first : L("%@ and more · ⇧F3 to open", first), style: .info)
     }
 
     @objc private func captureFromMenu() { capture() }
@@ -150,7 +150,7 @@ final class InboxShell: ModuleShell {
             params["image"] = name
         }
         guard add(params, context: context) else { return }
-        let snippet = text.map { "“\($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))…”" } ?? "Screenshot"
+        let snippet = text.map { "“\($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))…”" } ?? L("Screenshot")
         services.toast.show(L("Added to Inbox"), detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
@@ -165,7 +165,7 @@ final class InboxShell: ModuleShell {
             return
         }
         guard add(["text": "", "image": name, "source": "screenshot"], context: context) else { return }
-        services.toast.show(L("Added to Inbox"), detail: ["Recording", context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
+        services.toast.show(L("Added to Inbox"), detail: [L("Recording"), context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
     @discardableResult
@@ -206,7 +206,7 @@ final class InboxPane: SettingsPane {
         folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         showFolder()
         return [
-            shortcuts.section("Shortcuts", footer: L("With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture."),
+            shortcuts.section(L("Shortcuts"), footer: L("With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture."),
                               actions: [InboxShell.Action.capture, InboxShell.Action.open]),
             shortcuts.errorLabel,
             FormSection(L("Send To"), footer: L("S on a note in the inbox sends it to Reminders, Notes, or this folder as a Markdown file (an Obsidian vault works well), then marks it done. L snoozes it until later."), rows: [
@@ -225,7 +225,7 @@ final class InboxPane: SettingsPane {
 
     private func showFolder() {
         let folder = NoteExport.markdownFolder(core: services.core, choosingIfNeeded: false)
-        folderLabel.stringValue = folder.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "Not chosen"
+        folderLabel.stringValue = folder.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? L("Not chosen")
         folderLabel.toolTip = folder?.path
     }
 
@@ -236,10 +236,10 @@ final class InboxPane: SettingsPane {
 
     @objc private func clearAll() {
         let alert = NSAlert()
-        alert.messageText = "Clear the inbox?"
-        alert.informativeText = "Every note, waiting and done, and its screenshot is removed."
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = L("Clear the inbox?")
+        alert.informativeText = L("Every note, waiting and done, and its screenshot is removed.")
+        alert.addButton(withTitle: L("Clear"))
+        alert.addButton(withTitle: L("Cancel"))
         alert.buttons.first?.hasDestructiveAction = true
         guard let window = view.window else { return }
         alert.beginSheetModal(for: window) { [weak self] response in

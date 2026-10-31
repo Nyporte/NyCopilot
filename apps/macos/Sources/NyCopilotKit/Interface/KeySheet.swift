@@ -118,39 +118,39 @@ final class KeySheet {
 
 /// The keys of each surface, for its `?` sheet.
 enum KeyGuide {
-    static let verbs = KeySheet.Group(title: "On anything", keys: Verb.allCases.map { ($0.key, $0.title) })
+    static var verbs: KeySheet.Group { KeySheet.Group(title: L("On anything"), keys: Verb.allCases.map { ($0.key, $0.title) }) }
 
-    static let capture: [KeySheet.Group] = [
-        .init(title: "Select", keys: [("Tab", "Windows ⇄ elements"), ("drag", "Draw a region"), ("⌘A", "Whole screen"),
-                                      ("← → ↑ ↓", "Nudge · ⇧ resize"), (", .", "Earlier regions"), ("C", "Copy the color")]),
-        .init(title: "Finish", keys: [("↩ / ⌘C", "Copy"), ("⌘T", "Pin"), ("⌘S", "Save…  ·  ⇧⌘S quick"), ("Esc", "Cancel")]),
-        .init(title: "Do more", keys: [("T", "Select text in place"), ("S", "Scrolling capture"), ("G", "Record a GIF"), ("R", "Translate its text"),
-                                       ("I", "Keep in Inbox"), ("A", "Ask AI about it"), ("P", "Pin to the screen")]),
-        .init(title: "Draw", keys: [("1–8", "Rectangle … text"), ("⌘Z", "Undo · ⇧⌘Z redo")])
-    ]
+    static var capture: [KeySheet.Group] { [
+        .init(title: L("Select"), keys: [("Tab", L("Windows ⇄ elements")), (L("drag"), L("Draw a region")), ("⌘A", L("Whole screen")),
+                                      ("← → ↑ ↓", L("Nudge · ⇧ resize")), (", .", L("Earlier regions")), ("C", L("Copy the color"))]),
+        .init(title: L("Finish"), keys: [("↩ / ⌘C", L("Copy")), ("⌘T", L("Pin")), ("⌘S", L("Save…  ·  ⇧⌘S quick")), ("Esc", L("Cancel"))]),
+        .init(title: L("Do more"), keys: [("T", L("Select text in place")), ("S", L("Scrolling capture")), ("G", L("Record a GIF")), ("R", L("Translate its text")),
+                                       ("I", L("Keep in Inbox")), ("A", L("Ask AI about it")), ("P", L("Pin to the screen"))]),
+        .init(title: L("Draw"), keys: [("1–8", L("Rectangle … text")), ("⌘Z", L("Undo · ⇧⌘Z redo"))])
+    ] }
 
-    static let pin: [KeySheet.Group] = [
-        .init(title: "Pin", keys: [("drag", "Move"), ("scroll", "Zoom · ⌥ opacity"), ("0", "Actual size"), ("1–4", "Rotate, flip"),
-                                   ("⌘C", "Copy"), ("⌘S", "Save"), ("Esc", "Close")]),
-        .init(title: "Do more", keys: [("T", "Select text in place"), ("R", "Translate its text"), ("I", "Keep in Inbox"), ("A", "Ask AI about it")])
-    ]
+    static var pin: [KeySheet.Group] { [
+        .init(title: L("Pin"), keys: [(L("drag"), L("Move")), (L("scroll"), L("Zoom · ⌥ opacity")), ("0", L("Actual size")), ("1–4", L("Rotate, flip")),
+                                   ("⌘C", L("Copy")), ("⌘S", L("Save")), ("Esc", L("Close"))]),
+        .init(title: L("Do more"), keys: [("T", L("Select text in place")), ("R", L("Translate its text")), ("I", L("Keep in Inbox")), ("A", L("Ask AI about it"))])
+    ] }
 
-    static let clipboard: [KeySheet.Group] = [
-        .init(title: "Clipboard", keys: [("type", "Search"), ("↩", "Paste"), ("⌘1–9", "Paste one of the first nine"), ("⌘C", "Copy, don’t paste"),
-                                         ("⌘P", "Pin or unpin"), ("⌘⌫", "Forget"), ("Esc", "Close")]),
-        .init(title: "Do more", keys: [("⌘R", "Translate"), ("⌘I", "Keep in Inbox"), ("⌘A", "Ask AI (search empty)")])
-    ]
+    static var clipboard: [KeySheet.Group] { [
+        .init(title: L("Clipboard"), keys: [(L("type"), L("Search")), ("↩", L("Paste")), ("⌘1–9", L("Paste one of the first nine")), ("⌘C", L("Copy, don’t paste")),
+                                         ("⌘P", L("Pin or unpin")), ("⌘⌫", L("Forget")), ("Esc", L("Close"))]),
+        .init(title: L("Do more"), keys: [("⌘R", L("Translate")), ("⌘I", L("Keep in Inbox")), ("⌘A", L("Ask AI (search empty)"))])
+    ] }
 
-    static let inbox: [KeySheet.Group] = [
-        .init(title: "Work through", keys: [("Space", "Done · back"), ("S", "Send to Reminders, Notes, Markdown"), ("L", "Later (snooze)"),
-                                            ("↩", "Edit"), ("⌫", "Delete"), ("⌘Z", "Undo"), ("⌘F", "Search")]),
-        .init(title: "Do more", keys: [("R", "Translate"), ("A", "Ask AI"), ("P", "Pin to the screen"), ("⌘C", "Copy"), ("⌘O", "Open the source")])
-    ]
+    static var inbox: [KeySheet.Group] { [
+        .init(title: L("Work through"), keys: [(L("Space"), L("Done · back")), ("S", L("Send to Reminders, Notes, Markdown")), ("L", L("Later (snooze)")),
+                                            ("↩", L("Edit")), ("⌫", L("Delete")), ("⌘Z", L("Undo")), ("⌘F", L("Search"))]),
+        .init(title: L("Do more"), keys: [("R", L("Translate")), ("A", L("Ask AI")), ("P", L("Pin to the screen")), ("⌘C", L("Copy")), ("⌘O", L("Open the source"))])
+    ] }
 
-    static let ask: [KeySheet.Group] = [
-        .init(title: "Ask AI", keys: [("↩", "Ask · empty: explain"), ("⌘1–3", "Explain, summarize, rewrite"), ("⌘C", "Copy the answer"),
-                                      ("⌘I", "Keep it in Inbox"), ("⌘P", "Pin it"), ("⌘↩", "Replace the selection"), ("Esc", "Close")])
-    ]
+    static var ask: [KeySheet.Group] { [
+        .init(title: L("Ask AI"), keys: [("↩", L("Ask · empty: explain")), ("⌘1–3", L("Explain, summarize, rewrite")), ("⌘C", L("Copy the answer")),
+                                      ("⌘I", L("Keep it in Inbox")), ("⌘P", L("Pin it")), ("⌘↩", L("Replace the selection")), ("Esc", L("Close"))])
+    ] }
 }
 
 /// A tip shown at the moment it's useful, a few times at most, then never again. Kept per Mac.

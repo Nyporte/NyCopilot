@@ -31,16 +31,16 @@ final class CaptureToolbar: NSView {
     private var swatches: [(NSColor, Swatch)] = []
     private let undoButton: NSButton
     private let redoButton: NSButton
-    private let textButton = CaptureToolbar.icon("text.viewfinder", "Select text (T)")
-    private let scrollButton = CaptureToolbar.icon("rectangle.expand.vertical", "Scrolling Capture (S)")
+    private let textButton = CaptureToolbar.icon("text.viewfinder", L("Select text (T)"))
+    private let scrollButton = CaptureToolbar.icon("rectangle.expand.vertical", L("Scrolling Capture (S)"))
     private let options = Design.hstack([], spacing: 8)
     private let palette: [NSColor]
     private static let textSizes: [CGFloat] = [12, 14, 16, 20, 24, 32, 40, 48, 64, 96]
 
     init(palette: [NSColor]) {
         self.palette = palette
-        undoButton = Self.icon("arrow.uturn.backward", "Undo (⌘Z)")
-        redoButton = Self.icon("arrow.uturn.forward", "Redo (⇧⌘Z)")
+        undoButton = Self.icon("arrow.uturn.backward", L("Undo (⌘Z)"))
+        redoButton = Self.icon("arrow.uturn.forward", L("Redo (⇧⌘Z)"))
         super.init(frame: .zero)
         // Always dark, like the overlay it sits on, so sliders and menus read well.
         appearance = NSAppearance(named: .darkAqua)
@@ -64,32 +64,32 @@ final class CaptureToolbar: NSView {
         redoButton.target = self
         redoButton.action = #selector(redo)
         redoButton.isEnabled = false
-        let pin = Self.icon("pin", "Pin to the screen (P or ⌘T)")
+        let pin = Self.icon("pin", L("Pin to the screen (P or ⌘T)"))
         pin.target = self
         pin.action = #selector(pin(_:))
         textButton.target = self
         textButton.action = #selector(showText)
         scrollButton.target = self
         scrollButton.action = #selector(scrollCapture)
-        let translate = Self.icon("character.bubble", "Translate its text (R)")
+        let translate = Self.icon("character.bubble", L("Translate its text (R)"))
         translate.target = self
         translate.action = #selector(translateText)
-        let inbox = Self.icon("tray.and.arrow.down", "Keep in Inbox (I)")
+        let inbox = Self.icon("tray.and.arrow.down", L("Keep in Inbox (I)"))
         inbox.target = self
         inbox.action = #selector(sendToInbox)
-        let record = Self.icon("record.circle", "Record a GIF (G)")
+        let record = Self.icon("record.circle", L("Record a GIF (G)"))
         record.target = self
         record.action = #selector(recordGIF)
-        let ask = Self.icon("sparkles", "Ask AI about it (A)")
+        let ask = Self.icon("sparkles", L("Ask AI about it (A)"))
         ask.target = self
         ask.action = #selector(askAI)
-        let save = Self.icon("square.and.arrow.down", "Save… (⌘S) · Quick save (⇧⌘S)")
+        let save = Self.icon("square.and.arrow.down", L("Save… (⌘S) · Quick save (⇧⌘S)"))
         save.target = self
         save.action = #selector(save(_:))
-        let cancel = Self.icon("xmark", "Cancel (Esc)")
+        let cancel = Self.icon("xmark", L("Cancel (Esc)"))
         cancel.target = self
         cancel.action = #selector(cancelTapped)
-        let copy = Self.icon("checkmark", "Copy and close (Return)")
+        let copy = Self.icon("checkmark", L("Copy and close (Return)"))
         copy.contentTintColor = .controlAccentColor
         copy.target = self
         copy.action = #selector(copy(_:))
@@ -153,10 +153,10 @@ final class CaptureToolbar: NSView {
             options.addArrangedSubview(emphasis())
         default:
             if tool != .mosaic { options.addArrangedSubview(Self.divider()) }
-            options.addArrangedSubview(slider(symbol: tool == .mosaic ? "circle.dotted" : "lineweight", tip: tool == .mosaic ? "Brush size" : "Line width",
+            options.addArrangedSubview(slider(symbol: tool == .mosaic ? "circle.dotted" : "lineweight", tip: tool == .mosaic ? L("Brush size") : L("Line width"),
                                               value: Double(selectedStroke), range: 1...24, action: #selector(strokeChanged(_:))))
             if tool == .rectangle {
-                options.addArrangedSubview(slider(symbol: "square.dashed", tip: "Corner radius", value: Double(style.cornerRadius),
+                options.addArrangedSubview(slider(symbol: "square.dashed", tip: L("Corner radius"), value: Double(style.cornerRadius),
                                                   range: 0...40, action: #selector(radiusChanged(_:))))
             }
             if tool == .rectangle || tool == .ellipse { options.addArrangedSubview(fillControl(for: tool)) }
@@ -180,13 +180,13 @@ final class CaptureToolbar: NSView {
     private var valueLabels: [String: NSTextField] = [:]
 
     private func fillControl(for tool: AnnotationTool) -> NSSegmentedControl {
-        let outline = NSImage(systemSymbolName: tool == .ellipse ? "circle" : "square", accessibilityDescription: "Outline")!
-        let filled = NSImage(systemSymbolName: tool == .ellipse ? "circle.fill" : "square.fill", accessibilityDescription: "Filled")!
+        let outline = NSImage(systemSymbolName: tool == .ellipse ? "circle" : "square", accessibilityDescription: L("Outline"))!
+        let filled = NSImage(systemSymbolName: tool == .ellipse ? "circle.fill" : "square.fill", accessibilityDescription: L("Filled"))!
         let control = NSSegmentedControl(images: [outline, filled], trackingMode: .selectOne, target: self, action: #selector(fillChanged(_:)))
         control.controlSize = .small
         control.selectedSegment = style.filled ? 1 : 0
-        control.setToolTip("Outline", forSegment: 0)
-        control.setToolTip("Filled", forSegment: 1)
+        control.setToolTip(L("Outline"), forSegment: 0)
+        control.setToolTip(L("Filled"), forSegment: 1)
         return control
     }
 
@@ -199,13 +199,13 @@ final class CaptureToolbar: NSView {
         button.menu?.delegate = self
         button.target = self
         button.action = #selector(fontChanged(_:))
-        button.toolTip = "Font"
+        button.toolTip = L("Font")
         button.widthAnchor.constraint(equalToConstant: 128).isActive = true
         fontButton = button
         return button
     }
     private weak var fontButton: NSPopUpButton?
-    private static let systemFontTitle = "System Font"
+    private static let systemFontTitle = L("System Font")
 
     private func sizeMenu() -> NSPopUpButton {
         let menu = NSPopUpButton()
@@ -215,7 +215,7 @@ final class CaptureToolbar: NSView {
         menu.selectItem(withTitle: "\(Int(style.textSize)) pt")
         menu.target = self
         menu.action = #selector(sizeChanged(_:))
-        menu.toolTip = "Text size"
+        menu.toolTip = L("Text size")
         return menu
     }
 
@@ -244,7 +244,7 @@ final class CaptureToolbar: NSView {
 
     @objc private func radiusChanged(_ sender: NSSlider) {
         style.cornerRadius = CGFloat(sender.integerValue)
-        valueLabels["Corner radius"]?.stringValue = "\(sender.integerValue)"
+        valueLabels[L("Corner radius")]?.stringValue = "\(sender.integerValue)"
         onStyle?(style)
     }
 
@@ -308,13 +308,13 @@ final class CaptureToolbar: NSView {
         switch recognizedLines {
         case nil:
             textButton.contentTintColor = .white
-            textButton.toolTip = "Recognize Text (T)"
+            textButton.toolTip = L("Recognize Text (T)")
         case 0?:
             textButton.contentTintColor = .white.withAlphaComponent(0.4)
-            textButton.toolTip = "No text found here (T)"
+            textButton.toolTip = L("No text found here (T)")
         case let lines?:
             textButton.contentTintColor = .controlAccentColor
-            textButton.toolTip = "Select the \(lines) line\(lines == 1 ? "" : "s") of text in place (T)"
+            textButton.toolTip = L("Select the %ld lines of text in place (T)", lines)
         }
     }
     @objc private func cancelTapped() { onCancel?() }
@@ -365,8 +365,8 @@ final class CaptureTextBar: NSView {
 
     private let spinner = NSProgressIndicator()
     private let hint = Design.label("", size: 12, weight: .medium, color: .white)
-    private let copyAll = NSButton(title: "Copy All  T", target: nil, action: nil)
-    private let done = NSButton(title: "Done  esc", target: nil, action: nil)
+    private let copyAll = NSButton(title: L("Copy All  T"), target: nil, action: nil)
+    private let done = NSButton(title: L("Done  esc"), target: nil, action: nil)
     private var restoreHint: DispatchWorkItem?
     private var lines = 0
 
@@ -409,7 +409,7 @@ final class CaptureTextBar: NSView {
 
     func showReading() {
         spinner.startAnimation(nil)
-        hint.stringValue = "Reading text…"
+        hint.stringValue = L("Reading text…")
         copyAll.isEnabled = false
     }
 
@@ -433,7 +433,7 @@ final class CaptureTextBar: NSView {
     }
 
     private var baseHint: String {
-        lines > 0 ? "Drag across the text to select it · ⌘C copies" : "No text found here"
+        lines > 0 ? L("Drag across the text to select it · ⌘C copies") : L("No text found here")
     }
 
     @objc private func copyAllTapped() { onCopyAll?() }
@@ -453,7 +453,7 @@ private final class Swatch: NSView {
         widthAnchor.constraint(equalToConstant: 20).isActive = true
         heightAnchor.constraint(equalToConstant: 20).isActive = true
         setAccessibilityRole(.button)
-        setAccessibilityLabel("Color \(color.hexString)")
+        setAccessibilityLabel(L("Color %@", color.hexString))
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(color:)") }
