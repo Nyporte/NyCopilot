@@ -43,7 +43,7 @@ final class KeySheet {
         material.appearance = NSAppearance(named: .darkAqua)
         let heading = Design.label(title, size: 15, weight: .semibold)
         let columns = Self.columns(groups)
-        let footer = Design.label("Any key closes this", size: 11, color: .tertiaryLabelColor)
+        let footer = Design.label(L("Any key closes this"), size: 11, color: .tertiaryLabelColor)
         let stack = Design.vstack([heading, columns, footer], spacing: 14)
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 22, bottom: 14, right: 22)
         stack.translatesAutoresizingMaskIntoConstraints = false

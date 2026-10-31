@@ -11,7 +11,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
     private let table = HistoryTable()
     private let detail = NSTextView()
     private let detailMeta = Design.label("", size: 12, color: .secondaryLabelColor)
-    private let copyButton = Design.button("Copy", target: nil, action: nil)
+    private let copyButton = Design.button(L("Copy"), target: nil, action: nil)
     private let deleteButton = NSButton()
     private let emptyState = EmptyStateView()
     private var detailContainer: NSView!
@@ -370,6 +370,6 @@ final class EmptyStateView: NSStackView {
     }
 
     func configure(error: String) {
-        show(symbol: "exclamationmark.triangle", title: "History Unavailable", message: error)
+        show(symbol: "exclamationmark.triangle", title: L("History Unavailable"), message: error)
     }
 }

@@ -28,8 +28,8 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
     private let key = NSSecureTextField()
     private let removeKey = NSButton()
     private let status = StatusLine()
-    private let testButton = Design.button("Test", target: nil, action: nil)
-    private let saveButton = Design.button("Save", target: nil, action: nil, primary: true)
+    private let testButton = Design.button(L("Test"), target: nil, action: nil)
+    private let saveButton = Design.button(L("Save"), target: nil, action: nil, primary: true)
     private var hasSavedKey = false
     private var removingKey = false
     private var test: Task<Void, Never>?
@@ -156,7 +156,7 @@ final class ServiceSection: NSObject, NSTextFieldDelegate {
 extension ServiceSection.Spec {
     @MainActor static let google = ServiceSection.Spec(
         title: "Google Translate",
-        footer: "Runs through your own Apps Script web app. Deploy it with “Execute as: Me” and “Who has access: Anyone”; with any other access setting, requests land on Google’s sign-in page. The key is stored only in your Keychain.",
+        footer: L("Runs through your own Apps Script web app. Deploy it with “Execute as: Me” and “Who has access: Anyone”; with any other access setting, requests land on Google’s sign-in page. The key is stored only in your Keychain."),
         fieldLabel: "Web app URL", fieldPlaceholder: "https://script.google.com/macros/s/…/exec", setting: .googleURL,
         keyLabel: "Access key", keyPlaceholder: "The key your script checks", keychain: .google,
         isTestable: { url, _ in !url.isEmpty },
@@ -164,7 +164,7 @@ extension ServiceSection.Spec {
 
     @MainActor static let volcengine = ServiceSection.Spec(
         title: "Volcengine",
-        footer: "Doubao machine translation (volc.speech.mt), 32 languages. Paste the API key from the new Volcengine console, or, for old-console credentials, the App ID and access token. The key is stored only in your Keychain.",
+        footer: L("Doubao machine translation (volc.speech.mt), 32 languages. Paste the API key from the new Volcengine console, or, for old-console credentials, the App ID and access token. The key is stored only in your Keychain."),
         fieldLabel: "App ID (old console only)", fieldPlaceholder: "Leave empty with an API key", setting: .volcengineAppID,
         keyLabel: "API key or access token", keyPlaceholder: "From the Volcengine console", keychain: .volcengine,
         isTestable: { _, hasKey in hasKey },

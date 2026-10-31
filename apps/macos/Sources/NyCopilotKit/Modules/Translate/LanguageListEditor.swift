@@ -152,7 +152,7 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
             menu.addItem(item)
         }
         if !menu.items.isEmpty { menu.addItem(.separator()) }
-        let other = NSMenuItem(title: "Other Language…", action: #selector(addOther), keyEquivalent: "")
+        let other = NSMenuItem(title: L("Other Language…"), action: #selector(addOther), keyEquivalent: "")
         other.target = self
         menu.addItem(other)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: addButton.bounds.maxY + 4), in: addButton)

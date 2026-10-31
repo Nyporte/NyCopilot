@@ -43,13 +43,13 @@ final class AskShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.open, title: "Ask about the selection, or ask anything",
+        [.init(id: Action.open, title: L("Ask about the selection, or ask anything"),
                defaultCombination: .init(keyCode: 0, modifiers: HotKeyCombination.option | HotKeyCombination.command), // ⌥⌘A
                handler: { [weak self] in self?.open() })]
     }
 
     func menuItems() -> [NSMenuItem] {
-        [services.menuItem("Ask AI…", symbol: "sparkles", hotKey: Action.open, target: self, action: #selector(openFromMenu))]
+        [services.menuItem(L("Ask AI…"), symbol: "sparkles", hotKey: Action.open, target: self, action: #selector(openFromMenu))]
     }
 
     /// Its options live in AI & Engines, with the model it uses.
@@ -145,7 +145,7 @@ final class AskShell: ModuleShell {
             } catch {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(answer, forType: .string)
-                services.toast.show("Copied the rewrite", detail: error.localizedDescription, style: .info)
+                services.toast.show(L("Copied the rewrite"), detail: error.localizedDescription, style: .info)
             }
         }
     }

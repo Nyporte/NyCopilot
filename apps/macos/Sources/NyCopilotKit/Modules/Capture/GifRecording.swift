@@ -347,7 +347,7 @@ final class RecordingBar: FloatingPanel {
     private let shortcut: String
     private let recordButton = NSButton()
     private let dot = Design.symbol("circle.fill", size: 10, color: .systemRed)
-    private let time = Design.label("0:00", size: 13, weight: .semibold, color: .white)
+    private let time = Design.label(L("0:00"), size: 13, weight: .semibold, color: .white)
     private let hint = Design.label("", size: 11, color: NSColor.white.withAlphaComponent(0.6))
     private let pauseButton = NSButton()
     private let stopButton = NSButton()

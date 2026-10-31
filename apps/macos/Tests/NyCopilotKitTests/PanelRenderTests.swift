@@ -124,6 +124,16 @@ final class PanelRenderTests: XCTestCase {
         XCTAssertTrue(discarded)
         XCTAssertFalse(acted)
 
+        // VoiceOver hears the trash button's purpose, not its symbol's name.
+        let trash = preview.panel.contentView.flatMap { root -> NSButton? in
+            func find(_ view: NSView) -> NSButton? {
+                if let button = view as? NSButton, button.toolTip?.hasPrefix("Discard") == true { return button }
+                return view.subviews.lazy.compactMap(find).first
+            }
+            return find(root)
+        }
+        XCTAssertTrue(trash?.accessibilityLabel()?.hasPrefix("Discard") == true)
+
         let scroll = ScrollCapturePanel(beside: NSRect(x: 200, y: 200, width: 400, height: 300), on: NSScreen.screens[0])
         Render.check(scroll.contentView!, "scroll-panel")
     }

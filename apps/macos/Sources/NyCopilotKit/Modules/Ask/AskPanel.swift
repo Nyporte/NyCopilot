@@ -59,7 +59,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 14)
 
         let sparkle = Design.symbol("sparkles", size: 13, weight: .semibold, color: .controlAccentColor)
-        let title = Design.label("Ask AI", size: 13, weight: .semibold)
+        let title = Design.label(L("Ask AI"), size: 13, weight: .semibold)
         subject.lineBreakMode = .byTruncatingTail
         subject.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for (index, action) in Action.allCases.enumerated() {

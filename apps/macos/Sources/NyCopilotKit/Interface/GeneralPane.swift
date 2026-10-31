@@ -5,11 +5,11 @@ import AppKit
 final class GeneralPane: SettingsPane {
     private let services: CopilotServices
     private let accessBadge = StatusBadge()
-    private let accessButton = Design.button("Open System Settings…", target: nil, action: nil)
+    private let accessButton = Design.button(L("Open System Settings…"), target: nil, action: nil)
     private let recordingBadge = StatusBadge()
-    private let recordingButton = Design.button("Open System Settings…", target: nil, action: nil)
-    private let diagnosticsButton = Design.button("Copy Diagnostics", target: nil, action: nil)
-    private let captureServiceButton = Design.button("Restart", target: nil, action: nil)
+    private let recordingButton = Design.button(L("Open System Settings…"), target: nil, action: nil)
+    private let diagnosticsButton = Design.button(L("Copy Diagnostics"), target: nil, action: nil)
+    private let captureServiceButton = Design.button(L("Restart"), target: nil, action: nil)
     private let loginSwitch = NSSwitch()
     private let loginNote = Design.wrapping("", size: 11.5)
     private var poll: Timer?
@@ -18,7 +18,7 @@ final class GeneralPane: SettingsPane {
 
     init(services: CopilotServices) {
         self.services = services
-        super.init(id: "general", title: "General", symbol: "gearshape")
+        super.init(id: "general", title: L("General"), symbol: "gearshape")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
@@ -26,27 +26,27 @@ final class GeneralPane: SettingsPane {
     override func makeSections() -> [NSView] {
         accessButton.target = self
         accessButton.action = #selector(requestAccess)
-        let access = FormRow("Accessibility", subtitle: "Lets NyCopilot read and paste into text fields, and move other apps’ windows.",
+        let access = FormRow(L("Accessibility"), subtitle: L("Lets NyCopilot read and paste into text fields, and move other apps’ windows."),
                              accessory: Design.hstack([accessBadge, accessButton], spacing: 12))
 
         recordingButton.target = self
         recordingButton.action = #selector(requestRecording)
-        let recording = FormRow("Screen Recording", subtitle: "Lets NyCopilot take screenshots and translate what’s on screen.",
+        let recording = FormRow(L("Screen Recording"), subtitle: L("Lets NyCopilot take screenshots and translate what’s on screen."),
                                 accessory: Design.hstack([recordingBadge, recordingButton], spacing: 12))
         diagnosticsButton.target = self
         diagnosticsButton.action = #selector(copyDiagnostics)
-        let diagnostics = FormRow("Diagnostics", subtitle: "What NyCopilot did lately — fields it found, pastes, errors — without any of your text. Paste it into a bug report.",
+        let diagnostics = FormRow(L("Diagnostics"), subtitle: L("What NyCopilot did lately — fields it found, pastes, errors — without any of your text. Paste it into a bug report."),
                                   accessory: diagnosticsButton)
 
         captureServiceButton.target = self
         captureServiceButton.action = #selector(restartCaptureService)
-        let captureService = FormRow("Screen capture service", subtitle: "If the screen-recording indicator stays on after a capture, macOS kept it running; restarting its capture service ends it.",
+        let captureService = FormRow(L("Screen capture service"), subtitle: L("If the screen-recording indicator stays on after a capture, macOS kept it running; restarting its capture service ends it."),
                                      accessory: captureServiceButton)
 
         loginSwitch.target = self
         loginSwitch.action = #selector(toggleLogin)
         loginNote.isHidden = true
-        let login = FormRow("Open at login", subtitle: nil, accessory: loginSwitch)
+        let login = FormRow(L("Open at login"), subtitle: nil, accessory: loginSwitch)
 
         moduleSwitches = services.moduleList().map { module in
             let toggle = NSSwitch()
@@ -55,20 +55,20 @@ final class GeneralPane: SettingsPane {
             toggle.identifier = NSUserInterfaceItemIdentifier(module.id)
             return (module.id, toggle)
         }
-        let modules = FormSection("Features", footer: "A feature that’s off keeps its settings; its shortcuts and menu items come back when you turn it on.",
+        let modules = FormSection(L("Features"), footer: L("A feature that’s off keeps its settings; its shortcuts and menu items come back when you turn it on."),
                                   rows: zip(services.moduleList(), moduleSwitches).map { module, entry in
                                       FormRow(module.title, accessory: entry.toggle)
                                   })
         var sections: [NSView] = [
-            FormSection("Permissions", rows: [access, recording]),
+            FormSection(L("Permissions"), rows: [access, recording]),
             modules,
-            FormSection("Startup", rows: [login]),
-            shortcuts.section("Shortcuts", footer: "Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys.",
+            FormSection(L("Startup"), rows: [login]),
+            shortcuts.section("Shortcuts", footer: L("Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys."),
                               actions: [AppDelegate.showShortcutsAction]),
             shortcuts.errorLabel,
-            FormSection("Troubleshooting", rows: [diagnostics, captureService]),
+            FormSection(L("Troubleshooting"), rows: [diagnostics, captureService]),
         ]
-        let guide = Design.button("Show Setup Guide…", target: self, action: #selector(showGuide))
+        let guide = Design.button(L("Show Setup Guide…"), target: self, action: #selector(showGuide))
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
         sections.append(Design.hstack([Design.label("NyCopilot \(version)", size: 12, color: .tertiaryLabelColor),
                                        Design.spacer(), guide]))

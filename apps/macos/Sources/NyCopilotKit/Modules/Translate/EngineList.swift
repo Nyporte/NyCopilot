@@ -60,8 +60,8 @@ final class EngineList: NSStackView {
         }
         let fallback = SystemTranslation.isAvailable
             ? " With none ready, macOS’s own translation panel translates what you write or select, on this Mac." : ""
-        let section = FormSection("Translation Engines",
-            footer: "Each translation goes to the first ready engine. If it fails, or doesn’t offer the language, the next one takes over and a short note says so. Only the model follows Translate’s instructions." + fallback,
+        let section = FormSection(L("Translation Engines"),
+            footer: L("Each translation goes to the first ready engine. If it fails, or doesn’t offer the language, the next one takes over and a short note says so. Only the model follows Translate’s instructions.") + fallback,
             rows: rows)
         addArrangedSubview(section)
         section.widthAnchor.constraint(equalTo: widthAnchor).isActive = true

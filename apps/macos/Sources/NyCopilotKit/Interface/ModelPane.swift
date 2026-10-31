@@ -10,8 +10,8 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
     private let key = NSSecureTextField()
     private let removeKey = NSButton()
     private let status = StatusLine()
-    private let testButton = Design.button("Test Connection", target: nil, action: nil)
-    private let saveButton = Design.button("Save", target: nil, action: nil, primary: true)
+    private let testButton = Design.button(L("Test Connection"), target: nil, action: nil)
+    private let saveButton = Design.button(L("Save"), target: nil, action: nil, primary: true)
     private var hasSavedKey = false
     private var removingKey = false
     private var test: Task<Void, Never>?
@@ -23,7 +23,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
 
     init(services: CopilotServices) {
         self.services = services
-        super.init(id: "model", title: "AI & Engines", symbol: "sparkles")
+        super.init(id: "model", title: L("AI & Engines"), symbol: "sparkles")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
@@ -50,19 +50,19 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
         saveButton.target = self
         saveButton.action = #selector(save)
 
-        let connection = FormSection("Model",
-            footer: "Ask AI and translation use it. Works with any OpenAI-compatible Chat Completions endpoint — hosted providers or local servers such as Ollama and LM Studio. The API key is optional and stored only in your Keychain.",
+        let connection = FormSection(L("Model"),
+            footer: L("Ask AI and translation use it. Works with any OpenAI-compatible Chat Completions endpoint — hosted providers or local servers such as Ollama and LM Studio. The API key is optional and stored only in your Keychain."),
             rows: [
-                FormRow("Endpoint URL", accessory: endpoint),
-                FormRow("Model ID", accessory: model),
-                FormRow("API key", accessory: Design.hstack([removeKey, key], spacing: 6))
+                FormRow(L("Endpoint URL"), accessory: endpoint),
+                FormRow(L("Model ID"), accessory: model),
+                FormRow(L("API key"), accessory: Design.hstack([removeKey, key], spacing: 6))
             ])
         let bar = Design.hstack([status, Design.spacer(), testButton, saveButton], spacing: 8)
         for section in [google, volcengine] { section.onSave = { [weak self] in self?.engines.refresh() } }
         imagesSwitch.target = self
         imagesSwitch.action = #selector(toggleImages)
-        let ask = FormSection("Ask AI", footer: "Select text anywhere and press the shortcut to explain, summarize, rewrite, or ask about it; in a screenshot, a pin, or the inbox, press A.", rows: [
-            FormRow("Send screenshots as images", subtitle: "The model must accept images. Off sends only the text read from them, on this Mac.", accessory: imagesSwitch)
+        let ask = FormSection(L("Ask AI"), footer: L("Select text anywhere and press the shortcut to explain, summarize, rewrite, or ask about it; in a screenshot, a pin, or the inbox, press A."), rows: [
+            FormRow(L("Send screenshots as images"), subtitle: L("The model must accept images. Off sends only the text read from them, on this Mac."), accessory: imagesSwitch)
         ])
         return [connection, bar, engines] + google.makeViews() + volcengine.makeViews()
             + [ask, shortcuts.section("Ask AI Shortcut", actions: [AskShell.Action.open]), shortcuts.errorLabel]

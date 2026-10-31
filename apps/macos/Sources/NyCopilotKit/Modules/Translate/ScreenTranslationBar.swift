@@ -51,7 +51,7 @@ final class ScreenTranslationBar: FloatingPanel {
         picker.contentTintColor = .white
         picker.target = self
         picker.action = #selector(picked)
-        let escape = Design.label("esc", size: 10, weight: .medium, color: .white.withAlphaComponent(0.6))
+        let escape = Design.label(L("esc"), size: 10, weight: .medium, color: .white.withAlphaComponent(0.6))
         let key = ExitKey()
         key.toolTip = "Esc ends screen translation"
         key.onClick = { [weak self] in self?.onExit?() }

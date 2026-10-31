@@ -73,7 +73,7 @@ final class WindowsShell: ModuleShell {
         let result = RectangleImport.read()
         guard !result.shortcuts.isEmpty else { return }
         let outcome = RectangleImport.apply(result, to: services)
-        services.toast.show("Window shortcuts imported from Rectangle", detail: outcome.summary,
+        services.toast.show(L("Window shortcuts imported from Rectangle"), detail: outcome.summary,
                             style: outcome.failed == 0 ? .success : .warning)
     }
 
@@ -95,7 +95,7 @@ final class WindowsShell: ModuleShell {
             item.representedObject = action.id
             menu.addItem(item)
         }
-        let parent = NSMenuItem(title: "Window Layout", action: nil, keyEquivalent: "")
+        let parent = NSMenuItem(title: L("Window Layout"), action: nil, keyEquivalent: "")
         parent.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
         parent.submenu = menu
         return [parent]
@@ -114,7 +114,7 @@ final class WindowsShell: ModuleShell {
 
     func perform(_ action: String) {
         guard Accessibility.isTrusted else {
-            services.toast.show("Allow Accessibility to arrange windows", detail: "Open Settings → General to turn it on.", style: .warning)
+            services.toast.show(L("Allow Accessibility to arrange windows"), detail: "Open Settings → General to turn it on.", style: .warning)
             return
         }
         guard let window = WindowControl.focusedWindow(), let current = WindowControl.frame(of: window) else {
@@ -156,7 +156,7 @@ final class WindowsShell: ModuleShell {
                 }
             }
         } catch {
-            services.toast.show("Couldn’t arrange the window", detail: error.localizedDescription, style: .warning)
+            services.toast.show(L("Couldn’t arrange the window"), detail: error.localizedDescription, style: .warning)
         }
     }
 

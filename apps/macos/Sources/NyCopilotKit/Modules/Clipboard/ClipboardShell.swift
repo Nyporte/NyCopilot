@@ -61,13 +61,13 @@ final class ClipboardShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.open, title: "Open clipboard history",
+        [.init(id: Action.open, title: L("Open clipboard history"),
                defaultCombination: .init(keyCode: 9, modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.open() })]
     }
 
     func menuItems() -> [NSMenuItem] {
-        [services.menuItem("Clipboard History…", symbol: "doc.on.clipboard", hotKey: Action.open, target: self, action: #selector(openFromMenu))]
+        [services.menuItem(L("Clipboard History…"), symbol: "doc.on.clipboard", hotKey: Action.open, target: self, action: #selector(openFromMenu))]
     }
 
     func makeSettingsPane() -> SettingsPane? { ClipboardPane(services: services) }
@@ -168,7 +168,7 @@ final class ClipboardShell: ModuleShell {
     private func paste(_ entry: ClipboardEntry, into target: InputTarget?) {
         guard put(entry) else { return }
         guard let target else {
-            services.toast.show("Copied", detail: "Press ⌘V to paste.", style: .success)
+            services.toast.show(L("Copied"), detail: "Press ⌘V to paste.", style: .success)
             return
         }
         Task {
@@ -179,7 +179,7 @@ final class ClipboardShell: ModuleShell {
                 Diagnostics.note("clipboard", "pasted from history")
             } catch {
                 Diagnostics.note("clipboard", "didn’t paste: \(error.localizedDescription)")
-                services.toast.show("Copied", detail: "Press ⌘V to paste.", style: .success)
+                services.toast.show(L("Copied"), detail: "Press ⌘V to paste.", style: .success)
             }
             // Pasting puts the clipboard back as it was: the pick itself.
             lastChange = NSPasteboard.general.changeCount
@@ -198,7 +198,7 @@ final class ClipboardShell: ModuleShell {
             return true
         }
         guard let name = entry.image, let png = try? Data(contentsOf: Self.images.file(name)) else {
-            services.toast.show("That image is no longer kept", style: .warning)
+            services.toast.show(L("That image is no longer kept"), style: .warning)
             return false
         }
         let item = NSPasteboardItem()

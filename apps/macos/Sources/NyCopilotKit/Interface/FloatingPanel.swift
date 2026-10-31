@@ -22,7 +22,10 @@ class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { takesKeys }
 
     override var contentView: NSView? {
-        didSet { contentView.map(Self.refuseFocus) }
+        didSet {
+            contentView.map(Self.refuseFocus)
+            contentView?.labelIconButtons()
+        }
     }
 
     /// Shows the panel and makes it key without activating NyCopilot; `focus` gets the typing.

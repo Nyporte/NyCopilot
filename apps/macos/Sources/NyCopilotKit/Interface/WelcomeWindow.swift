@@ -16,26 +16,26 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
     }
 
     private static let goals: [Goal] = [
-        Goal(module: "translate", title: "Translate what I write and read",
+        Goal(module: "translate", title: L("Translate what I write and read"),
              detail: "Write in any language; read selections and the whole screen in yours.", action: TranslateShell.Action.compose),
-        Goal(module: "capture", title: "Capture and mark up the screen",
+        Goal(module: "capture", title: L("Capture and mark up the screen"),
              detail: "Screenshots with arrows and text; pin them; capture long pages.", action: CaptureShell.Action.capture),
-        Goal(module: "ask", title: "Ask AI about anything",
+        Goal(module: "ask", title: L("Ask AI about anything"),
              detail: "Explain, summarize, or rewrite what you select or capture.", action: AskShell.Action.open),
-        Goal(module: "inbox", title: "Catch thoughts for later",
+        Goal(module: "inbox", title: L("Catch thoughts for later"),
              detail: "One key to jot a thought or keep a selection; deal with it later.", action: InboxShell.Action.capture),
-        Goal(module: "clipboard", title: "Remember what I copy",
+        Goal(module: "clipboard", title: L("Remember what I copy"),
              detail: "Everything you copy, text and images, ready to paste again.", action: ClipboardShell.Action.open),
-        Goal(module: "windows", title: "Arrange windows",
+        Goal(module: "windows", title: L("Arrange windows"),
              detail: "Halves, thirds, and corners, by shortcut or by dragging.", action: nil, fixedKeys: "⌃⌥ ← →")
     ]
 
     private let services: CopilotServices
     private var goalRows: [(goal: Goal, box: NSButton, keys: NSTextField)] = []
     private let scheme = NSSegmentedControl(labels: KeyScheme.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
-    private let accessStep = StepRow(number: 1, title: "Allow Accessibility",
+    private let accessStep = StepRow(number: 1, title: L("Allow Accessibility"),
                                      detail: "To read what you select, paste results back, and move windows.")
-    private let modelStep = StepRow(number: 2, title: "Connect a model (optional)", detail: "")
+    private let modelStep = StepRow(number: 2, title: L("Connect a model (optional)"), detail: "")
     private var poll: Timer?
     var onFinish: (() -> Void)?
 
@@ -53,20 +53,20 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         let icon = NSImageView(image: NSApp.applicationIconImage)
         icon.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([icon.widthAnchor.constraint(equalToConstant: 48), icon.heightAnchor.constraint(equalToConstant: 48)])
-        let title = Design.label("Welcome to NyCopilot", size: 22, weight: .bold)
-        let subtitle = Design.wrapping("Pick what you want help with. You can change any of it later in Settings.", size: 13)
+        let title = Design.label(L("Welcome to NyCopilot"), size: 22, weight: .bold)
+        let subtitle = Design.wrapping(L("Pick what you want help with. You can change any of it later in Settings."), size: 13)
         subtitle.alignment = .center
         let header = Design.vstack([icon, title, subtitle], spacing: 6, alignment: .centerX)
         header.setCustomSpacing(8, after: icon)
 
-        let goals = FormSection("What should NyCopilot do?", rows: Self.goals.map(makeRow))
+        let goals = FormSection(L("What should NyCopilot do?"), rows: Self.goals.map(makeRow))
 
         scheme.target = self
         scheme.action = #selector(schemeChanged)
-        let keyboard = FormSection("Shortcuts", footer: KeyScheme.functionKeysAreStandard
+        let keyboard = FormSection(L("Shortcuts"), footer: KeyScheme.functionKeysAreStandard
             ? "Your F-keys send F1, F2…, so F1 and F3 are one press. ⌥⌘/ shows every shortcut any time."
             : "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time.",
-            rows: [FormRow("One-press keys", subtitle: "Screenshot and Inbox", accessory: scheme)])
+            rows: [FormRow(L("One-press keys"), subtitle: L("Screenshot and Inbox"), accessory: scheme)])
 
         accessStep.button.title = "Allow…"
         accessStep.button.target = self
@@ -74,9 +74,9 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         modelStep.button.title = "Set Up…"
         modelStep.button.target = self
         modelStep.button.action = #selector(setUpModel)
-        let setup = FormSection("Setup", rows: [accessStep, modelStep])
+        let setup = FormSection(L("Setup"), rows: [accessStep, modelStep])
 
-        let done = Design.button("Get Started", target: self, action: #selector(finish), primary: true)
+        let done = Design.button(L("Get Started"), target: self, action: #selector(finish), primary: true)
         done.controlSize = .large
         let root = Design.vstack([header, goals, keyboard, setup, done], spacing: 16, alignment: .centerX)
         root.translatesAutoresizingMaskIntoConstraints = false
@@ -180,9 +180,9 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         window?.close()
         let help = services.hotKeys.combination(for: AppDelegate.showShortcutsAction).map(KeyNames.display) ?? "⌥⌘/"
         if failures.isEmpty {
-            services.toast.show("You’re set", detail: "\(help) shows every shortcut; ? shows the keys of whatever you’re in.", style: .success)
+            services.toast.show(L("You’re set"), detail: "\(help) shows every shortcut; ? shows the keys of whatever you’re in.", style: .success)
         } else {
-            services.toast.show("Some shortcuts are taken by another app", detail: "Choose others in Settings. \(help) shows them all.", style: .warning)
+            services.toast.show(L("Some shortcuts are taken by another app"), detail: "Choose others in Settings. \(help) shows them all.", style: .warning)
         }
     }
 

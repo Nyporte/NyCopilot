@@ -18,7 +18,7 @@ final class WindowsPane: SettingsPane {
     init(services: CopilotServices, actions: [WindowsShell.ActionInfo]) {
         self.services = services
         self.actions = actions
-        super.init(id: "windows", title: "Windows", symbol: "rectangle.split.2x1")
+        super.init(id: "windows", title: L("Windows"), symbol: "rectangle.split.2x1")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:actions:)") }
@@ -38,10 +38,10 @@ final class WindowsPane: SettingsPane {
         gapValue.widthAnchor.constraint(equalToConstant: 36).isActive = true
 
         var sections: [NSView] = [
-            FormSection("Arranging", footer: "Window Layouts moves the frontmost app’s focused window. It needs Accessibility, like Translate.", rows: [
-                FormRow("Snap by dragging to edges", subtitle: "Drag a window to a side, corner, or the top of the screen.", accessory: dragSwitch),
-                FormRow("When a shortcut is repeated", subtitle: "Pressing the same layout again on the same window.", accessory: repeatMode),
-                FormRow("Gap between windows", accessory: Design.hstack([gapSlider, gapValue]))
+            FormSection(L("Arranging"), footer: L("Window Layouts moves the frontmost app’s focused window. It needs Accessibility, like Translate."), rows: [
+                FormRow(L("Snap by dragging to edges"), subtitle: L("Drag a window to a side, corner, or the top of the screen."), accessory: dragSwitch),
+                FormRow(L("When a shortcut is repeated"), subtitle: L("Pressing the same layout again on the same window."), accessory: repeatMode),
+                FormRow(L("Gap between windows"), accessory: Design.hstack([gapSlider, gapValue]))
             ])
         ]
         var groups: [(String, [String])] = []
@@ -56,9 +56,9 @@ final class WindowsPane: SettingsPane {
         sections.append(shortcuts.errorLabel)
         if RectangleImport.isAvailable {
             importNote.isHidden = true
-            sections.append(FormSection("Switching from Rectangle", rows: [
-                FormRow("Rectangle settings", subtitle: "Use your Rectangle shortcuts and repeat behavior here.",
-                        accessory: Design.button("Import", target: self, action: #selector(importFromRectangle)))
+            sections.append(FormSection(L("Switching from Rectangle"), rows: [
+                FormRow(L("Rectangle settings"), subtitle: L("Use your Rectangle shortcuts and repeat behavior here."),
+                        accessory: Design.button(L("Import"), target: self, action: #selector(importFromRectangle)))
             ]))
             sections.append(importNote)
         }

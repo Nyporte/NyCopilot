@@ -12,8 +12,8 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private let instructions = NSTextView()
     private let instructionsStatus = Design.label("", size: 11.5, color: .secondaryLabelColor)
-    private let restoreButton = Design.button("Restore Default", target: nil, action: nil)
-    private let saveButton = Design.button("Save Instructions", target: nil, action: nil)
+    private let restoreButton = Design.button(L("Restore Default"), target: nil, action: nil)
+    private let saveButton = Design.button(L("Save Instructions"), target: nil, action: nil)
     private var savedInstructions = ""
     private lazy var defaultInstructions = Self.defaultInstructions(services.core)
     private lazy var shortcuts = ShortcutEditor(services: services)
@@ -21,7 +21,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     init(services: CopilotServices, openHistory: @escaping () -> Void) {
         self.services = services
         self.openHistory = openHistory
-        super.init(id: "translate", title: "Translate", symbol: "character.bubble")
+        super.init(id: "translate", title: L("Translate"), symbol: "character.bubble")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:openHistory:)") }
@@ -36,32 +36,32 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         trimSwitch.action = #selector(toggleTrim)
         message.isHidden = true
 
-        let open = Design.button("Open History", target: self, action: #selector(showHistory))
-        let clear = Design.button("Clear…", target: self, action: #selector(clearHistory))
+        let open = Design.button(L("Open History"), target: self, action: #selector(showHistory))
+        let clear = Design.button(L("Clear…"), target: self, action: #selector(clearHistory))
         restoreButton.target = self
         restoreButton.action = #selector(restoreInstructions)
         saveButton.target = self
         saveButton.action = #selector(saveInstructions)
         let instructionsBar = Design.hstack([instructionsStatus, Design.spacer(), restoreButton, saveButton])
         return [
-            FormSection("Favorite Languages",
-                        footer: "In the translate box, Tab steps through these in this order and Shift+Tab goes back. Use ▲ ▼ to change the order.",
+            FormSection(L("Favorite Languages"),
+                        footer: L("In the translate box, Tab steps through these in this order and Shift+Tab goes back. Use ▲ ▼ to change the order."),
                         rows: [favorites]),
             message,
-            FormSection("Result", rows: [
-                FormRow("Trim spaces and line breaks", subtitle: "Removes them from the start and end of each translation.",
+            FormSection(L("Result"), rows: [
+                FormRow(L("Trim spaces and line breaks"), subtitle: L("Removes them from the start and end of each translation."),
                         accessory: trimSwitch)
             ]),
-            FormSection("Instructions",
-                        footer: "Sent to the model (Settings → AI & Engines) with each translation it makes; the other engines don’t take instructions. {language} becomes the target language. Your text is always sent separately, never inside these instructions.",
+            FormSection(L("Instructions"),
+                        footer: L("Sent to the model (Settings → AI & Engines) with each translation it makes; the other engines don’t take instructions. {language} becomes the target language. Your text is always sent separately, never inside these instructions."),
                         rows: [makeEditor()]),
             instructionsBar,
-            shortcuts.section("Shortcuts", footer: "Click a shortcut and press a new combination. Press Delete to turn it off. Hold the translate shortcut to highlight all the text on screen, then point at a block to read its translation; Esc ends it.",
+            shortcuts.section("Shortcuts", footer: L("Click a shortcut and press a new combination. Press Delete to turn it off. Hold the translate shortcut to highlight all the text on screen, then point at a block to read its translation; Esc ends it."),
                               actions: [TranslateShell.Action.compose, TranslateShell.Action.history]),
             shortcuts.errorLabel,
-            FormSection("History",
-                        footer: "Every translation is saved on this Mac so you can copy it again. Your original text is never stored.",
-                        rows: [FormRow("Saved translations", accessory: Design.hstack([clear, open]))])
+            FormSection(L("History"),
+                        footer: L("Every translation is saved on this Mac so you can copy it again. Your original text is never stored."),
+                        rows: [FormRow(L("Saved translations"), accessory: Design.hstack([clear, open]))])
         ]
     }
 

@@ -305,3 +305,15 @@ final class StatusLine: NSStackView {
         label.textColor = color
     }
 }
+
+extension NSView {
+    /// Icon-only buttons in this view tree speak their tooltip to VoiceOver ("Copy (⌘C)", not
+    /// "doc.on.doc"), unless they already have a label.
+    func labelIconButtons() {
+        if let button = self as? NSButton, button.title.isEmpty || button.imagePosition == .imageOnly,
+           let tip = button.toolTip, !tip.isEmpty, (button.accessibilityLabel() ?? "").isEmpty {
+            button.setAccessibilityLabel(tip)
+        }
+        subviews.forEach { $0.labelIconButtons() }
+    }
+}

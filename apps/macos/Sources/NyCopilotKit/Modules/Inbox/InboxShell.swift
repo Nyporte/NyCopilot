@@ -36,7 +36,7 @@ final class InboxShell: ModuleShell {
             guard let self, add(["text": text, "source": "typed"], context: context) else { return }
             if Tips.due("inbox.selection", after: 3, times: 2) {
                 let key = services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? "the shortcut"
-                services.toast.show("Saved to Inbox", detail: "Tip: select text in any app and press \(key) to keep it without typing.", style: .success)
+                services.toast.show(L("Saved to Inbox"), detail: "Tip: select text in any app and press \(key) to keep it without typing.", style: .success)
             }
         }
         bar.onOpenInbox = { [weak self] in self?.openInbox() }
@@ -79,16 +79,16 @@ final class InboxShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.capture, title: "Jot something down, or keep the selection",
+        [.init(id: Action.capture, title: L("Jot something down, or keep the selection"),
                defaultCombination: .init(keyCode: 99, modifiers: 0), // F3
                handler: { [weak self] in self?.capture() }),
-         .init(id: Action.open, title: "Open the inbox",
+         .init(id: Action.open, title: L("Open the inbox"),
                defaultCombination: .init(keyCode: 99, modifiers: HotKeyCombination.shift),
                handler: { [weak self] in self?.openInbox() })]
     }
 
     func menuItems() -> [NSMenuItem] {
-        [services.menuItem("Jot Down…", symbol: "square.and.pencil", hotKey: Action.capture, target: self, action: #selector(captureFromMenu)),
+        [services.menuItem(L("Jot Down…"), symbol: "square.and.pencil", hotKey: Action.capture, target: self, action: #selector(captureFromMenu)),
          services.menuItem(waiting > 0 ? "Inbox (\(waiting))" : "Inbox", symbol: waiting > 0 ? "tray.full" : "tray",
                            hotKey: Action.open, target: self, action: #selector(openFromMenu))]
     }
@@ -144,14 +144,14 @@ final class InboxShell: ModuleShell {
         var params: [String: Any] = ["text": text ?? "", "source": image == nil ? "selection" : "screenshot"]
         if let image {
             guard let name = Self.images.keep(image) else {
-                services.toast.show("Couldn’t save the screenshot to the inbox", style: .warning)
+                services.toast.show(L("Couldn’t save the screenshot to the inbox"), style: .warning)
                 return
             }
             params["image"] = name
         }
         guard add(params, context: context) else { return }
         let snippet = text.map { "“\($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))…”" } ?? "Screenshot"
-        services.toast.show("Added to Inbox", detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
+        services.toast.show(L("Added to Inbox"), detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
     /// A GIF recording, copied in beside the screenshots.
@@ -161,11 +161,11 @@ final class InboxShell: ModuleShell {
             try FileManager.default.createDirectory(at: Self.images.url, withIntermediateDirectories: true)
             try FileManager.default.copyItem(at: url, to: Self.images.file(name))
         } catch {
-            services.toast.show("Couldn’t add the recording to the inbox", detail: error.localizedDescription, style: .warning)
+            services.toast.show(L("Couldn’t add the recording to the inbox"), detail: error.localizedDescription, style: .warning)
             return
         }
         guard add(["text": "", "image": name, "source": "screenshot"], context: context) else { return }
-        services.toast.show("Added to Inbox", detail: ["Recording", context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
+        services.toast.show(L("Added to Inbox"), detail: ["Recording", context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
     @discardableResult
@@ -175,7 +175,7 @@ final class InboxShell: ModuleShell {
             try services.core.inboxAdd(params.merging(source) { mine, _ in mine })
             return true
         } catch {
-            services.toast.show("Couldn’t add to the inbox", detail: error.localizedDescription, style: .warning)
+            services.toast.show(L("Couldn’t add to the inbox"), detail: error.localizedDescription, style: .warning)
             return false
         }
     }
@@ -186,13 +186,13 @@ final class InboxShell: ModuleShell {
 final class InboxPane: SettingsPane {
     private let services: CopilotServices
     private lazy var shortcuts = ShortcutEditor(services: services)
-    private let clearButton = Design.button("Clear Inbox…", target: nil, action: nil)
-    private let folderButton = Design.button("Choose…", target: nil, action: nil)
+    private let clearButton = Design.button(L("Clear Inbox…"), target: nil, action: nil)
+    private let folderButton = Design.button(L("Choose…"), target: nil, action: nil)
     private let folderLabel = Design.label("", size: 12, color: .secondaryLabelColor)
 
     init(services: CopilotServices) {
         self.services = services
-        super.init(id: "inbox", title: "Inbox", symbol: "tray")
+        super.init(id: "inbox", title: L("Inbox"), symbol: "tray")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
@@ -206,14 +206,14 @@ final class InboxPane: SettingsPane {
         folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         showFolder()
         return [
-            shortcuts.section("Shortcuts", footer: "With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture.",
+            shortcuts.section("Shortcuts", footer: L("With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture."),
                               actions: [InboxShell.Action.capture, InboxShell.Action.open]),
             shortcuts.errorLabel,
-            FormSection("Send To", footer: "S on a note in the inbox sends it to Reminders, Notes, or this folder as a Markdown file (an Obsidian vault works well), then marks it done. L snoozes it until later.", rows: [
-                FormRow("Markdown folder", accessory: Design.hstack([folderLabel, folderButton], spacing: 8))
+            FormSection(L("Send To"), footer: L("S on a note in the inbox sends it to Reminders, Notes, or this folder as a Markdown file (an Obsidian vault works well), then marks it done. L snoozes it until later."), rows: [
+                FormRow(L("Markdown folder"), accessory: Design.hstack([folderLabel, folderButton], spacing: 8))
             ]),
-            FormSection("Notes", footer: "Notes and their screenshots stay on this Mac. Done notes are kept for 30 days.", rows: [
-                FormRow("Remove every note, waiting and done", accessory: clearButton)
+            FormSection(L("Notes"), footer: L("Notes and their screenshots stay on this Mac. Done notes are kept for 30 days."), rows: [
+                FormRow(L("Remove every note, waiting and done"), accessory: clearButton)
             ])
         ]
     }

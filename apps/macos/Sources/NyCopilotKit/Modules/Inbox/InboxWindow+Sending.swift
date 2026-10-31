@@ -18,7 +18,7 @@ extension InboxWindow {
             menu.items.last?.toolTip = folder.path
         }
         menu.addItem(.separator())
-        let share = NSMenuItem(title: "Share…", action: #selector(shareSelected), keyEquivalent: "")
+        let share = NSMenuItem(title: L("Share…"), action: #selector(shareSelected), keyEquivalent: "")
         share.target = self
         share.image = NSImage(systemSymbolName: "square.and.arrow.up", accessibilityDescription: nil)
         menu.addItem(share)

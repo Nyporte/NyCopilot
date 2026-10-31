@@ -169,7 +169,7 @@ final class PinWindow: NSPanel {
         add("Select Text", #selector(selectTextFromMenu), key: "t", state: pinView.isReadingText)
         menu.addItem(.separator())
         add("Actual Size", #selector(actualSize), key: "0")
-        let opacity = NSMenuItem(title: "Opacity", action: nil, keyEquivalent: "")
+        let opacity = NSMenuItem(title: L("Opacity"), action: nil, keyEquivalent: "")
         let levels = NSMenu()
         for level in [100, 80, 60, 40, 20] {
             let item = NSMenuItem(title: "\(level)%", action: #selector(pickOpacity(_:)), keyEquivalent: "")

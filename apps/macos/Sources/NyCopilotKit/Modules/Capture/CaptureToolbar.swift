@@ -325,6 +325,7 @@ final class CaptureToolbar: NSView {
         button.symbolConfiguration = .init(pointSize: 14, weight: .medium)
         button.contentTintColor = .white
         button.toolTip = tip
+        button.setAccessibilityLabel(tip)
         button.widthAnchor.constraint(equalToConstant: 28).isActive = true
         button.heightAnchor.constraint(equalToConstant: 26).isActive = true
         return button

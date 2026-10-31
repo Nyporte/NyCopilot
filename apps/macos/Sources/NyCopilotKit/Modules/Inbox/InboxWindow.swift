@@ -50,13 +50,13 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     let editorScroll = NSScrollView()
     let sourceLabel = Design.label("", size: 12, color: .secondaryLabelColor)
     let timeLabel = Design.label("", size: 12, color: .secondaryLabelColor)
-    let doneButton = Design.button("Done", target: nil, action: nil)
-    let sendButton = Design.button("Send To", target: nil, action: nil)
-    let laterButton = Design.button("Later", target: nil, action: nil)
-    let copyButton = Design.button("Copy", target: nil, action: nil)
-    let openButton = Design.button("Open Source", target: nil, action: nil)
-    let deleteButton = Design.button("Delete", target: nil, action: nil)
-    let nothingSelected = Design.label("Select a note", size: 13, color: .tertiaryLabelColor)
+    let doneButton = Design.button(L("Done"), target: nil, action: nil)
+    let sendButton = Design.button(L("Send To"), target: nil, action: nil)
+    let laterButton = Design.button(L("Later"), target: nil, action: nil)
+    let copyButton = Design.button(L("Copy"), target: nil, action: nil)
+    let openButton = Design.button(L("Open Source"), target: nil, action: nil)
+    let deleteButton = Design.button(L("Delete"), target: nil, action: nil)
+    let nothingSelected = Design.label(L("Select a note"), size: 13, color: .tertiaryLabelColor)
     var shownID: String?
     var pendingSave: DispatchWorkItem?
 
@@ -86,6 +86,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         super.init(window: window)
         window.delegate = self
         window.contentView = makeContent()
+        window.contentView?.labelIconButtons()
         // A size saved while a screenshot stretched the window is put back to the default.
         let restored = window.setFrameUsingName("NyCopilotInbox")
         if !restored || window.frame.width > (window.screen ?? NSScreen.main).map({ $0.visibleFrame.width * 0.8 }) ?? 1200 {
@@ -183,7 +184,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             button.toolTip = tip
         }
         let actions = Design.hstack([doneButton, sendButton, laterButton, copyButton, openButton, Design.spacer(), deleteButton], spacing: 8)
-        let hint = Design.label("Space done   S send   L later   R translate   A ask   P pin   ? all keys", size: 11, color: .tertiaryLabelColor)
+        let hint = Design.label(L("Space done   S send   L later   R translate   A ask   P pin   ? all keys"), size: 11, color: .tertiaryLabelColor)
         hint.lineBreakMode = .byTruncatingTail
         for view in [preview, editorScroll, sourceLabel, timeLabel, actions, hint] as [NSView] { detail.addArrangedSubview(view) }
         detail.orientation = .vertical

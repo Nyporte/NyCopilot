@@ -21,6 +21,11 @@ class SettingsPane: NSViewController {
     /// Refresh live state (permissions, saved keys) each time the pane is shown.
     func paneWillAppear() {}
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.labelIconButtons()
+    }
+
     /// Panes taller than this scroll, so the window always fits on a laptop screen.
     static let maximumHeight: CGFloat = 640
 

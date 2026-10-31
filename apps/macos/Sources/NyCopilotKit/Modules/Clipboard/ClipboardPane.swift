@@ -7,14 +7,14 @@ final class ClipboardPane: SettingsPane {
     private let enabledSwitch = NSSwitch()
     private let keepFor = NSPopUpButton()
     private let atMost = NSPopUpButton()
-    private let clearButton = Design.button("Clear History…", target: nil, action: nil)
+    private let clearButton = Design.button(L("Clear History…"), target: nil, action: nil)
     private lazy var shortcuts = ShortcutEditor(services: services)
     private static let days = [(1, "1 day"), (7, "1 week"), (30, "30 days"), (90, "90 days"), (365, "1 year")]
     private static let counts = [100, 500, 1000, 5000]
 
     init(services: CopilotServices) {
         self.services = services
-        super.init(id: "clipboard", title: "Clipboard", symbol: "doc.on.clipboard")
+        super.init(id: "clipboard", title: L("Clipboard"), symbol: "doc.on.clipboard")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
@@ -31,13 +31,13 @@ final class ClipboardPane: SettingsPane {
         clearButton.target = self
         clearButton.action = #selector(clearHistory)
         return [
-            FormSection("History", footer: "Copies — text and images — stay on this Mac. Pinned entries (⌘P in the list) are kept until you unpin them. Passwords and anything an app marks private are never kept, nor copies from password managers.", rows: [
-                FormRow("Keep clipboard history", subtitle: "Text and images you copy, newest first; copying it again moves it to the top.", accessory: enabledSwitch),
-                FormRow("Keep entries for", accessory: keepFor),
-                FormRow("Keep at most", accessory: atMost),
-                FormRow("Forget everything", accessory: clearButton)
+            FormSection(L("History"), footer: L("Copies — text and images — stay on this Mac. Pinned entries (⌘P in the list) are kept until you unpin them. Passwords and anything an app marks private are never kept, nor copies from password managers."), rows: [
+                FormRow(L("Keep clipboard history"), subtitle: L("Text and images you copy, newest first; copying it again moves it to the top."), accessory: enabledSwitch),
+                FormRow(L("Keep entries for"), accessory: keepFor),
+                FormRow(L("Keep at most"), accessory: atMost),
+                FormRow(L("Forget everything"), accessory: clearButton)
             ]),
-            shortcuts.section("Shortcuts", footer: "Type to search, ↩ pastes into the app you were in, ⌘1–9 picks one of the first nine, ⌘P pins.",
+            shortcuts.section("Shortcuts", footer: L("Type to search, ↩ pastes into the app you were in, ⌘1–9 picks one of the first nine, ⌘P pins."),
                               actions: [ClipboardShell.Action.open]),
             shortcuts.errorLabel
         ]

@@ -25,6 +25,8 @@ build: core
 	@if [ -n "$(VERSION)" ]; then /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" "$(APP)/Contents/Info.plist"; fi
 	@if [ -n "$(BUILD_NUMBER)" ]; then /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(BUILD_NUMBER)" "$(APP)/Contents/Info.plist"; fi
 	cp apps/macos/Resources/AppIcon.icns "$(APP)/Contents/Resources/AppIcon.icns"
+	cp -R apps/macos/Resources/en.lproj "$(APP)/Contents/Resources/"
+	@# zh-Hans ships once every interface string is wrapped in L(); until then it would mix languages.
 	@if [ "$(SIGN_IDENTITY)" = "-" ]; then echo "warning: no signing certificate found; ad-hoc builds lose Accessibility and Keychain access on every rebuild"; fi
 	codesign --force --options runtime --entitlements apps/macos/Resources/NyCopilot.entitlements --sign "$(SIGN_IDENTITY)" "$(APP)"
 	codesign --verify --strict "$(APP)"

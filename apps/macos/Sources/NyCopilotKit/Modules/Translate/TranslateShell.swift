@@ -38,20 +38,20 @@ final class TranslateShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.compose, title: "Translate as you type",
+        [.init(id: Action.compose, title: L("Translate as you type"),
                defaultCombination: .init(keyCode: 17, modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.beginComposition() },
                // Held: the whole screen, translated in place.
                longPress: { [weak self] in self?.screen.toggle() }),
-         .init(id: Action.history, title: "Open translation history",
+         .init(id: Action.history, title: L("Open translation history"),
                defaultCombination: .init(keyCode: 4, modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.showHistory() })]
     }
 
     func menuItems() -> [NSMenuItem] {
-        [services.menuItem("Translate…", symbol: "character.bubble", hotKey: Action.compose, target: self, action: #selector(beginFromMenu)),
-         services.menuItem("Translate Screen", symbol: "rectangle.and.text.magnifyingglass", hotKey: nil, target: self, action: #selector(toggleScreen)),
-         services.menuItem("Translation History", symbol: "clock.arrow.circlepath", hotKey: Action.history, target: self, action: #selector(showHistory))]
+        [services.menuItem(L("Translate…"), symbol: "character.bubble", hotKey: Action.compose, target: self, action: #selector(beginFromMenu)),
+         services.menuItem(L("Translate Screen"), symbol: "rectangle.and.text.magnifyingglass", hotKey: nil, target: self, action: #selector(toggleScreen)),
+         services.menuItem(L("Translation History"), symbol: "clock.arrow.circlepath", hotKey: Action.history, target: self, action: #selector(showHistory))]
     }
 
     func makeSettingsPane() -> SettingsPane? {
@@ -108,7 +108,7 @@ final class TranslateShell: ModuleShell {
             do {
                 captured = try await InputTarget.capture(pid: foreground.processIdentifier)
             } catch InputTarget.Failure.secureField {
-                services.toast.show("Password fields aren’t supported", detail: "NyCopilot never reads or types into secure fields.", style: .warning)
+                services.toast.show(L("Password fields aren’t supported"), detail: "NyCopilot never reads or types into secure fields.", style: .warning)
                 return
             } catch {
                 captured = nil
@@ -216,7 +216,7 @@ final class TranslateShell: ModuleShell {
             returnToSource()
             let hint = Accessibility.isTrusted ? "This field can’t be edited directly — press ⌘V to paste."
                                                : "Allow Accessibility in Settings to paste automatically."
-            services.toast.show("Translation copied", detail: hint, style: .success, near: anchor)
+            services.toast.show(L("Translation copied"), detail: hint, style: .success, near: anchor)
             composer.close()
             return
         }
@@ -230,11 +230,11 @@ final class TranslateShell: ModuleShell {
             }
         } catch is CancellationError {
         } catch TemporaryPasteboard.Failure.restoreFailed {
-            services.toast.show("Pasted", detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)
+            services.toast.show(L("Pasted"), detail: "Your previous clipboard couldn’t be restored.", style: .warning, near: anchor)
         } catch {
             Diagnostics.note("paste", "didn’t paste: \(error.localizedDescription)")
             copy(text)
-            services.toast.show("Couldn’t paste into the field", detail: "The translation is on your clipboard and in History.",
+            services.toast.show(L("Couldn’t paste into the field"), detail: "The translation is on your clipboard and in History.",
                                 style: .warning, near: anchor)
         }
         guard operationID == id else { return }

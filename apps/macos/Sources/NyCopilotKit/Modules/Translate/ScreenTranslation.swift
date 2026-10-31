@@ -47,12 +47,12 @@ final class ScreenTranslator {
         guard !isActive else { return }
         guard ScreenGrabber.hasPermission else {
             ScreenGrabber.requestPermission()
-            services.toast.show("Allow Screen Recording to translate the screen",
+            services.toast.show(L("Allow Screen Recording to translate the screen"),
                                 detail: "Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording.", style: .warning)
             return
         }
         guard services.preferences.canTranslate else {
-            services.toast.show("Set up a translation service first", detail: "Screen translation needs one: Settings → AI & Engines.", style: .warning)
+            services.toast.show(L("Set up a translation service first"), detail: "Screen translation needs one: Settings → AI & Engines.", style: .warning)
             services.openSettings("model")
             return
         }

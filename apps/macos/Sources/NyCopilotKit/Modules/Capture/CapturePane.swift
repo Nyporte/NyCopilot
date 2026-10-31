@@ -6,7 +6,7 @@ import AppKit
 final class CapturePane: SettingsPane, NSTextFieldDelegate {
     private let services: CopilotServices
     private let permissionBadge = StatusBadge()
-    private let permissionButton = Design.button("Open System Settings…", target: nil, action: nil)
+    private let permissionButton = Design.button(L("Open System Settings…"), target: nil, action: nil)
     private let folderLabel = Design.label("", size: 12, color: .secondaryLabelColor)
     private let format = NSPopUpButton()
     private let pattern = NSTextField()
@@ -22,7 +22,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
 
     init(services: CopilotServices) {
         self.services = services
-        super.init(id: "capture", title: "Screenshot", symbol: "camera.viewfinder")
+        super.init(id: "capture", title: L("Screenshot"), symbol: "camera.viewfinder")
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(services:)") }
@@ -32,7 +32,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         permissionButton.action = #selector(requestPermission)
         folderLabel.lineBreakMode = .byTruncatingMiddle
         folderLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 220).isActive = true
-        let choose = Design.button("Choose…", target: self, action: #selector(chooseFolder))
+        let choose = Design.button(L("Choose…"), target: self, action: #selector(chooseFolder))
         format.addItems(withTitles: Self.formats.map(\.1))
         format.target = self
         format.action = #selector(changeFormat)
@@ -53,26 +53,26 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         gifCursorSwitch.action = #selector(toggleGifCursor)
 
         return [
-            FormSection("Permissions", rows: [
-                FormRow("Screen Recording", subtitle: "Lets NyCopilot capture what’s on your screens.",
+            FormSection(L("Permissions"), rows: [
+                FormRow(L("Screen Recording"), subtitle: L("Lets NyCopilot capture what’s on your screens."),
                         accessory: Design.hstack([permissionBadge, permissionButton], spacing: 12))
             ]),
-            FormSection("Capturing", rows: [
-                FormRow("Hide NyCopilot windows", subtitle: "Leave pins and other NyCopilot windows out of captures.", accessory: hideSwitch)
+            FormSection(L("Capturing"), rows: [
+                FormRow(L("Hide NyCopilot windows"), subtitle: L("Leave pins and other NyCopilot windows out of captures."), accessory: hideSwitch)
             ]),
-            FormSection("GIF Recording", footer: "G in a capture arms the selection; Record (or the capture shortcut) starts, the shortcut again stops. Up to a minute. GIFs save to the folder below.", rows: [
-                FormRow("Frame rate", subtitle: "More frames move more smoothly and make bigger files.", accessory: gifRate),
-                FormRow("Full Retina resolution", subtitle: "Off records one pixel per point: sharp enough, and a quarter of the size.", accessory: gifRetinaSwitch),
-                FormRow("Show the pointer", accessory: gifCursorSwitch)
+            FormSection(L("GIF Recording"), footer: L("G in a capture arms the selection; Record (or the capture shortcut) starts, the shortcut again stops. Up to a minute. GIFs save to the folder below."), rows: [
+                FormRow(L("Frame rate"), subtitle: L("More frames move more smoothly and make bigger files."), accessory: gifRate),
+                FormRow(L("Full Retina resolution"), subtitle: L("Off records one pixel per point: sharp enough, and a quarter of the size."), accessory: gifRetinaSwitch),
+                FormRow(L("Show the pointer"), accessory: gifCursorSwitch)
             ]),
-            FormSection("Saving", footer: "⌘S in a capture asks where to save; ⇧⌘S saves straight to this folder. The pattern understands {date}, {time}, and {n}.", rows: [
-                FormRow("Folder", accessory: Design.hstack([folderLabel, choose], spacing: 8)),
-                FormRow("Format", accessory: format),
-                FormRow("File name", accessory: pattern)
+            FormSection(L("Saving"), footer: L("⌘S in a capture asks where to save; ⇧⌘S saves straight to this folder. The pattern understands {date}, {time}, and {n}."), rows: [
+                FormRow(L("Folder"), accessory: Design.hstack([folderLabel, choose], spacing: 8)),
+                FormRow(L("Format"), accessory: format),
+                FormRow(L("File name"), accessory: pattern)
             ]),
             message,
-            FormSection("Pins", rows: [
-                FormRow("Shadow", subtitle: "Draw a shadow around pinned images.", accessory: shadowSwitch)
+            FormSection(L("Pins"), rows: [
+                FormRow(L("Shadow"), subtitle: L("Draw a shadow around pinned images."), accessory: shadowSwitch)
             ]),
             shortcuts.section("Shortcuts", footer: """
                 In a capture: drag or click a window to select · arrows nudge, ⇧ arrows resize · 1–8 pick a tool · \

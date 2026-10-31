@@ -334,7 +334,7 @@ final class ScrollCapturePanel: FloatingPanel {
 
     private let preview = WholePreview()
     private let size = Design.label("", size: 12, weight: .semibold, color: .white)
-    private let hint = Design.wrapping("Scroll up or down in the outlined area.", size: 11.5)
+    private let hint = Design.wrapping(L("Scroll up or down in the outlined area."), size: 11.5)
     private let copyButton = NSButton(title: "Copy  ↩", target: nil, action: nil)
 
     init(beside region: NSRect, on screen: NSScreen) {

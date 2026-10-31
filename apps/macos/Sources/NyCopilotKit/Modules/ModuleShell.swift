@@ -93,7 +93,7 @@ final class CopilotServices {
             guard let cgImage = image?.cgImage(forProposedRect: nil, context: nil, hints: nil), let image else { return }
             Task {
                 let paragraphs = (try? await ScreenTranslator.paragraphs(in: cgImage, scale: CGFloat(cgImage.width) / max(image.size.width, 1))) ?? []
-                if paragraphs.isEmpty { toast.show("No text to translate here", style: .info, near: anchor) }
+                if paragraphs.isEmpty { toast.show(L("No text to translate here"), style: .info, near: anchor) }
                 else { translateText(paragraphs.joined(separator: "\n\n"), near) }
             }
         case .inbox:

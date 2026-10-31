@@ -50,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [core] in _ = try? core?.call(.coreCompact) }
         modules = makeModules().filter { available.contains($0.id) }
         for module in modules { module.hotKeyActions.forEach(services.hotKeys.add) }
-        services.hotKeys.add(.init(id: Self.showShortcutsAction, title: "Show all keyboard shortcuts",
+        services.hotKeys.add(.init(id: Self.showShortcutsAction, title: L("Show all keyboard shortcuts"),
                                    defaultCombination: .init(keyCode: 44, modifiers: HotKeyCombination.option | HotKeyCombination.command), // ⌥⌘/
                                    handler: { [weak self] in self?.showShortcuts() }))
         modules.compactMap { $0 as? WindowsShell }.first?.importRectangleOnce()
@@ -119,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         // Translation works without a service where macOS has its own panel.
         if !Accessibility.isTrusted || !(services.preferences.canTranslate || SystemTranslation.isAvailable) {
-            let setup = NSMenuItem(title: "Finish Setting Up…", action: #selector(showWelcomeFromMenu), keyEquivalent: "")
+            let setup = NSMenuItem(title: L("Finish Setting Up…"), action: #selector(showWelcomeFromMenu), keyEquivalent: "")
             setup.target = self
             setup.image = NSImage(systemSymbolName: "exclamationmark.circle.fill", accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(paletteColors: [.white, .systemOrange]))
@@ -130,19 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             module.menuItems().forEach(menu.addItem)
             menu.addItem(.separator())
         }
-        menu.addItem(services.menuItem("Keyboard Shortcuts", symbol: "keyboard", hotKey: Self.showShortcutsAction,
+        menu.addItem(services.menuItem(L("Keyboard Shortcuts"), symbol: "keyboard", hotKey: Self.showShortcutsAction,
                                        target: self, action: #selector(showShortcutsFromMenu)))
-        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L("Settings…"), action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
-        let about = NSMenuItem(title: "About NyCopilot", action: #selector(showAbout), keyEquivalent: "")
+        let about = NSMenuItem(title: L("About NyCopilot"), action: #selector(showAbout), keyEquivalent: "")
         about.target = self
         menu.addItem(about)
         menu.addItem(.separator())
-        let restart = NSMenuItem(title: "Restart NyCopilot", action: #selector(restart), keyEquivalent: "")
+        let restart = NSMenuItem(title: L("Restart NyCopilot"), action: #selector(restart), keyEquivalent: "")
         restart.target = self
         menu.addItem(restart)
-        menu.addItem(NSMenuItem(title: "Quit NyCopilot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: L("Quit NyCopilot"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
     }
 
     // MARK: Windows
@@ -211,7 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             try process.run()
         } catch {
-            services.toast.show("Couldn’t restart", detail: error.localizedDescription, style: .warning)
+            services.toast.show(L("Couldn’t restart"), detail: error.localizedDescription, style: .warning)
             return
         }
         Diagnostics.note("app", "restarting")
