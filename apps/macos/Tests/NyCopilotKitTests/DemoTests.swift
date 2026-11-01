@@ -196,7 +196,10 @@ final class DemoTests: XCTestCase {
         director.wait(0.15)
         director.click()
         summarize.performClick(nil)
-        director.wait(3.2)
+        // Until the answer has finished streaming, however fast the machine is, then a moment to read it.
+        let asked = Date()
+        while !ask.transcript.string.hasSuffix("launch."), Date().timeIntervalSince(asked) < 10 { director.wait(0.1) }
+        director.wait(0.5)
         XCTAssertTrue(director.cut(hold: 2.0))
         ask.close()
     }
