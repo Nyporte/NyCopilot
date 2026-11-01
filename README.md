@@ -16,7 +16,7 @@ Keep the thought for later. All of it one keystroke away, right where you're wor
 ![10 languages](https://img.shields.io/badge/interface-10%20languages-5e5ce6)
 [![CI](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml)
 
-<img src="docs/images/toolbar.png" width="760" alt="NyCopilot's screenshot toolbar: drawing tools, text recognition, translate, Ask AI, Inbox, GIF and scrolling capture, pin, save">
+<img src="docs/images/demo-capture.gif" width="760" alt="Press F1: the outline finds the window under the pointer, drag out a chart, pick the arrow, point it at the tallest bar, ⌘C copies">
 
 </div>
 
@@ -54,9 +54,9 @@ click to take it, or drag any region. Then:
 
 The app you were in never flickers or loses its place. When you're done, you're right back where you were.
 
-## Translate: write in any language, read everything in yours
+<img src="docs/images/toolbar.png" width="720" alt="The screenshot toolbar: drawing tools, text recognition, translate, Ask AI, Inbox, GIF and scrolling capture, pin, save">
 
-<img src="docs/images/translate.png" width="460" align="right" alt="A translation card next to the text it translates">
+## Translate: write in any language, read everything in yours
 
 - **Translate as you type.** Press **F2** in any text field, type in your language, press Return:
   the field gets the translation. Tab switches between your favorite target languages.
@@ -65,14 +65,14 @@ The app you were in never flickers or loses its place. When you're done, you're 
 - **Translate the whole screen.** Hold F2 and every block of text on screen lights up. Point at
   one to read it in your language.
 
+<img src="docs/images/demo-translate.gif" width="720" alt="Select a Japanese message and press F2: an English card appears. Press F2 in the reply field, type in English, press Return: it goes out in Japanese">
+
 Works with macOS's own on-device translation out of the box, or with Google Translate, Volcengine,
 or any AI model you connect, which can follow your style instructions ("formal Japanese", anyone?).
 
-<br clear="right">
-
 ## Ask AI: explain, summarize, rewrite, right where you read
 
-<img src="docs/images/ask.png" width="560" alt="Ask AI explaining a Chinese paragraph in English">
+<img src="docs/images/demo-ask.gif" width="720" alt="Select a paragraph, press ⌥⌘A, click Summarize: the summary streams in beside the text">
 
 Select a paragraph, a word or a screenshot and press **⌥⌘A** (or **A** on a capture). Explain,
 Summarize and Rewrite are one click away; anything else, just ask, and keep the conversation going.
