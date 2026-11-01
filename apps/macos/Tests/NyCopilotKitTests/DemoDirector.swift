@@ -85,10 +85,7 @@ final class DemoDirector {
 
     private func frame() {
         let rect = CGRect(x: crop.minX, y: screen.frame.maxY - crop.maxY, width: crop.width, height: crop.height)
-        // Opaque: the GIF writer draws each frame over the last, so any see-through pixel would let
-        // earlier frames (a pointer, a keycap, a panel's old size) show through as a ghost.
-        guard let shot = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution, .shouldBeOpaque]) else { return }
-        if let raw = ProcessInfo.processInfo.environment["NYCOPILOT_DEMO_RAW"] { keepRaw(shot, in: raw) }
+        guard let shot = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) else { return }
         guard let fresh = Self.bitmap(pixels) else { return }
         context = fresh
         let size = CGSize(width: context.width, height: context.height)
@@ -102,26 +99,6 @@ final class DemoDirector {
         guard let image = context.makeImage() else { return }
         let writer = writer
         encoder.async { writer.add(image, at: time) }
-    }
-
-    /// For checking the recorder: every tenth capture as it came from macOS, and how see-through it is.
-    private var rawCount = 0
-    private func keepRaw(_ shot: CGImage, in folder: String) {
-        rawCount += 1
-        guard rawCount % 10 == 1, let data = shot.dataProvider?.data as Data? else { return }
-        var lowest: UInt8 = 255, seeThrough = 0
-        let stride = shot.bytesPerRow, alphaFirst = [.first, .premultipliedFirst, .noneSkipFirst].contains(shot.alphaInfo)
-        for y in Swift.stride(from: 0, to: shot.height, by: 4) {
-            for x in Swift.stride(from: 0, to: shot.width, by: 4) {
-                let alpha = data[y * stride + x * 4 + (alphaFirst ? 0 : 3)]
-                lowest = min(lowest, alpha)
-                if alpha < 250 { seeThrough += 1 }
-            }
-        }
-        print("demo raw \(rawCount) t=\(String(format: "%.2f", now)) alphaInfo=\(shot.alphaInfo.rawValue) lowest alpha=\(lowest) see-through samples=\(seeThrough)")
-        let url = URL(fileURLWithPath: folder).appendingPathComponent("raw-\(String(format: "%04d", rawCount)).png")
-        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
-        try? NSBitmapImageRep(cgImage: shot).representation(using: .png, properties: [:])?.write(to: url)
     }
 
     private static func bitmap(_ size: (width: Int, height: Int)) -> CGContext? {
@@ -249,6 +226,8 @@ final class DemoDirector {
                                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                              context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else { return }
         window.sendEvent(event)
+        // Drawn now, so the next frame captures the view as it is after this event, not before.
+        window.displayIfNeeded()
     }
 
     /// A key press delivered to `window`.
