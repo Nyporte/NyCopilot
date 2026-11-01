@@ -4,16 +4,20 @@ import AppKit
 /// Every live screen stream NyCopilot runs (scrolling capture, GIF recording) starts and stops here,
 /// so each has a delegate, each failure is noted, and a stream macOS won't stop is caught.
 ///
-/// macOS's capture service has a flaw: when it purges (low disk space, memory pressure) it forgets
-/// the streams it's running without stopping them. Such a stream can't be stopped any more — it
-/// keeps the screen-recording indicator on and keeps capturing until the service restarts. When a
-/// stop fails that way, `onStuck` says so; Settings → General can restart the service.
+/// macOS's capture service has a flaw: when it frees space for a nearly full disk, it stops every
+/// app's streams and leaves each app's connection broken. Streams the app starts afterwards still
+/// run, but the service keeps no record of them, so they can't be stopped — not even by quitting
+/// the app — and keep the screen-recording indicator on. Only restarting the service ends them, and
+/// it gives NyCopilot a working connection again, so a stop that fails that way restarts it at once.
+/// `onStuck` says so only if the restart failed; Settings → General can try again.
 @MainActor
 final class CaptureStreams {
     static let shared = CaptureStreams()
 
-    /// A stop failed: macOS kept the stream running.
+    /// A stop failed and restarting the service didn't help: macOS kept the stream running.
     var onStuck: (() -> Void)?
+    /// Restarts macOS's capture service; replaceable in tests.
+    var restartService: @Sendable () -> Bool = { CaptureStreams.restartCaptureService() }
     private var live: [ObjectIdentifier: (name: String, watcher: Watcher)] = [:]
 
     /// Starts a stream with `output` on `queue`; `onEnded` runs if macOS ends it on its own.
@@ -37,16 +41,24 @@ final class CaptureStreams {
         do {
             try await stream.stopCapture()
         } catch {
-            let code = (error as NSError).code
-            Diagnostics.note("capture", "\(name) didn’t stop: \(code) \(error.localizedDescription)")
-            // attemptToStopStreamState: the service lost track of a stream it's still running.
-            if code == -3808 { onStuck?() }
+            await stopFailed(name, error)
         }
+    }
+
+    /// attemptToStopStreamState: the service lost track of a stream it's still running, and of any
+    /// it will start for NyCopilot. Restarting it ends the stream and mends the connection.
+    func stopFailed(_ name: String, _ error: Error) async {
+        let code = (error as NSError).code
+        Diagnostics.note("capture", "\(name) didn’t stop: \(code) \(error.localizedDescription)")
+        guard code == -3808 else { return }
+        let restart = restartService
+        let restarted = await Task.detached { restart() }.value
+        if !restarted { onStuck?() }
     }
 
     /// Restarts macOS's capture service, which ends every stream it was stuck running; macOS
     /// starts it again on its own when something next captures.
-    static func restartCaptureService() -> Bool {
+    nonisolated static func restartCaptureService() -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
         process.arguments = ["-9", "replayd"]
