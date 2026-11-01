@@ -1,26 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<!-- An accessory app: a menu bar icon and native panels, no Dock icon. -->
 <dict>
-    <key>CFBundleIdentifier</key><string>dev.nycopilot.NyCopilot</string>
-    <key>CFBundleName</key><string>NyCopilot</string>
-    <key>CFBundleDisplayName</key><string>NyCopilot</string>
-    <key>CFBundleExecutable</key><string>NyCopilot</string>
-    <key>CFBundleIconFile</key><string>AppIcon</string>
-    <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.3.0</string>
-    <key>CFBundleVersion</key><string>3</string>
-    <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string><string>zh-Hant</string><string>ja</string><string>ko</string><string>es</string><string>fr</string><string>de</string><string>pt-BR</string><string>ru</string></array>
-    <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
-    <key>LSMinimumSystemVersion</key><string>14.0</string>
-    <key>LSUIElement</key><true/>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSHumanReadableCopyright</key><string>© 2026 NyCopilot</string>
-    <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>NSRemindersUsageDescription</key><string>Inbox notes you send to Reminders are added to your default list.</string>
-    <key>NSRemindersFullAccessUsageDescription</key><string>Inbox notes you send to Reminders are added to your default list.</string>
-    <key>NSAppleEventsUsageDescription</key><string>Inbox notes you send to Notes are created there for you.</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>NyCopilot</string>
+	<key>CFBundleExecutable</key>
+	<string>NyCopilot</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.nycopilot.NyCopilot</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+		<string>zh-Hant</string>
+		<string>ja</string>
+		<string>ko</string>
+		<string>es</string>
+		<string>fr</string>
+		<string>de</string>
+		<string>pt-BR</string>
+		<string>ru</string>
+	</array>
+	<key>CFBundleName</key>
+	<string>NyCopilot</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.4.0</string>
+	<key>CFBundleVersion</key>
+	<string>3</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Inbox notes you send to Notes are created there for you.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 NyCopilot</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Inbox notes you send to Reminders are added to your default list.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Inbox notes you send to Reminders are added to your default list.</string>
 </dict>
 </plist>
