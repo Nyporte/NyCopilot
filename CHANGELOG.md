@@ -13,5 +13,7 @@ The first public release.
   app is behind it; the app you were in never flickers when the capture ends.
 - **A toolbar that answers the pointer.** Icons brighten under the pointer and dim when pressed,
   and the OCR button lights up when the selection has text in it.
+- **F2 translates.** Capture, translate, and the Inbox are now F1, F2, and F3: one press each. (With
+  ⌥⌘ letters, Translate stays ⌥⌘T.)
 - **Translate's favorites follow your Mac.** On a Mac in another language, Tab steps between
   English and yours from the start.
