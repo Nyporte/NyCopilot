@@ -179,14 +179,14 @@ final class GifRecording {
 
     /// An outline just outside the region — white and dashed while ready, red while recording, red
     /// and dashed while paused; clicks go through it.
-    private static func makeBorder(around frame: NSRect) -> NSWindow {
+    static func makeBorder(around frame: NSRect) -> NSWindow {
         let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
         window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
         window.contentView = BorderView()
         return window
     }
 
-    private final class BorderView: NSView {
+    final class BorderView: NSView {
         enum State { case ready, recording, paused }
         var state = State.ready { didSet { needsDisplay = true } }
 

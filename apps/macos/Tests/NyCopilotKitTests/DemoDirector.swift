@@ -5,65 +5,89 @@ import AppKit
 /// worked in; NyCopilot's real panels open over it, driven by synthesized events, while the
 /// director moves a pointer along eased paths and shows each key pressed as a keycap. Every frame
 /// is captured (only NyCopilot's own windows, so nothing else on the Mac shows), the pointer,
-/// clicks, and keycaps are drawn on, and the frame goes into a GIF at 30 frames a second. Encoding
-/// happens on its own queue, so a slow frame never stretches the script's timing.
+/// clicks, and keycaps are drawn on, and the frame goes into a GIF at 30 frames a second.
+///
+/// The script keeps its own time: each frame is a thirtieth of a second later than the one before,
+/// however long the machine took to draw it, so motion stays even on a slow runner. Everything
+/// gets at least that long to run between frames.
+///
+/// Without an output file it keeps the frames instead, for DemoReel to lay several scenes out together.
 ///
 /// It takes over the screen while it records, so it runs on GitHub's Macs (.github/workflows/demos.yml).
 @MainActor
 final class DemoDirector {
     enum Cursor { case arrow, crosshair, iBeam }
+    enum Corner { case bottomLeft, bottomRight }
 
     let screen = NSScreen.screens[0]
     let stage: NSWindow
     /// The part of the screen that's recorded, in AppKit coordinates.
     let crop: NSRect
-    private(set) var pointer: CGPoint
+    private(set) var pointer = CGPoint.zero
     var cursor: Cursor = .arrow
 
-    nonisolated(unsafe) private let writer: GifWriter
+    /// Where keycaps show.
+    var keysCorner = Corner.bottomRight
+    /// A badge by the pointer while it scrolls, since a scroll has no key to show.
+    var isScrolling = false
+    /// The recording, when there's no output file: each frame and when it was shown.
+    private(set) var frames: [(image: CGImage, time: Double)] = []
+    private(set) var duration: Double = 0
+
+    nonisolated(unsafe) private let writer: GifWriter?
     private let encoder = DispatchQueue(label: "demo-encoder")
     private let scale: CGFloat
     /// The frame being drawn. A fresh one each frame: the encoder reads the last on its own queue,
     /// and a bitmap shared with it would be cleared and redrawn mid-read, mixing frames together.
     private var context: CGContext
     private let pixels: (width: Int, height: Int)
-    private var timer: Timer?
-    private let start = CACurrentMediaTime()
+    private var isRolling = false
     private var keys: [(time: Double, labels: [String])] = []
     private var clicks: [(time: Double, point: CGPoint)] = []
 
-    var now: Double { CACurrentMediaTime() - start }
+    static let fps = 30.0
+    /// The script's time, in seconds.
+    private(set) var now = 0.0
 
     /// `content` sits on the desktop, its frame given in points from the recorded area's top-left.
-    init(output: URL, size: NSSize = NSSize(width: 960, height: 600), content: NSView, at origin: CGPoint) throws {
+    /// `backdrop` moves the desktop's light up (positive) or down, so scenes stacked by DemoReel
+    /// join into one desktop.
+    init(output: URL?, size: NSSize = NSSize(width: 960, height: 600), content: NSView, at origin: CGPoint, backdrop: CGFloat = 0) throws {
         let frame = screen.frame
         crop = NSRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2, width: size.width, height: size.height)
         scale = screen.backingScaleFactor
         let pixels = (Int(size.width * scale), Int(size.height * scale))
-        guard let writer = GifWriter(url: output, width: pixels.0, height: pixels.1),
-              let context = Self.bitmap(pixels)
-        else { throw CocoaError(.fileWriteUnknown) }
-        self.writer = writer
+        guard let context = Self.bitmap(pixels) else { throw CocoaError(.fileWriteUnknown) }
+        if let output {
+            guard let writer = GifWriter(url: output, width: pixels.0, height: pixels.1) else { throw CocoaError(.fileWriteUnknown) }
+            self.writer = writer
+        } else {
+            writer = nil
+        }
         self.context = context
         self.pixels = pixels
         stage = StageWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         let desktop = Desktop(frame: NSRect(origin: .zero, size: frame.size))
+        desktop.shift = backdrop
         stage.contentView = desktop
-        content.frame.origin = CGPoint(x: crop.minX - frame.minX + origin.x,
-                                       y: crop.maxY - frame.minY - origin.y - content.frame.height)
-        desktop.addSubview(content)
+        place(content, at: origin)
         pointer = CGPoint(x: crop.midX + 220, y: crop.minY + 150)
         stage.orderFrontRegardless()
         stage.makeKey()
         print("demo: screen \(Int(frame.width))×\(Int(frame.height)) @\(scale)x, recording \(pixels.0)×\(pixels.1)")
     }
 
+    /// Puts another window on the desktop, its frame given like `content`'s.
+    func place(_ view: NSView, at origin: CGPoint) {
+        let frame = screen.frame
+        view.frame.origin = CGPoint(x: crop.minX - frame.minX + origin.x, y: crop.maxY - frame.minY - origin.y - view.frame.height)
+        stage.contentView?.addSubview(view)
+    }
+
     // MARK: Recording
 
     func roll() {
-        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.frame() } }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        isRolling = true
         frame()
     }
 
@@ -71,16 +95,25 @@ final class DemoDirector {
     /// window the scene opened, so nothing carries into the next one.
     func cut(hold: Double = 1.2) -> Bool {
         wait(hold)
-        timer?.invalidate()
+        isRolling = false
         let end = now, writer = writer
-        let done = encoder.sync { writer.finish(at: end) }
+        duration = end
+        let done = encoder.sync { writer?.finish(at: end) ?? !frames.isEmpty }
         NSApp.windows.filter(\.isVisible).forEach { $0.orderOut(nil) }
         return done
     }
 
     /// Lets everything run for `seconds`, recording.
     func wait(_ seconds: Double) {
+        let end = now + seconds
+        while end - now > 1e-6 { step(min(1 / Self.fps, end - now)) }
+    }
+
+    /// The next frame, `seconds` later.
+    private func step(_ seconds: Double) {
+        now += seconds
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        if isRolling { frame() }
     }
 
     private func frame() {
@@ -95,9 +128,10 @@ final class DemoDirector {
         let time = now
         drawClicks(at: time)
         drawPointer()
+        drawScrollHint()
         drawKeys(at: time)
         guard let image = context.makeImage() else { return }
-        let writer = writer
+        guard let writer else { frames.append((image, time)); return }
         encoder.async { writer.add(image, at: time) }
     }
 
@@ -123,7 +157,7 @@ final class DemoDirector {
                               y: from.y + (target.y - from.y) * eased + normal.y * bow)
             step?(pointer)
             if t >= 1 { break }
-            wait(1.0 / 60)
+            self.step(1 / Self.fps)
         }
     }
 
@@ -141,6 +175,20 @@ final class DemoDirector {
         let rect = CGRect(x: point.x - hot.x * scale, y: point.y - (image.size.height - hot.y) * scale,
                           width: image.size.width * scale, height: image.size.height * scale)
         drawInAppKit { image.draw(in: rect) }
+    }
+
+    private func drawScrollHint() {
+        guard isScrolling,
+              let symbol = NSImage(systemSymbolName: "arrow.up.and.down", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 12, weight: .bold).applying(.init(paletteColors: [.white]))) else { return }
+        let point = local(pointer)
+        let badge = CGRect(x: point.x + 14 * scale, y: point.y - 40 * scale, width: 26 * scale, height: 26 * scale)
+        drawInAppKit {
+            NSColor.black.withAlphaComponent(0.62).setFill()
+            NSBezierPath(ovalIn: badge).fill()
+            let size = NSSize(width: symbol.size.width * self.scale, height: symbol.size.height * self.scale)
+            symbol.draw(in: NSRect(x: badge.midX - size.width / 2, y: badge.midY - size.height / 2, width: size.width, height: size.height))
+        }
     }
 
     private func drawClicks(at time: Double) {
@@ -165,7 +213,7 @@ final class DemoDirector {
 
     // MARK: Keys
 
-    /// Shows the keys as keycaps in the bottom-right corner, pressed then released.
+    /// Shows the keys as keycaps in the corner, pressed then released.
     func press(_ labels: String...) { keys.append((now, labels)) }
 
     private func drawKeys(at time: Double) {
@@ -179,9 +227,9 @@ final class DemoDirector {
         let height: CGFloat = 46, gap: CGFloat = 10
         let widths = key.labels.map { max(height, ($0 as NSString).size(withAttributes: attributes).width + 30) }
         let total = widths.reduce(0, +) + gap * CGFloat(widths.count - 1)
-        // Bottom-right, out of the way of panels that open near the middle.
-        var x = crop.width - total - 30
-        let y: CGFloat = 30
+        // In a corner, out of the way of panels that open near the middle.
+        var x = keysCorner == .bottomRight ? crop.width - total - 30 : 30
+        let y: CGFloat = keysCorner == .bottomRight ? 30 : 24
         drawInAppKit {
             NSGraphicsContext.current?.cgContext.setAlpha(alpha)
             for (label, width) in zip(key.labels, widths) {
@@ -258,11 +306,17 @@ private final class StageWindow: NSWindow {
 
 /// A calm desktop: the README's indigo-to-blue, with a soft light in one corner.
 private final class Desktop: NSView {
+    /// How far the whole desktop is drawn moved down, as if the screen showed a part of it higher up.
+    var shift: CGFloat = 0
+
     override func draw(_ dirtyRect: NSRect) {
+        let area = bounds.offsetBy(dx: 0, dy: -shift)
+        NSColor(srgbRed: 0.24, green: 0.31, blue: 0.65, alpha: 1).setFill()
+        bounds.fill()
         NSGradient(colors: [NSColor(srgbRed: 0.31, green: 0.25, blue: 0.64, alpha: 1),
-                            NSColor(srgbRed: 0.17, green: 0.38, blue: 0.66, alpha: 1)])!.draw(in: bounds, angle: -35)
+                            NSColor(srgbRed: 0.17, green: 0.38, blue: 0.66, alpha: 1)])!.draw(in: area, angle: -35)
         NSGradient(colors: [NSColor.white.withAlphaComponent(0.16), NSColor.white.withAlphaComponent(0)])!
-            .draw(fromCenter: NSPoint(x: bounds.maxX * 0.72, y: bounds.maxY * 0.78), radius: 0,
-                  toCenter: NSPoint(x: bounds.maxX * 0.72, y: bounds.maxY * 0.78), radius: bounds.width * 0.45, options: [])
+            .draw(fromCenter: NSPoint(x: area.minX + area.width * 0.72, y: area.minY + area.height * 0.78), radius: 0,
+                  toCenter: NSPoint(x: area.minX + area.width * 0.72, y: area.minY + area.height * 0.78), radius: area.width * 0.45, options: [])
     }
 }

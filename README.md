@@ -54,7 +54,9 @@ click to take it, or drag any region. Then:
 
 The app you were in never flickers or loses its place. When you're done, you're right back where you were.
 
-<img src="docs/images/toolbar.png" width="720" alt="The screenshot toolbar: drawing tools, text recognition, translate, Ask AI, Inbox, GIF and scrolling capture, pin, save">
+<img src="docs/images/demo-capture-edit.gif" width="760" alt="F1 over an invoice: a box around the total, an arrow to the due date labelled Pay by Friday, mosaic over the contact details, P pins it. Over in a spreadsheet, the pin scrolls smaller and fades a little, moves beside the sheet, and the amount is typed in from it">
+
+<img src="docs/images/demo-capture-modes.gif" width="760" alt="Three captures at once. T turns a shared slide's words into text: one line is selected and copied. S and scrolling stitches a whole article together in the panel beside it. G and Record captures a sync animation, and the GIF plays back ready to copy">
 
 ## Translate: write in any language, read everything in yours
 

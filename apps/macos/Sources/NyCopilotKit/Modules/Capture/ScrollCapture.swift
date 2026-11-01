@@ -164,7 +164,7 @@ final class ScrollCapture {
     }
 
     /// A dashed accent outline just outside the region; clicks and scrolls go through it.
-    private static func makeBorder(around frame: NSRect) -> NSWindow {
+    static func makeBorder(around frame: NSRect) -> NSWindow {
         let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
         window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
         let view = BorderView()
