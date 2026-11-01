@@ -5,8 +5,11 @@ import AppKit
 /// worked in; NyCopilot's real panels open over it, driven by synthesized events, while the
 /// director moves a pointer along eased paths and shows each key pressed as a keycap. Every frame
 /// is captured (only NyCopilot's own windows, so nothing else on the Mac shows), the pointer,
-/// clicks, and keycaps are drawn on, and the frame goes into a GIF at 30 frames a second. Encoding
-/// happens on its own queue, so a slow frame never stretches the script's timing.
+/// clicks, and keycaps are drawn on, and the frame goes into a GIF at 30 frames a second.
+///
+/// The script keeps its own time: each frame is a thirtieth of a second later than the one before,
+/// however long the machine took to draw it, so motion stays even on a slow runner. Everything
+/// gets at least that long to run between frames.
 ///
 /// Without an output file it keeps the frames instead, for DemoReel to lay several scenes out together.
 ///
@@ -38,12 +41,13 @@ final class DemoDirector {
     /// and a bitmap shared with it would be cleared and redrawn mid-read, mixing frames together.
     private var context: CGContext
     private let pixels: (width: Int, height: Int)
-    private var timer: Timer?
-    private let start = CACurrentMediaTime()
+    private var isRolling = false
     private var keys: [(time: Double, labels: [String])] = []
     private var clicks: [(time: Double, point: CGPoint)] = []
 
-    var now: Double { CACurrentMediaTime() - start }
+    static let fps = 30.0
+    /// The script's time, in seconds.
+    private(set) var now = 0.0
 
     /// `content` sits on the desktop, its frame given in points from the recorded area's top-left.
     /// `backdrop` moves the desktop's light up (positive) or down, so scenes stacked by DemoReel
@@ -83,9 +87,7 @@ final class DemoDirector {
     // MARK: Recording
 
     func roll() {
-        let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.frame() } }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
+        isRolling = true
         frame()
     }
 
@@ -93,7 +95,7 @@ final class DemoDirector {
     /// window the scene opened, so nothing carries into the next one.
     func cut(hold: Double = 1.2) -> Bool {
         wait(hold)
-        timer?.invalidate()
+        isRolling = false
         let end = now, writer = writer
         duration = end
         let done = encoder.sync { writer?.finish(at: end) ?? !frames.isEmpty }
@@ -103,7 +105,15 @@ final class DemoDirector {
 
     /// Lets everything run for `seconds`, recording.
     func wait(_ seconds: Double) {
+        let end = now + seconds
+        while end - now > 1e-6 { step(min(1 / Self.fps, end - now)) }
+    }
+
+    /// The next frame, `seconds` later.
+    private func step(_ seconds: Double) {
+        now += seconds
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        if isRolling { frame() }
     }
 
     private func frame() {
@@ -147,7 +157,7 @@ final class DemoDirector {
                               y: from.y + (target.y - from.y) * eased + normal.y * bow)
             step?(pointer)
             if t >= 1 { break }
-            wait(1.0 / 60)
+            self.step(1 / Self.fps)
         }
     }
 

@@ -59,11 +59,26 @@ extension DemoTests {
         waitUntil(director) { view.textOverlay?.analysis != nil }
         director.wait(1.0)
 
-        // One line, selected right where it is.
-        let line = slide.line(1)
+        // One line, selected right where it is. Synthesized drags don't reach VisionKit's selection,
+        // so it's set as the I-beam goes, the way a drag would grow it.
+        let text = try XCTUnwrap(view.textOverlay)
+        let transcript = text.analysis?.transcript ?? ""
+        let line = slide.line(0)
+        let start = director.onScreen(CGPoint(x: line.minX + 14, y: line.midY), in: slide)
+        let end = director.onScreen(CGPoint(x: line.maxX + 2, y: line.midY), in: slide)
         director.cursor = .iBeam
-        drag(director, on: overlay, from: director.onScreen(CGPoint(x: line.minX - 2, y: line.midY), in: slide),
-             to: director.onScreen(CGPoint(x: line.maxX + 2, y: line.midY), in: slide), duration: 0.8, arc: 0.01)
+        director.move(to: start, duration: 0.7)
+        if let found = transcript.range(of: "Onboarding") {
+            let lineEnd = transcript[found.lowerBound...].firstIndex(of: "\n") ?? transcript.endIndex
+            let length = transcript.distance(from: found.lowerBound, to: lineEnd)
+            director.move(to: end, duration: 0.9, arc: 0.01) { point in
+                let fraction = min(max((point.x - start.x) / (end.x - start.x), 0), 1)
+                let upTo = transcript.index(found.lowerBound, offsetBy: Int((Double(length) * fraction).rounded()))
+                if #available(macOS 14, *) { text.selectedRanges = [found.lowerBound..<upTo] }
+            }
+        } else {
+            director.move(to: end, duration: 0.9, arc: 0.01)
+        }
         director.wait(0.4)
         director.press("⌘", "C")
         director.type("c", keyCode: 8, modifiers: .command, to: overlay)
@@ -125,7 +140,7 @@ extension DemoTests {
             article.scroll(to: distance * eased)
             stitch()
             if t >= 1 { break }
-            director.wait(1.0 / 60)
+            director.wait(1 / DemoDirector.fps)
         }
         director.isScrolling = false
         XCTAssertGreaterThan(stitcher.height, size.height * 3, "the whole page was stitched")
@@ -159,6 +174,7 @@ extension DemoTests {
     private func recordingScene() throws -> DemoDirector {
         let motion = MotionWindow()
         let director = try rowDirector(2, content: motion, at: CGPoint(x: 330, y: 0))
+        motion.clock = { [unowned director] in director.now }
         motion.play()
         defer { motion.stop() }
         director.wait(0.4)
@@ -217,7 +233,7 @@ extension DemoTests {
         director.move(to: CGPoint(x: frame.maxX + 70, y: frame.midY + 20), duration: 0.9) { _ in sample() }
         while director.now - started < 3.3 {
             sample()
-            director.wait(1.0 / 60)
+            director.wait(1 / DemoDirector.fps)
         }
         director.press("F1")
         let length = director.now - started
@@ -272,13 +288,13 @@ extension DemoTests {
         // An arrow to the due date, and a label at its tail.
         try pick(.arrow, on: overlay, director)
         let due = invoice.due
-        let tail = CGPoint(x: due.maxX + 150, y: due.midY + 34)
+        let tail = CGPoint(x: due.maxX + 130, y: due.midY)
         director.cursor = .crosshair
-        drag(director, on: overlay, from: at(tail.x, tail.y), to: at(due.maxX + 10, due.midY + 2), duration: 0.6, arc: -0.1)
+        drag(director, on: overlay, from: at(tail.x, tail.y), to: at(due.maxX + 10, due.midY), duration: 0.6, arc: 0.12)
         director.wait(0.3)
         try pick(.text, on: overlay, director)
         director.cursor = .iBeam
-        director.move(to: at(tail.x - 34, tail.y + 6), duration: 0.6) { _ in director.send(.mouseMoved, to: overlay) }
+        director.move(to: at(tail.x + 10, due.midY - 13), duration: 0.6) { _ in director.send(.mouseMoved, to: overlay) }
         director.click()
         director.send(.leftMouseDown, to: overlay)
         director.send(.leftMouseUp, to: overlay)
@@ -438,7 +454,11 @@ private final class ArticleWindow: MockWindow {
 }
 
 private final class ArticlePage: NSView {
-    init() { super.init(frame: NSRect(x: 0, y: 0, width: 380, height: 1500)) }
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 380, height: 0))
+        // Exactly as long as the article, so scrolling to the end ends on its last line.
+        frame.size.height = layOut(drawing: false) + 20
+    }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
 
@@ -456,32 +476,45 @@ private final class ArticlePage: NSView {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.white.setFill()
         bounds.fill()
-        photo(NSRect(x: 20, y: 16, width: 340, height: 150), [NSColor(srgbRed: 0.96, green: 0.55, blue: 0.2, alpha: 1),
-                                                              NSColor(srgbRed: 0.78, green: 0.16, blue: 0.2, alpha: 1)], "Tōfuku-ji, 7:40 am")
-        paint("Kyoto in autumn", at: CGPoint(x: 20, y: 182), size: 24, weight: .bold)
-        paint("By Ren Ito · 6 min read", at: CGPoint(x: 20, y: 216), size: 12, color: muted)
+        layOut(drawing: true)
+    }
+
+    /// Where everything goes, drawn or only measured; returns where the article ends.
+    @discardableResult
+    private func layOut(drawing: Bool) -> CGFloat {
+        if drawing {
+            photo(NSRect(x: 20, y: 16, width: 340, height: 150), [NSColor(srgbRed: 0.96, green: 0.55, blue: 0.2, alpha: 1),
+                                                                  NSColor(srgbRed: 0.78, green: 0.16, blue: 0.2, alpha: 1)], "Tōfuku-ji, 7:40 am")
+            paint("Kyoto in autumn", at: CGPoint(x: 20, y: 182), size: 24, weight: .bold)
+            paint("By Ren Ito · 6 min read", at: CGPoint(x: 20, y: 216), size: 12, color: muted)
+        }
         var y: CGFloat = 248
         for (index, text) in paragraphs.enumerated() {
-            y = paragraph(text, at: y) + 18
+            y = paragraph(text, at: y, drawing: drawing) + 18
             if index == 0 {
-                photo(NSRect(x: 20, y: y, width: 340, height: 170), [NSColor(srgbRed: 0.27, green: 0.55, blue: 0.33, alpha: 1),
-                                                                     NSColor(srgbRed: 0.12, green: 0.33, blue: 0.27, alpha: 1)], "Moss garden, Ginkaku-ji")
+                if drawing {
+                    photo(NSRect(x: 20, y: y, width: 340, height: 170), [NSColor(srgbRed: 0.27, green: 0.55, blue: 0.33, alpha: 1),
+                                                                         NSColor(srgbRed: 0.12, green: 0.33, blue: 0.27, alpha: 1)], "Moss garden, Ginkaku-ji")
+                }
                 y += 188
             } else if index == 2 {
-                photo(NSRect(x: 20, y: y, width: 340, height: 150), [NSColor(srgbRed: 0.99, green: 0.6, blue: 0.4, alpha: 1),
-                                                                     NSColor(srgbRed: 0.42, green: 0.27, blue: 0.55, alpha: 1)], "The Kamo at dusk")
+                if drawing {
+                    photo(NSRect(x: 20, y: y, width: 340, height: 150), [NSColor(srgbRed: 0.99, green: 0.6, blue: 0.4, alpha: 1),
+                                                                         NSColor(srgbRed: 0.42, green: 0.27, blue: 0.55, alpha: 1)], "The Kamo at dusk")
+                }
                 y += 168
             }
         }
+        return y
     }
 
-    private func paragraph(_ text: String, at y: CGFloat) -> CGFloat {
+    private func paragraph(_ text: String, at y: CGFloat, drawing: Bool) -> CGFloat {
         let style = NSMutableParagraphStyle()
         style.lineSpacing = 4
         let attributed = NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: ink,
                                                                        .paragraphStyle: style])
         let height = ceil(attributed.boundingRect(with: NSSize(width: 340, height: 1000), options: [.usesLineFragmentOrigin]).height)
-        attributed.draw(in: NSRect(x: 20, y: y, width: 340, height: height))
+        if drawing { attributed.draw(in: NSRect(x: 20, y: y, width: 340, height: height)) }
         return y + height
     }
 
@@ -500,7 +533,8 @@ private final class ArticlePage: NSView {
 /// A prototype with a sync animation that loops: worth recording.
 private final class MotionWindow: MockWindow {
     private var timer: Timer?
-    private let start = CACurrentMediaTime()
+    /// The scene's time, so the animation keeps pace with the recording.
+    var clock: () -> Double = { CACurrentMediaTime() }
 
     init() { super.init(title: "Prototype — Photo sync", size: NSSize(width: 380, height: 330)) }
     required init?(coder: NSCoder) { fatalError() }
@@ -515,7 +549,7 @@ private final class MotionWindow: MockWindow {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let phase = (CACurrentMediaTime() - start).truncatingRemainder(dividingBy: 2.6) / 2.6
+        let phase = clock().truncatingRemainder(dividingBy: 2.6) / 2.6
         let progress = CGFloat(min(phase / 0.72, 1))
         let eased = 1 - pow(1 - progress, 2)
         let done = phase >= 0.72
