@@ -94,6 +94,53 @@ final class LogicTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 4, y: 20)).redComponent, 0.9)
     }
 
+    /// A color the first frame's palette could only round (a small patch among thousands of others)
+    /// stays the same in the next frame, which has few colors: it's drawn again, now exact, rather
+    /// than left wrong for as long as it doesn't change.
+    func testGifWriterRedrawsColorsItHadToRound() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("r-\(UUID()).gif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let size = (width: 320, height: 200)
+        let writer = try XCTUnwrap(GifWriter(url: url, width: size.width, height: size.height))
+        func frame(busy: Bool) -> CGImage {
+            let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            if busy {
+                for x in stride(from: 0, to: size.width, by: 4) {
+                    for y in stride(from: 0, to: size.height, by: 4) {
+                        context.setFillColor(CGColor(red: CGFloat(x) / 320, green: CGFloat(y) / 200, blue: CGFloat((x * y) % 7) / 7, alpha: 1))
+                        context.fill(CGRect(x: x, y: y, width: 4, height: 4))
+                    }
+                }
+            }
+            context.setFillColor(CGColor(red: 1, green: 0, blue: 0.8, alpha: 1))
+            context.fill(CGRect(x: 20, y: 180, width: 4, height: 4))
+            return context.makeImage()!
+        }
+        writer.add(frame(busy: true), at: 0)
+        writer.add(frame(busy: false), at: 0.1)
+        XCTAssertTrue(writer.finish(at: 0.2))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let shown = try sRGB(try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 1, nil)), x: 22, y: 182)
+        let patch = try sRGB(frame(busy: false), x: 22, y: 182)
+        XCTAssertEqual(shown.red, patch.red, accuracy: 3)
+        XCTAssertEqual(shown.green, patch.green, accuracy: 3)
+        XCTAssertEqual(shown.blue, patch.blue, accuracy: 3)
+    }
+
+    /// A pixel's sRGB bytes, counted from the bottom-left like Core Graphics draws.
+    private func sRGB(_ image: CGImage, x: Int, y: Int) throws -> (red: Int, green: Int, blue: Int) {
+        let context = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        // Memory rows count from the top.
+        let offset = ((image.height - 1 - y) * image.width + x) * 4
+        return (Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]))
+    }
+
     /// Two small changes in opposite corners make a frame as large as the image; the pixels between
     /// them are left transparent, so they cost next to nothing and still show the frame before.
     func testGifWriterLeavesUnchangedPixelsTransparent() throws {
@@ -104,11 +151,12 @@ final class LogicTests: XCTestCase {
         func frame(corners: Bool) -> CGImage {
             let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
                                     space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-            // A busy background, which would be expensive to store again.
-            for x in stride(from: 0, to: size.width, by: 4) {
-                for y in stride(from: 0, to: size.height, by: 4) {
-                    context.setFillColor(CGColor(red: CGFloat(x) / 320, green: CGFloat(y) / 200, blue: CGFloat((x * y) % 7) / 7, alpha: 1))
-                    context.fill(CGRect(x: x, y: y, width: 4, height: 4))
+            // A detailed background, like a screen's, which would be expensive to store again.
+            for x in stride(from: 0, to: size.width, by: 2) {
+                for y in stride(from: 0, to: size.height, by: 2) {
+                    let shade = CGFloat((x * 7 + y * 3) % 12) / 12
+                    context.setFillColor(CGColor(red: shade, green: 1 - shade, blue: (x + y) % 4 == 0 ? 1 : 0.4, alpha: 1))
+                    context.fill(CGRect(x: x, y: y, width: 2, height: 2))
                 }
             }
             if corners {

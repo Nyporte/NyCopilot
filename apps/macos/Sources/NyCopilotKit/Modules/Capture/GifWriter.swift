@@ -6,8 +6,10 @@ import Foundation
 /// for a minute of screen). Each frame stores only the rectangle that changed since the one before,
 /// with its own palette, and inside it the pixels that stayed the same are transparent: two small
 /// changes far apart (a pointer and a clock) make a large rectangle, but long transparent runs cost
-/// almost nothing. Screens change in small places, so files stay small and frames are quick to
-/// encode. A frame's delay is known once the next one arrives, so each is written then.
+/// almost nothing. A pixel that stayed the same is drawn again anyway when what's shown is off by
+/// more than a little, so a color a frame's palette had to approximate doesn't stay wrong for good.
+/// Screens change in small places, so files stay small and frames are quick to encode. A frame's
+/// delay is known once the next one arrives, so each is written then.
 final class GifWriter {
     let width: Int
     let height: Int
@@ -15,8 +17,10 @@ final class GifWriter {
     /// Frames are drawn here; it owns the pixel memory (RGBA, red in the low byte).
     private let context: CGContext
     private let pixels: UnsafeMutableBufferPointer<UInt32>
-    /// The last frame as shown, to find what changed.
+    /// The last frame, to find what changed.
     private var previous: [UInt32]
+    /// What a viewer sees: each pixel as its palette last drew it.
+    private var shown: [UInt32]
     private var hasPrevious = false
     /// The latest frame, encoded but not yet written: its graphic control block needs its delay.
     private var pending: (image: Data, time: Double, transparent: Bool)?
@@ -35,6 +39,7 @@ final class GifWriter {
         self.context = context
         pixels = UnsafeMutableBufferPointer(start: data.bindMemory(to: UInt32.self, capacity: width * height), count: width * height)
         previous = [UInt32](repeating: 0, count: width * height)
+        shown = previous
         var header = Data("GIF89a".utf8)
         header.append(le16(width))
         header.append(le16(height))
@@ -104,13 +109,17 @@ final class GifWriter {
     /// An image descriptor, local palette, and LZW data for one rectangle of the frame. Drawn over
     /// the previous frame, its unchanged pixels are left transparent and kept out of the palette.
     private func encode(_ rect: (x: Int, y: Int, width: Int, height: Int), overPrevious: Bool) -> Data {
-        // Which of the rectangle's pixels are drawn, row by row; all of them on the first frame.
+        // Which of the rectangle's pixels are drawn, row by row: those that changed, and those shown
+        // too far from what they are; all of them on the first frame.
         var drawn = [Bool](repeating: true, count: rect.width * rect.height)
         if overPrevious {
             previous.withUnsafeBufferPointer { before in
                 for y in 0..<rect.height {
                     let source = (rect.y + y) * width + rect.x, target = y * rect.width
-                    for x in 0..<rect.width { drawn[target + x] = pixels[source + x] != before[source + x] }
+                    for x in 0..<rect.width {
+                        let pixel = pixels[source + x]
+                        drawn[target + x] = pixel != before[source + x] || Self.isFar(shown[source + x], from: pixel)
+                    }
                 }
             }
         }
@@ -118,7 +127,11 @@ final class GifWriter {
         var indices = [UInt8](repeating: Palette.transparent, count: rect.width * rect.height)
         for y in 0..<rect.height {
             let source = (rect.y + y) * width + rect.x, target = y * rect.width
-            for x in 0..<rect.width where drawn[target + x] { indices[target + x] = palette.index(of: pixels[source + x]) }
+            for x in 0..<rect.width where drawn[target + x] {
+                let index = palette.index(of: pixels[source + x])
+                indices[target + x] = index
+                shown[source + x] = palette.color(at: index)
+            }
         }
         var block = Data([0x2C])
         block.append(le16(rect.x)); block.append(le16(rect.y))
@@ -128,6 +141,12 @@ final class GifWriter {
         block.append(8) // LZW minimum code size
         block.append(lzw.encode(indices))
         return block
+    }
+
+    /// Whether a shown color is off by more than a palette's usual rounding, in any channel.
+    private static func isFar(_ shown: UInt32, from pixel: UInt32) -> Bool {
+        abs(Int(shown & 0xFF) - Int(pixel & 0xFF)) > 10 || abs(Int((shown >> 8) & 0xFF) - Int((pixel >> 8) & 0xFF)) > 10
+            || abs(Int((shown >> 16) & 0xFF) - Int((pixel >> 16) & 0xFF)) > 10
     }
 }
 
@@ -166,6 +185,12 @@ private struct Palette {
         for (index, color) in colors.enumerated() {
             table[index * 3] = UInt8(color.r); table[index * 3 + 1] = UInt8(color.g); table[index * 3 + 2] = UInt8(color.b)
         }
+    }
+
+    /// The color at `index`, packed like a pixel.
+    func color(at index: UInt8) -> UInt32 {
+        let color = colors[Int(index)]
+        return UInt32(color.r) | UInt32(color.g) << 8 | UInt32(color.b) << 16 | 0xFF00_0000
     }
 
     /// Pixels are RGBA in memory: red in the low byte on little-endian Macs.
