@@ -48,11 +48,12 @@ final class DemoTests: XCTestCase {
         director.move(to: CGPoint(x: windowRect.midX - 40, y: windowRect.midY + 40), duration: 0.8) { _ in director.send(.mouseMoved, to: overlay) }
         director.wait(0.7)
 
-        // Drag out the chart.
-        let chart = director.onScreen(notes.chartFrame, in: notes)
-        director.move(to: CGPoint(x: chart.minX - 14, y: chart.maxY + 14), duration: 0.6) { _ in director.send(.mouseMoved, to: overlay) }
+        // Drag out the chart and its caption.
+        let region = notes.chartWithCaption
+        let chart = director.onScreen(region, in: notes)
+        director.move(to: director.onScreen(CGPoint(x: region.minX, y: region.minY), in: notes), duration: 0.6) { _ in director.send(.mouseMoved, to: overlay) }
         director.send(.leftMouseDown, to: overlay)
-        director.move(to: CGPoint(x: chart.maxX + 14, y: chart.minY - 14), duration: 1.0, arc: 0.04) { _ in director.send(.leftMouseDragged, to: overlay) }
+        director.move(to: director.onScreen(CGPoint(x: region.maxX, y: region.maxY), in: notes), duration: 1.0, arc: 0.04) { _ in director.send(.leftMouseDragged, to: overlay) }
         director.send(.leftMouseUp, to: overlay)
         director.cursor = .arrow
         director.wait(0.6)
@@ -67,12 +68,14 @@ final class DemoTests: XCTestCase {
         director.wait(0.3)
         arrow.mouseExited(with: NSEvent())
 
-        // Point at the tallest bar.
-        let bar = director.onScreen(notes.tallestBar, in: notes)
+        // From the caption to the tallest bar.
+        let bar = notes.tallestBar
         director.cursor = .crosshair
-        director.move(to: CGPoint(x: bar.maxX + 110, y: bar.maxY + 50), duration: 0.7) { _ in director.send(.mouseMoved, to: overlay) }
+        director.move(to: director.onScreen(notes.arrowStart, in: notes), duration: 0.7) { _ in director.send(.mouseMoved, to: overlay) }
         director.send(.leftMouseDown, to: overlay)
-        director.move(to: CGPoint(x: bar.maxX + 8, y: bar.maxY - 6), duration: 0.55, arc: 0.06) { _ in director.send(.leftMouseDragged, to: overlay) }
+        director.move(to: director.onScreen(CGPoint(x: bar.maxX + 6, y: bar.minY + 10), in: notes), duration: 0.55, arc: 0.06) { _ in
+            director.send(.leftMouseDragged, to: overlay)
+        }
         director.send(.leftMouseUp, to: overlay)
         director.cursor = .arrow
         director.wait(0.7)
@@ -276,6 +279,10 @@ private final class NotesWindow: MockWindow {
                                    + "to be ready a week ahead.", font: .systemFont(ofSize: 15), width: 600)
     let chartFrame = NSRect(x: 40, y: 228, width: 300, height: 150)
     var tallestBar: NSRect { bar(3) }
+    /// What the demo captures: the chart and the caption beside it, with a little room around.
+    var chartWithCaption: NSRect { NSRect(x: chartFrame.minX - 14, y: chartFrame.minY - 14, width: 534, height: chartFrame.height + 28) }
+    /// Where the arrow starts: under the caption, pointing back at the bar it's about.
+    var arrowStart: CGPoint { CGPoint(x: chartFrame.maxX + 34, y: chartFrame.minY + 76) }
 
     init() {
         super.init(title: "Q3 launch notes", size: NSSize(width: 680, height: 420))

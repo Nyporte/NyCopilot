@@ -64,13 +64,14 @@ final class DemoDirector {
         frame()
     }
 
-    /// Stops recording, holding the last frame a moment so the loop doesn't jump, and closes the stage.
+    /// Stops recording, holding the last frame a moment so the loop doesn't jump, and closes every
+    /// window the scene opened, so nothing carries into the next one.
     func cut(hold: Double = 1.2) -> Bool {
         wait(hold)
         timer?.invalidate()
         let end = now, writer = writer
         let done = encoder.sync { writer.finish(at: end) }
-        stage.orderOut(nil)
+        NSApp.windows.filter(\.isVisible).forEach { $0.orderOut(nil) }
         return done
     }
 
@@ -81,9 +82,12 @@ final class DemoDirector {
 
     private func frame() {
         let rect = CGRect(x: crop.minX, y: screen.frame.maxY - crop.maxY, width: crop.width, height: crop.height)
-        guard let shot = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) else { return }
+        // Opaque: the GIF writer draws each frame over the last, so any see-through pixel would let
+        // earlier frames (a pointer, a keycap, a panel's old size) show through as a ghost.
+        guard let shot = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution, .shouldBeOpaque]) else { return }
         let size = CGSize(width: context.width, height: context.height)
-        context.clear(CGRect(origin: .zero, size: size))
+        context.setFillColor(NSColor.white.cgColor)
+        context.fill(CGRect(origin: .zero, size: size))
         context.draw(shot, in: CGRect(origin: .zero, size: size))
         let time = now
         drawClicks(at: time)
@@ -153,7 +157,7 @@ final class DemoDirector {
 
     // MARK: Keys
 
-    /// Shows the keys as keycaps along the bottom, pressed then released.
+    /// Shows the keys as keycaps in the bottom-right corner, pressed then released.
     func press(_ labels: String...) { keys.append((now, labels)) }
 
     private func drawKeys(at time: Double) {
@@ -167,8 +171,9 @@ final class DemoDirector {
         let height: CGFloat = 46, gap: CGFloat = 10
         let widths = key.labels.map { max(height, ($0 as NSString).size(withAttributes: attributes).width + 30) }
         let total = widths.reduce(0, +) + gap * CGFloat(widths.count - 1)
-        var x = (crop.width - total) / 2
-        let y: CGFloat = 34
+        // Bottom-right, out of the way of panels that open near the middle.
+        var x = crop.width - total - 30
+        let y: CGFloat = 30
         drawInAppKit {
             NSGraphicsContext.current?.cgContext.setAlpha(alpha)
             for (label, width) in zip(key.labels, widths) {
