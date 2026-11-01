@@ -27,6 +27,7 @@ jobs:
       - name: Record
         env:
           NYCOPILOT_DEMOS: "1"
+          NYCOPILOT_DEMO_RAW: ${{ github.workspace }}/raw
         # Optimized, so encoding keeps up with 30 frames a second.
         run: |
           cd apps/macos
@@ -37,3 +38,9 @@ jobs:
           name: demos
           path: docs/images/demo-*.gif
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: raw-captures
+          path: raw/
+          if-no-files-found: ignore

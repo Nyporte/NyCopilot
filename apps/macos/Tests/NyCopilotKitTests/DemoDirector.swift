@@ -23,7 +23,10 @@ final class DemoDirector {
     nonisolated(unsafe) private let writer: GifWriter
     private let encoder = DispatchQueue(label: "demo-encoder")
     private let scale: CGFloat
-    private let context: CGContext
+    /// The frame being drawn. A fresh one each frame: the encoder reads the last on its own queue,
+    /// and a bitmap shared with it would be cleared and redrawn mid-read, mixing frames together.
+    private var context: CGContext
+    private let pixels: (width: Int, height: Int)
     private var timer: Timer?
     private let start = CACurrentMediaTime()
     private var keys: [(time: Double, labels: [String])] = []
@@ -38,11 +41,11 @@ final class DemoDirector {
         scale = screen.backingScaleFactor
         let pixels = (Int(size.width * scale), Int(size.height * scale))
         guard let writer = GifWriter(url: output, width: pixels.0, height: pixels.1),
-              let context = CGContext(data: nil, width: pixels.0, height: pixels.1, bitsPerComponent: 8, bytesPerRow: 0,
-                                      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+              let context = Self.bitmap(pixels)
         else { throw CocoaError(.fileWriteUnknown) }
         self.writer = writer
         self.context = context
+        self.pixels = pixels
         stage = StageWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
         let desktop = Desktop(frame: NSRect(origin: .zero, size: frame.size))
         stage.contentView = desktop
@@ -85,6 +88,9 @@ final class DemoDirector {
         // Opaque: the GIF writer draws each frame over the last, so any see-through pixel would let
         // earlier frames (a pointer, a keycap, a panel's old size) show through as a ghost.
         guard let shot = CGWindowListCreateImage(rect, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution, .shouldBeOpaque]) else { return }
+        if let raw = ProcessInfo.processInfo.environment["NYCOPILOT_DEMO_RAW"] { keepRaw(shot, in: raw) }
+        guard let fresh = Self.bitmap(pixels) else { return }
+        context = fresh
         let size = CGSize(width: context.width, height: context.height)
         context.setFillColor(NSColor.white.cgColor)
         context.fill(CGRect(origin: .zero, size: size))
@@ -96,6 +102,31 @@ final class DemoDirector {
         guard let image = context.makeImage() else { return }
         let writer = writer
         encoder.async { writer.add(image, at: time) }
+    }
+
+    /// For checking the recorder: every tenth capture as it came from macOS, and how see-through it is.
+    private var rawCount = 0
+    private func keepRaw(_ shot: CGImage, in folder: String) {
+        rawCount += 1
+        guard rawCount % 10 == 1, let data = shot.dataProvider?.data as Data? else { return }
+        var lowest: UInt8 = 255, seeThrough = 0
+        let stride = shot.bytesPerRow, alphaFirst = [.first, .premultipliedFirst, .noneSkipFirst].contains(shot.alphaInfo)
+        for y in Swift.stride(from: 0, to: shot.height, by: 4) {
+            for x in Swift.stride(from: 0, to: shot.width, by: 4) {
+                let alpha = data[y * stride + x * 4 + (alphaFirst ? 0 : 3)]
+                lowest = min(lowest, alpha)
+                if alpha < 250 { seeThrough += 1 }
+            }
+        }
+        print("demo raw \(rawCount) t=\(String(format: "%.2f", now)) alphaInfo=\(shot.alphaInfo.rawValue) lowest alpha=\(lowest) see-through samples=\(seeThrough)")
+        let url = URL(fileURLWithPath: folder).appendingPathComponent("raw-\(String(format: "%04d", rawCount)).png")
+        try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        try? NSBitmapImageRep(cgImage: shot).representation(using: .png, properties: [:])?.write(to: url)
+    }
+
+    private static func bitmap(_ size: (width: Int, height: Int)) -> CGContext? {
+        CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
     }
 
     // MARK: Pointer
