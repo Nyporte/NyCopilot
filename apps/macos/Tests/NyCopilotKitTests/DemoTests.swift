@@ -198,7 +198,9 @@ final class DemoTests: XCTestCase {
             for word in answer.split(separator: " ", omittingEmptySubsequences: false) {
                 shown += (shown.isEmpty ? "" : " ") + word
                 await MainActor.run { ask.streamed(shown) }
-                try? await Task.sleep(nanoseconds: 55_000_000)
+                // A word every 55 ms of the recording's time, however slow the machine.
+                let due = await MainActor.run { director.now } + 0.055
+                while await MainActor.run(body: { director.now }) < due { try? await Task.sleep(nanoseconds: 5_000_000) }
             }
             return answer
         }
