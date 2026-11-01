@@ -94,6 +94,50 @@ final class LogicTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 4, y: 20)).redComponent, 0.9)
     }
 
+    /// Two small changes in opposite corners make a frame as large as the image; the pixels between
+    /// them are left transparent, so they cost next to nothing and still show the frame before.
+    func testGifWriterLeavesUnchangedPixelsTransparent() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("t-\(UUID()).gif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let size = (width: 320, height: 200)
+        let writer = try XCTUnwrap(GifWriter(url: url, width: size.width, height: size.height))
+        func frame(corners: Bool) -> CGImage {
+            let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            // A busy background, which would be expensive to store again.
+            for x in stride(from: 0, to: size.width, by: 4) {
+                for y in stride(from: 0, to: size.height, by: 4) {
+                    context.setFillColor(CGColor(red: CGFloat(x) / 320, green: CGFloat(y) / 200, blue: CGFloat((x * y) % 7) / 7, alpha: 1))
+                    context.fill(CGRect(x: x, y: y, width: 4, height: 4))
+                }
+            }
+            if corners {
+                context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: 6, height: 6))
+                context.fill(CGRect(x: size.width - 6, y: size.height - 6, width: 6, height: 6))
+            }
+            return context.makeImage()!
+        }
+        writer.add(frame(corners: false), at: 0)
+        writer.add(frame(corners: true), at: 0.1)
+        let first = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int)
+        XCTAssertTrue(writer.finish(at: 0.2))
+        let total = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int)
+        XCTAssertLessThan(total - first, 4_000, "the second frame stores its two corners, not the background between them")
+
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let before = NSBitmapImageRep(cgImage: try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil)))
+        let after = NSBitmapImageRep(cgImage: try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 1, nil)))
+        // Between the corners, exactly what the first frame showed; the corners are black.
+        for (x, y) in [(160, 100), (40, 150), (300, 20), (10, 10), (309, 189)] {
+            XCTAssertEqual(after.colorAt(x: x, y: y), before.colorAt(x: x, y: y), "at \(x), \(y)")
+        }
+        // Bitmap rows count from the top: the corners drawn bottom-left and top-right.
+        for (x, y) in [(2, 197), (317, 2)] {
+            XCTAssertLessThan(try XCTUnwrap(after.colorAt(x: x, y: y)).brightnessComponent, 0.05, "at \(x), \(y)")
+        }
+    }
+
     func testSettingsCacheFollowsWrites() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("core-\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }

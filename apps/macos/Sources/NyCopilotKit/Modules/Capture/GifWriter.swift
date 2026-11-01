@@ -4,8 +4,10 @@ import Foundation
 /// Writes an animated GIF one frame at a time, straight to disk, so a long recording never holds
 /// more than two frames in memory (ImageIO's GIF writer keeps every frame until the end, gigabytes
 /// for a minute of screen). Each frame stores only the rectangle that changed since the one before,
-/// with its own 256-color palette; screens change in small places, so files stay small and frames
-/// are quick to encode. A frame's delay is known once the next one arrives, so each is written then.
+/// with its own palette, and inside it the pixels that stayed the same are transparent: two small
+/// changes far apart (a pointer and a clock) make a large rectangle, but long transparent runs cost
+/// almost nothing. Screens change in small places, so files stay small and frames are quick to
+/// encode. A frame's delay is known once the next one arrives, so each is written then.
 final class GifWriter {
     let width: Int
     let height: Int
@@ -17,7 +19,7 @@ final class GifWriter {
     private var previous: [UInt32]
     private var hasPrevious = false
     /// The latest frame, encoded but not yet written: its graphic control block needs its delay.
-    private var pending: (image: Data, time: Double)?
+    private var pending: (image: Data, time: Double, transparent: Bool)?
     private var lzw = LZW()
     private(set) var frameCount = 0
 
@@ -46,9 +48,9 @@ final class GifWriter {
     func add(_ image: CGImage, at time: Double) {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let changed = changedRect() else { return }
-        let block = encode(changed)
+        let block = encode(changed, overPrevious: hasPrevious)
         flushPending(until: time)
-        pending = (block, time)
+        pending = (block, time, hasPrevious)
         _ = previous.withUnsafeMutableBufferPointer { $0.update(fromContentsOf: pixels) }
         hasPrevious = true
         frameCount += 1
@@ -90,21 +92,33 @@ final class GifWriter {
         guard let pending else { return }
         // Hundredths of a second; viewers stretch anything under 0.02 s.
         let delay = max(2, min(65535, Int(((time - pending.time) * 100).rounded())))
-        var control = Data([0x21, 0xF9, 0x04, 0x04]) // disposal: leave in place, so the next frame draws over it
+        // Disposal: leave in place, so the next frame draws over it; then whether it has a transparent index.
+        var control = Data([0x21, 0xF9, 0x04, pending.transparent ? 0x05 : 0x04])
         control.append(le16(delay))
-        control.append(contentsOf: [0, 0])
+        control.append(contentsOf: [pending.transparent ? Palette.transparent : 0, 0])
         handle.write(control)
         handle.write(pending.image)
         self.pending = nil
     }
 
-    /// An image descriptor, local palette, and LZW data for one rectangle of the frame.
-    private func encode(_ rect: (x: Int, y: Int, width: Int, height: Int)) -> Data {
-        var palette = Palette(pixels: UnsafeBufferPointer(pixels), width: width, rect: rect)
-        var indices = [UInt8](repeating: 0, count: rect.width * rect.height)
+    /// An image descriptor, local palette, and LZW data for one rectangle of the frame. Drawn over
+    /// the previous frame, its unchanged pixels are left transparent and kept out of the palette.
+    private func encode(_ rect: (x: Int, y: Int, width: Int, height: Int), overPrevious: Bool) -> Data {
+        // Which of the rectangle's pixels are drawn, row by row; all of them on the first frame.
+        var drawn = [Bool](repeating: true, count: rect.width * rect.height)
+        if overPrevious {
+            previous.withUnsafeBufferPointer { before in
+                for y in 0..<rect.height {
+                    let source = (rect.y + y) * width + rect.x, target = y * rect.width
+                    for x in 0..<rect.width { drawn[target + x] = pixels[source + x] != before[source + x] }
+                }
+            }
+        }
+        var palette = Palette(pixels: UnsafeBufferPointer(pixels), width: width, rect: rect, drawn: drawn, reservingTransparent: overPrevious)
+        var indices = [UInt8](repeating: Palette.transparent, count: rect.width * rect.height)
         for y in 0..<rect.height {
             let source = (rect.y + y) * width + rect.x, target = y * rect.width
-            for x in 0..<rect.width { indices[target + x] = palette.index(of: pixels[source + x]) }
+            for x in 0..<rect.width where drawn[target + x] { indices[target + x] = palette.index(of: pixels[source + x]) }
         }
         var block = Data([0x2C])
         block.append(le16(rect.x)); block.append(le16(rect.y))
@@ -122,28 +136,33 @@ private func le16(_ value: Int) -> Data { Data([UInt8(value & 0xFF), UInt8((valu
 /// Up to 256 colors for one rectangle, by median cut on a sample of its pixels; each pixel then maps
 /// to the nearest, cached by 15-bit color so a frame costs a few thousand searches at most.
 private struct Palette {
+    /// The index left out of the colors when a frame has transparent pixels.
+    static let transparent: UInt8 = 255
     private(set) var table = Data(count: 768)
     private var colors: [(r: Int, g: Int, b: Int)] = []
     private var cache: [Int16]
 
-    init(pixels: UnsafeBufferPointer<UInt32>, width: Int, rect: (x: Int, y: Int, width: Int, height: Int)) {
+    /// Colors for the `drawn` pixels of the rectangle (row by row within it); with
+    /// `reservingTransparent`, at most 255 of them, so the last index stays free.
+    init(pixels: UnsafeBufferPointer<UInt32>, width: Int, rect: (x: Int, y: Int, width: Int, height: Int),
+         drawn: [Bool], reservingTransparent: Bool) {
         cache = [Int16](repeating: -1, count: 32768)
-        // At most ~40,000 samples, spread over the rectangle.
-        let count = rect.width * rect.height
-        let step = max(1, Int((Double(count) / 40_000).squareRoot()))
+        // At most ~40,000 samples, every so many of the drawn pixels: a few small changes in a large
+        // rectangle are all sampled.
+        let count = drawn.reduce(0) { $1 ? $0 + 1 : $0 }
+        let step = max(1, count / 40_000)
         var samples: [(Int, Int, Int)] = []
-        samples.reserveCapacity(count / (step * step) + 1)
-        var y = rect.y
-        while y < rect.y + rect.height {
-            var x = rect.x
-            while x < rect.x + rect.width {
-                let pixel = pixels[y * width + x]
+        samples.reserveCapacity(count / step + 1)
+        var seen = 0
+        for y in 0..<rect.height {
+            for x in 0..<rect.width where drawn[y * rect.width + x] {
+                defer { seen += 1 }
+                guard seen % step == 0 else { continue }
+                let pixel = pixels[(rect.y + y) * width + rect.x + x]
                 samples.append((Int(pixel & 0xFF), Int((pixel >> 8) & 0xFF), Int((pixel >> 16) & 0xFF)))
-                x += step
             }
-            y += step
         }
-        colors = Self.medianCut(samples, into: 256)
+        colors = Self.medianCut(samples, into: reservingTransparent ? 255 : 256)
         for (index, color) in colors.enumerated() {
             table[index * 3] = UInt8(color.r); table[index * 3 + 1] = UInt8(color.g); table[index * 3 + 2] = UInt8(color.b)
         }
