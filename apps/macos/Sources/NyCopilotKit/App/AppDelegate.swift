@@ -222,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Where reports and ideas go: the project's issues, as a form.
-    static let issues = URL(string: "https://github.com/Entropy273/NyCopilot/issues/new")!
+    static let issues = URL(string: "https://github.com/Nyporte/NyCopilot/issues/new")!
 
     /// A new bug report with the versions filled in, and Diagnostics on the clipboard to paste in
     /// (too long for the address). Diagnostics never include any of your text.

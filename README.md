@@ -9,12 +9,12 @@
 Translate what you write and read. Capture and mark up anything on screen. Ask AI about it.<br>
 Keep the thought for later. All of it one keystroke away, right where you're working.
 
-[**Download for macOS**](https://github.com/Entropy273/NyCopilot/releases/latest) · [User guide](docs/GUIDE.md) · [What's new](CHANGELOG.md)
+[**Download for macOS**](https://github.com/Nyporte/NyCopilot/releases/latest) · [User guide](docs/GUIDE.md) · [What's new](CHANGELOG.md)
 
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple)
 ![Free and open source](https://img.shields.io/badge/license-MIT-2ea44f)
 ![10 languages](https://img.shields.io/badge/interface-10%20languages-5e5ce6)
-[![CI](https://github.com/Entropy273/NyCopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Entropy273/NyCopilot/actions/workflows/ci.yml)
+[![CI](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml)
 
 <img src="docs/images/toolbar.png" width="760" alt="NyCopilot's screenshot toolbar: drawing tools, text recognition, translate, Ask AI, Inbox, GIF and scrolling capture, pin, save">
 
@@ -137,7 +137,7 @@ Deutsch, Português (Brasil), and Русский**. It follows your Mac, or pick
 
 ## Get started
 
-1. **[Download the latest release](https://github.com/Entropy273/NyCopilot/releases/latest)**,
+1. **[Download the latest release](https://github.com/Nyporte/NyCopilot/releases/latest)**,
    unzip it, and move **NyCopilot** to Applications. It's signed and notarized by Apple.
 2. **Open it.** A short guide asks what you want help with and sets up the shortcuts: F-keys or
    ⌥⌘ letters, whichever suits your keyboard.
@@ -162,7 +162,7 @@ that follow your instructions.
 until you press a key.
 
 **I found a bug, or I have an idea.** Choose **Send Feedback…** in the NyCopilot menu, or
-[open an issue](https://github.com/Entropy273/NyCopilot/issues/new/choose). Bug reports come with
+[open an issue](https://github.com/Nyporte/NyCopilot/issues/new/choose). Bug reports come with
 Diagnostics: what the app did lately, never your text.
 
 ## Under the hood
