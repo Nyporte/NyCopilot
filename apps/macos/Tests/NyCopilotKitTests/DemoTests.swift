@@ -8,7 +8,7 @@ import XCTest
 ///     NYCOPILOT_DEMOS=1 swift test --filter DemoTests
 @MainActor
 final class DemoTests: XCTestCase {
-    private let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+    let output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .appendingPathComponent("../../../../docs/images").standardizedFileURL
 
     override func setUp() async throws {
@@ -27,22 +27,10 @@ final class DemoTests: XCTestCase {
         director.roll()
         director.wait(0.6)
 
-        director.press("F1")
-        director.wait(0.2)
-        let screen = director.screen
-        let whole = CGRect(x: 0, y: 0, width: screen.frame.width, height: screen.frame.height)
-        let frozenImage = try XCTUnwrap(CGWindowListCreateImage(whole, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]))
+        let (session, overlay, _) = try beginCapture(director, over: [notes])
         let windowRect = director.onScreen(notes.bounds, in: notes)
-        let frozen = FrozenScreen(screen: screen, image: frozenImage,
-                                  windows: [.init(rect: ScreenGeometry.topLeft(windowRect), pid: getpid())])
-        let session = CaptureSession(frozen: [frozen], recent: [], palette: [.systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue],
-                                     color: .systemRed, stroke: 4, style: CaptureStyle()) { _, _, _ in }
         var copied = false
         session.onFinish = { action, _, _, _ in copied = action == .copy }
-        session.show()
-        let overlay = try XCTUnwrap(NSApp.windows.first { $0 is CaptureWindow && $0.isVisible })
-        director.cursor = .crosshair
-        director.wait(0.35)
 
         // The outline glides onto the window under the pointer.
         director.move(to: CGPoint(x: windowRect.midX - 40, y: windowRect.midY + 40), duration: 0.8) { _ in director.send(.mouseMoved, to: overlay) }
@@ -89,7 +77,36 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(copied)
     }
 
-    private func toolbarButtons(in window: NSWindow) -> [ToolbarButton] {
+    /// F1: the screen as it is now, frozen under a capture, with `windows` to outline.
+    func beginCapture(_ director: DemoDirector, over windows: [NSView]) throws -> (CaptureSession, NSWindow, CaptureView) {
+        director.press("F1")
+        director.wait(0.2)
+        let screen = director.screen
+        let whole = CGRect(x: 0, y: 0, width: screen.frame.width, height: screen.frame.height)
+        let image = try XCTUnwrap(CGWindowListCreateImage(whole, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]))
+        let frozen = FrozenScreen(screen: screen, image: image, windows: windows.map {
+            .init(rect: ScreenGeometry.topLeft(director.onScreen($0.bounds, in: $0)), pid: getpid())
+        })
+        let session = CaptureSession(frozen: [frozen], recent: [], palette: [.systemRed, .systemOrange, .systemYellow, .systemGreen, .systemBlue],
+                                     color: .systemRed, stroke: 4, style: CaptureStyle()) { _, _, _ in }
+        session.show()
+        let overlay = try XCTUnwrap(NSApp.windows.first { $0 is CaptureWindow && $0.isVisible })
+        func find(_ view: NSView) -> CaptureView? { (view as? CaptureView) ?? view.subviews.lazy.compactMap(find).first }
+        let view = try XCTUnwrap(overlay.contentView.flatMap(find))
+        director.cursor = .crosshair
+        director.wait(0.35)
+        return (session, overlay, view)
+    }
+
+    /// Drags out a selection (or a shape) on the capture, from `start` to `end` on screen.
+    func drag(_ director: DemoDirector, on window: NSWindow, from start: CGPoint, to end: CGPoint, duration: Double = 0.9, arc: CGFloat = 0.04) {
+        director.move(to: start, duration: 0.65) { _ in director.send(.mouseMoved, to: window) }
+        director.send(.leftMouseDown, to: window)
+        director.move(to: end, duration: duration, arc: arc) { _ in director.send(.leftMouseDragged, to: window) }
+        director.send(.leftMouseUp, to: window)
+    }
+
+    func toolbarButtons(in window: NSWindow) -> [ToolbarButton] {
         func find(_ view: NSView) -> [ToolbarButton] { view.subviews.flatMap { ($0 as? ToolbarButton).map { [$0] } ?? find($0) } }
         return window.contentView.map(find) ?? []
     }
@@ -204,7 +221,7 @@ final class DemoTests: XCTestCase {
         ask.close()
     }
 
-    private func buttons(in view: NSView?) -> [NSButton] {
+    func buttons(in view: NSView?) -> [NSButton] {
         guard let view else { return [] }
         return view.subviews.flatMap { ($0 as? NSButton).map { [$0] } ?? buttons(in: $0) }
     }
@@ -213,7 +230,7 @@ final class DemoTests: XCTestCase {
 // MARK: - The apps being worked in
 
 /// A plain app window: white, rounded, a title bar with the three buttons.
-private class MockWindow: NSView {
+class MockWindow: NSView {
     let title: String
     init(title: String, size: NSSize) {
         self.title = title
@@ -249,7 +266,7 @@ private class MockWindow: NSView {
 }
 
 /// Text that can be selected like any app's, with the points of its first and last glyph.
-private final class SelectableText: NSTextView {
+final class SelectableText: NSTextView {
     convenience init(_ text: String, font: NSFont, width: CGFloat, color: NSColor = NSColor(white: 0.18, alpha: 1)) {
         let storage = NSTextStorage(string: text, attributes: [.font: font, .foregroundColor: color,
                                                                .paragraphStyle: { let p = NSMutableParagraphStyle(); p.lineSpacing = 4; return p }()])
