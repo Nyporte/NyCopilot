@@ -5,6 +5,16 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+## 0.4.1 — 2026-11-01
+
+### Fixed
+
+- Restart the capture service when a stream won't stop (#6)
+
+### Faster
+
+- Leave unchanged pixels transparent (#4)
+
 ## 0.4.0 — 2026-11-01
 
 The first public release.
