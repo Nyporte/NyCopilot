@@ -40,7 +40,7 @@ final class TranslateShell: ModuleShell {
 
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.compose, title: L("Translate as you type"),
-               defaultCombination: .init(keyCode: 17, modifiers: HotKeyCombination.option | HotKeyCombination.command),
+               defaultCombination: .init(keyCode: 120, modifiers: 0), // F2, between capture (F1) and the inbox (F3)
                handler: { [weak self] in self?.beginComposition() },
                // Held: the whole screen, translated in place.
                longPress: { [weak self] in self?.screen.toggle() }),

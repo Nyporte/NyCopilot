@@ -32,7 +32,7 @@ a notes app, and by the time it's open the idea is gone.
 **NyCopilot does all of that where you already are.** It sits quietly in your menu bar and wakes up
 on a keystroke, over whatever app you're in, then gets out of the way.
 
-- **One keystroke, no detours.** F1 captures, F3 jots a note, ⌥⌘T translates, ⌥⌘A asks AI. Nothing
+- **One keystroke, no detours.** F1 captures, F2 translates, F3 jots a note, ⌥⌘A asks AI. Nothing
   to open, nothing to switch to.
 - **One capture, many next steps.** Whatever you're looking at, whether a screenshot, a pinned
   image, a clipboard entry or a note, answers the same keys: **R** translates it, **A** asks AI
@@ -58,11 +58,11 @@ The app you were in never flickers or loses its place. When you're done, you're 
 
 <img src="docs/images/translate.png" width="460" align="right" alt="A translation card next to the text it translates">
 
-- **Translate as you type.** Press ⌥⌘T in any text field, type in your language, press Return:
+- **Translate as you type.** Press **F2** in any text field, type in your language, press Return:
   the field gets the translation. Tab switches between your favorite target languages.
-- **Translate a selection.** Select text on a page, in a PDF or a message, tap ⌥⌘T, and the
+- **Translate a selection.** Select text on a page, in a PDF or a message, tap F2, and the
   translation appears on a card right beside it.
-- **Translate the whole screen.** Hold ⌥⌘T and every block of text on screen lights up. Point at
+- **Translate the whole screen.** Hold F2 and every block of text on screen lights up. Point at
   one to read it in your language.
 
 Works with macOS's own on-device translation out of the box, or with Google Translate, Volcengine,
@@ -140,7 +140,7 @@ Deutsch, Português (Brasil), and Русский**. It follows your Mac, or pick
 1. **[Download the latest release](https://github.com/Nyporte/NyCopilot/releases/latest)**,
    unzip it, and move **NyCopilot** to Applications. It's signed and notarized by Apple.
 2. **Open it.** A short guide asks what you want help with and sets up the shortcuts: F-keys or
-   ⌥⌘ letters, whichever suits your keyboard.
+   ⌥⌘ letters, whichever suits your keyboard (F1 · F2 · F3, or ⌥⌘S · ⌥⌘T · ⌥⌘J).
 3. **Allow Accessibility** when asked, so NyCopilot can read selections and paste results. The first
    capture asks for Screen Recording.
 

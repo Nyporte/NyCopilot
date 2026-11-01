@@ -5,7 +5,7 @@ foundation for many modules across several operating systems, with a sync server
 ships six:
 
 - **Translate** — type in any text field and replace it with a translation, translate a selection,
-  or read the whole screen in your language (⌥⌘T).
+  or read the whole screen in your language (F2, or ⌥⌘T with ⌥⌘ letters).
 - **Window Layouts** — snap windows into halves, corners, and thirds by shortcut or by dragging.
 - **Screenshot & Pin** — capture, annotate, copy, save, translate, and pin images on top of
   everything (F1; ⇧F1 pins the clipboard).
@@ -56,8 +56,8 @@ A setup guide opens on first launch (and from Settings → General → **Show Se
    the inbox, clipboard history, window layouts — each with the key that starts it. The rest stay out
    of the way (their shortcuts and menu items go) until you turn them on in Settings → General →
    Features.
-2. **Shortcuts.** Screenshot and Inbox start with one press: **F1** and **F3**, or **⌥⌘S** and
-   **⌥⌘J**. The guide recommends letters when your keyboard's F-keys control brightness and volume
+2. **Shortcuts.** Screenshot, Translate, and Inbox start with one press: **F1**, **F2**, and **F3**, or **⌥⌘S**,
+   **⌥⌘T**, and **⌥⌘J**. The guide recommends letters when your keyboard's F-keys control brightness and volume
    (unless you hold fn), and F-keys when they're standard function keys.
 3. **Setup.** **Allow Accessibility**, which reading selections, pasting, and moving windows need.
    **Connect a model** is optional: on macOS 14.4 and later, translation works at once through macOS's
@@ -70,7 +70,7 @@ allowed, the menu bar menu shows **Finish Setting Up…**.
 
 ## Translate
 
-- **⌥⌘T** opens the composer at your text cursor. A small badge at its right edge shows the target
+- **F2** (⌥⌘T with ⌥⌘ letters) opens the composer at your text cursor. A small badge at its right edge shows the target
   language (EN, 中, 日…). **Tab** and **Shift+Tab** step through your favorite languages; the choice
   is remembered. **Return** translates and replaces your selection, **Shift+Return** adds a line,
   **Esc** cancels. Return confirms an input-method candidate first; nothing is submitted in your app.
@@ -96,7 +96,7 @@ allowed, the menu bar menu shows **Finish Setting Up…**.
   - **Nothing set up?** On macOS 14.4 and later, the composer and selection translation open macOS's
     own translation panel instead; for text you're writing, its **Replace with Translation** pastes
     the result back as usual. Screen translation needs one of the engines.
-- **Hold ⌥⌘T** (the translate shortcut — a tap still opens the composer) to translate what's on
+- **Hold F2** (the translate shortcut — a tap still opens the composer) to translate what's on
   screen. Like Live Text, the screen dims a little and the text on every display glows, a paragraph's
   lines as one shape —
   the page itself stays exactly as it is. Point at a block that isn't in the language you read into and its lines
@@ -287,7 +287,7 @@ One place for things to deal with later, with one way in for each moment:
 Every module lists its shortcuts in its own Settings tab. A shortcut needs ⌘, ⌥, or ⌃, or can be a
 function key on its own (F1, F2…). On Apple keyboards the F-keys control brightness and volume unless
 you hold fn or turn on "Use F1, F2, etc. keys as standard function keys" in System Settings →
-Keyboard — or pick **⌥⌘ letters** in the setup guide (⌥⌘S screenshot, ⌥⌘J inbox, ⌥⌘P pin
+Keyboard — or pick **⌥⌘ letters** in the setup guide (⌥⌘S screenshot, ⌥⌘T translate, ⌥⌘J inbox, ⌥⌘P pin
 clipboard). **⌥⌘/** (or **Keyboard Shortcuts** in the menu bar menu) shows every shortcut as it's set
 now, and the shared keys. Tips show up a couple of times at the moment they help — the third
 capture, the first pin — and then not again. **Settings → General** shows the Accessibility and Screen Recording status, an **Open at

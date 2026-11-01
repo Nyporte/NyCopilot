@@ -154,10 +154,10 @@
 "Welcome to NyCopilot" = "Willkommen bei NyCopilot";
 "Pick what you want help with. You can change any of it later in Settings." = "Wähle, wobei du Hilfe möchtest. Alles lässt sich später in den Einstellungen ändern.";
 "What should NyCopilot do?" = "Was soll NyCopilot tun?";
-"Your F-keys send F1, F2…, so F1 and F3 are one press. ⌥⌘/ shows every shortcut any time." = "Deine F-Tasten senden F1, F2 …, also sind F1 und F3 ein Tastendruck. ⌥⌘/ zeigt jederzeit alle Kurzbefehle.";
+"Your F-keys send F1, F2…, so F1, F2, and F3 are one press. ⌥⌘/ shows every shortcut any time." = "Deine F-Tasten senden F1, F2 …, also sind F1, F2 und F3 ein Tastendruck. ⌥⌘/ zeigt jederzeit alle Kurzbefehle.";
 "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time." = "Deine F-Tasten steuern Helligkeit und Lautstärke, außer du hältst fn – daher sind ⌥⌘ plus Buchstabe einfacher. ⌥⌘/ zeigt jederzeit alle Kurzbefehle.";
 "One-press keys" = "Ein-Tasten-Kurzbefehle";
-"Screenshot and Inbox" = "Bildschirmfoto und Eingang";
+"Screenshot, Translate, and Inbox" = "Bildschirmfoto, Übersetzen und Eingang";
 "Allow…" = "Erlauben …";
 "Set Up…" = "Einrichten …";
 "Setup" = "Einrichtung";
