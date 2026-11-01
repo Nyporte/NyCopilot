@@ -678,3 +678,6 @@
 "Portuguese" = "葡萄牙语";
 "Russian" = "俄语";
 "Arabic" = "阿拉伯语";
+"Send Feedback…" = "发送反馈…";
+"Diagnostics copied" = "已拷贝诊断信息";
+"Paste them into the report’s Diagnostics box." = "请将其粘贴到报告的“诊断”栏中。";

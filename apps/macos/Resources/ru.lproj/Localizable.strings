@@ -678,3 +678,6 @@
 "Portuguese" = "Португальский";
 "Russian" = "Русский";
 "Arabic" = "Арабский";
+"Send Feedback…" = "Отправить отзыв…";
+"Diagnostics copied" = "Диагностика скопирована";
+"Paste them into the report’s Diagnostics box." = "Вставьте её в поле «Диагностика» отчёта.";

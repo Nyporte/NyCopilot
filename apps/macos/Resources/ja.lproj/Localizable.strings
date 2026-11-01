@@ -678,3 +678,6 @@
 "Portuguese" = "ポルトガル語";
 "Russian" = "ロシア語";
 "Arabic" = "アラビア語";
+"Send Feedback…" = "フィードバックを送信…";
+"Diagnostics copied" = "診断情報をコピーしました";
+"Paste them into the report’s Diagnostics box." = "レポートの「診断」欄にペーストしてください。";

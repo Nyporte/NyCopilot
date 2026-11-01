@@ -678,3 +678,6 @@
 "Portuguese" = "포르투갈어";
 "Russian" = "러시아어";
 "Arabic" = "아랍어";
+"Send Feedback…" = "피드백 보내기…";
+"Diagnostics copied" = "진단 정보 복사됨";
+"Paste them into the report’s Diagnostics box." = "리포트의 진단 칸에 붙여넣으세요.";
