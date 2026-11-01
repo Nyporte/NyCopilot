@@ -4,7 +4,7 @@ import XCTest
 @testable import NyCopilotKit
 
 /// The parts with no screen in them: timing curves, snooze times, key schemes, exports, the GIF
-/// encoder, and the core bridge's settings cache.
+/// encoder, stuck capture streams, and the core bridge's settings cache.
 final class LogicTests: XCTestCase {
     func testBezierCurvesEaseOutAndOvershootThenSettle() {
         XCTAssertEqual(BezierCurve.easeOut.value(at: 0), 0, accuracy: 0.001)
@@ -259,4 +259,27 @@ final class LogicTests: XCTestCase {
         changed.seedFavoriteLanguages(device: "French", defaults: changedDefaults)
         XCTAssertEqual(favorites(changed), ["English", "Korean"])
     }
+    /// A stop the capture service refuses because it lost the stream restarts the service; the
+    /// warning shows only if that failed. Other stop failures leave the service alone.
+    @MainActor
+    func testStuckStreamRestartsCaptureService() async {
+        let streams = CaptureStreams()
+        let restarts = Counter(), warnings = Counter()
+        streams.onStuck = { warnings.count += 1 }
+        streams.restartService = { restarts.count += 1; return true }
+        let lost = NSError(domain: "com.apple.ScreenCaptureKit.SCStreamErrorDomain", code: -3808)
+        await streams.stopFailed("test", lost)
+        XCTAssertEqual(restarts.count, 1)
+        XCTAssertEqual(warnings.count, 0, "restarted, so nothing is left running")
+
+        await streams.stopFailed("test", NSError(domain: "com.apple.ScreenCaptureKit.SCStreamErrorDomain", code: -3805))
+        XCTAssertEqual(restarts.count, 1, "only a lost stream needs a restart")
+
+        streams.restartService = { restarts.count += 1; return false }
+        await streams.stopFailed("test", lost)
+        XCTAssertEqual(restarts.count, 2)
+        XCTAssertEqual(warnings.count, 1, "the restart failed, so say so")
+    }
+
+    private final class Counter: @unchecked Sendable { var count = 0 }
 }
