@@ -5,6 +5,22 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+## 0.4.1 — 2026-11-01
+
+- **No more stuck recording indicator.** When the disk is nearly full, macOS's screen capture service
+  could keep a scrolling capture or GIF recording running after it ended, with its indicator on.
+  NyCopilot now restarts the service and ends it.
+- **Smaller GIFs.** Recordings with movement in several places come out smaller, and white stays
+  pure white.
+
+### Fixed
+
+- Restart the capture service when a stream won't stop (#6)
+
+### Faster
+
+- Leave unchanged pixels transparent (#4)
+
 ## 0.4.0 — 2026-11-01
 
 The first public release.
