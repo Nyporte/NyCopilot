@@ -5,6 +5,8 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-01
+
 The first public release.
 
 - **Ten languages.** English, 简体中文, 繁體中文, 日本語, 한국어, Español, Français, Deutsch,
@@ -17,3 +19,9 @@ The first public release.
   ⌥⌘ letters, Translate stays ⌥⌘T.)
 - **Translate's favorites follow your Mac.** On a Mac in another language, Tab steps between
   English and yours from the start.
+
+### New
+
+- F2 translates by default (#1)
+- Send Feedback opens a bug report with the versions filled in
+
