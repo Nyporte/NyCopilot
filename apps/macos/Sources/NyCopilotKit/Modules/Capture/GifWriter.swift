@@ -185,11 +185,12 @@ private struct Palette {
                 samples.append((Int(pixel & 0xFF), Int((pixel >> 8) & 0xFF), Int((pixel >> 16) & 0xFF)))
             }
         }
-        // Common: at least 1 in 512 samples. At most half the entries, so the rest still has room.
+        // Common: at least 1 in 64 samples, and 16 at most. Every entry kept for one color is one
+        // fewer for everything else, which then rounds worse and is drawn again more often.
         let room = reservingTransparent ? 255 : 256
         var tally: [UInt32: Int] = [:]
         for (r, g, b) in samples { tally[UInt32(r) | UInt32(g) << 8 | UInt32(b) << 16, default: 0] += 1 }
-        let common = tally.filter { $0.value >= max(2, samples.count / 512) }.sorted { $0.value > $1.value }.prefix(room / 2).map(\.key)
+        let common = tally.filter { $0.value >= max(2, samples.count / 64) }.sorted { $0.value > $1.value }.prefix(16).map(\.key)
         for (index, color) in common.enumerated() {
             exact[color] = UInt8(index)
             colors.append((Int(color & 0xFF), Int((color >> 8) & 0xFF), Int((color >> 16) & 0xFF)))
