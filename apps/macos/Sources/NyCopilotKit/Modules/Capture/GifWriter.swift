@@ -152,13 +152,17 @@ final class GifWriter {
 
 private func le16(_ value: Int) -> Data { Data([UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)]) }
 
-/// Up to 256 colors for one rectangle, by median cut on a sample of its pixels; each pixel then maps
-/// to the nearest, cached by 15-bit color so a frame costs a few thousand searches at most.
+/// Up to 256 colors for one rectangle. Colors that cover much of it — backgrounds, text, flat
+/// controls — get entries of their own and are drawn exactly; the rest are shared out by median cut
+/// on a sample of its pixels. Each pixel then maps to its own entry or the nearest, cached by 15-bit
+/// color so a frame costs a few thousand searches at most.
 private struct Palette {
     /// The index left out of the colors when a frame has transparent pixels.
     static let transparent: UInt8 = 255
     private(set) var table = Data(count: 768)
     private var colors: [(r: Int, g: Int, b: Int)] = []
+    /// The common colors' entries, by exact color.
+    private var exact: [UInt32: UInt8] = [:]
     private var cache: [Int16]
 
     /// Colors for the `drawn` pixels of the rectangle (row by row within it); with
@@ -181,7 +185,17 @@ private struct Palette {
                 samples.append((Int(pixel & 0xFF), Int((pixel >> 8) & 0xFF), Int((pixel >> 16) & 0xFF)))
             }
         }
-        colors = Self.medianCut(samples, into: reservingTransparent ? 255 : 256)
+        // Common: at least 1 in 512 samples. At most half the entries, so the rest still has room.
+        let room = reservingTransparent ? 255 : 256
+        var tally: [UInt32: Int] = [:]
+        for (r, g, b) in samples { tally[UInt32(r) | UInt32(g) << 8 | UInt32(b) << 16, default: 0] += 1 }
+        let common = tally.filter { $0.value >= max(2, samples.count / 512) }.sorted { $0.value > $1.value }.prefix(room / 2).map(\.key)
+        for (index, color) in common.enumerated() {
+            exact[color] = UInt8(index)
+            colors.append((Int(color & 0xFF), Int((color >> 8) & 0xFF), Int((color >> 16) & 0xFF)))
+        }
+        let rest = samples.filter { exact[UInt32($0.0) | UInt32($0.1) << 8 | UInt32($0.2) << 16] == nil }
+        if !rest.isEmpty || colors.isEmpty { colors += Self.medianCut(rest, into: room - colors.count) }
         for (index, color) in colors.enumerated() {
             table[index * 3] = UInt8(color.r); table[index * 3 + 1] = UInt8(color.g); table[index * 3 + 2] = UInt8(color.b)
         }
@@ -195,6 +209,7 @@ private struct Palette {
 
     /// Pixels are RGBA in memory: red in the low byte on little-endian Macs.
     mutating func index(of pixel: UInt32) -> UInt8 {
+        if let index = exact[pixel & 0xFF_FFFF] { return index }
         let r = Int(pixel & 0xFF), g = Int((pixel >> 8) & 0xFF), b = Int((pixel >> 16) & 0xFF)
         let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
         if cache[key] >= 0 { return UInt8(cache[key]) }

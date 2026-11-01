@@ -94,6 +94,37 @@ final class LogicTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 4, y: 20)).redComponent, 0.9)
     }
 
+    /// A window's white stays exactly white beside near-whites: common colors get palette entries
+    /// of their own, found before the nearest-color cache, which lumps 248–255 together.
+    func testGifWriterKeepsCommonColorsExact() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("c-\(UUID()).gif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let size = (width: 320, height: 200)
+        let writer = try XCTUnwrap(GifWriter(url: url, width: size.width, height: size.height))
+        let context = try XCTUnwrap(CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        // Near-whites (a title bar, borders, antialiasing) read before the white beside them, then a
+        // colorful picture that wants most of the palette.
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+        for x in Array(0..<40) + Array(240..<size.width) {
+            for y in 0..<size.height {
+                if x < 40 {
+                    let gray = CGFloat(244 + (x * 7 + y * 13) % 11) / 255
+                    context.setFillColor(CGColor(srgbRed: gray, green: gray, blue: gray, alpha: 1))
+                } else {
+                    context.setFillColor(CGColor(srgbRed: CGFloat(x - 240) / 80, green: CGFloat(y) / 200, blue: CGFloat((x * y) % 13) / 13, alpha: 1))
+                }
+                context.fill(CGRect(x: x, y: y, width: 1, height: 1))
+            }
+        }
+        writer.add(try XCTUnwrap(context.makeImage()), at: 0)
+        XCTAssertTrue(writer.finish(at: 0.1))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let white = try sRGB(try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil)), x: 140, y: 100)
+        XCTAssertEqual([white.red, white.green, white.blue], [255, 255, 255])
+    }
+
     /// A color the first frame's palette could only round (a small patch among thousands of others)
     /// stays the same in the next frame, which has few colors: it's drawn again, now exact, rather
     /// than left wrong for as long as it doesn't change.
