@@ -1,12 +1,40 @@
-# Every push and pull request: the Rust core's tests and lints, then the macOS client's build and
-# tests (unit tests and off-screen render checks of every panel). Nothing is signed here.
+# Every pull request and every push to main: the pull request's title, the Rust core's tests and
+# lints, then the macOS client's build and tests (unit tests and off-screen render checks of every
+# panel in every language). Nothing is signed here; releases are built and signed on a maintainer's
+# Mac (scripts/release.sh), so no certificates or notary credentials live in GitHub.
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
+  title:
+    name: Pull request title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conventional Commit title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\([a-z0-9-]+\))?!?: .+'
+          if ! printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "::error::The title becomes the commit on main, so it must read like: fix(capture): keep the crosshair while the app in front redraws"
+            echo "Got: $TITLE"
+            exit 1
+          fi
+
   test:
+    name: Test
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4

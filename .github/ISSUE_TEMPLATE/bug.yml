@@ -1,0 +1,32 @@
+name: Something isn't right
+description: A bug, a crash, or something that behaves differently than it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. A screenshot or a short recording helps a lot.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NyCopilot version
+      description: NyCopilot menu → About NyCopilot.
+      placeholder: "0.4.0 (130)"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "macOS 14.6"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Settings → General → Copy Diagnostics, then paste here. It lists what NyCopilot did lately, without any of your text. (Send Feedback… copies it for you.)
+      render: text
