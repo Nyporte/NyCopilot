@@ -446,8 +446,11 @@ private final class ArticleWindow: MockWindow {
 
     var scrollableHeight: CGFloat { page.frame.height - scroller.contentSize.height }
 
+    /// To a whole pixel, as a wheel scrolls: a fractional offset blends the edges of the strips the
+    /// clip view redraws into faint lines.
     func scroll(to offset: CGFloat) {
-        scroller.contentView.scroll(to: NSPoint(x: 0, y: offset))
+        let scale = window?.backingScaleFactor ?? 1
+        scroller.contentView.scroll(to: NSPoint(x: 0, y: (offset * scale).rounded() / scale))
         scroller.reflectScrolledClipView(scroller.contentView)
         window?.displayIfNeeded()
     }
