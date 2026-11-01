@@ -57,6 +57,13 @@ Run the same locally with `make test`. Behaviour that depends on the system (foc
 windows of other apps) can't be checked off screen: describe in the pull request how you checked
 it in the running app.
 
+## README pictures
+
+The stills in `docs/images` are NyCopilot's real panels: `NYCOPILOT_SHOWCASE=1 swift test --filter ShowcaseTests`.
+The moving pictures (`demo-*.gif`) take over the screen while they record, so they're made on GitHub's
+Macs: run the **Demos** workflow (or push a change to the demo tests on a branch) and download its
+`demos` artifact into `docs/images`.
+
 ## Interface text and languages
 
 Every user-facing string goes through `L("English text")`, and every language in

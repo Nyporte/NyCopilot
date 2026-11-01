@@ -2,7 +2,7 @@ import AppKit
 import XCTest
 @testable import NyCopilotKit
 
-/// The README's pictures: NyCopilot's real panels, filled with sample content, captured on screen
+/// The README's still pictures (the moving ones are DemoTests'): NyCopilot's real panels, filled with sample content, captured on screen
 /// and set on a backdrop. Runs only when asked, since it puts windows on screen for a moment:
 ///
 ///     NYCOPILOT_SHOWCASE=1 swift test --filter ShowcaseTests
@@ -41,16 +41,6 @@ final class ShowcaseTests: XCTestCase {
         bar.setContentSize(toolbar.fittingSize)
         try save(bar, "toolbar")
 
-        // Ask AI, mid-conversation.
-        let ask = AskPanel()
-        ask.prepare(AskMaterial(text: "量子纠缠是一种量子力学现象：两个粒子即使相隔很远，测量其中一个也会立即影响另一个的状态。",
-                                source: SourceContext(app: "Safari", title: "Quantum entanglement", url: "")))
-        ask.append("Explain", style: .question)
-        ask.append("**Quantum entanglement** links two particles so that measuring one instantly tells you about the other, "
-                   + "however far apart they are.\n\nIt can't carry messages faster than light, since each result on its own looks random, "
-                   + "but it's what quantum computers and quantum cryptography are built on.", style: .answer)
-        try save(ask.panel, "ask")
-
         // Clipboard history: text, a link, a color, an image, one pinned.
         let picture = NSImage(size: NSSize(width: 160, height: 100), flipped: false) { rect in
             NSGradient(colors: [.systemTeal, .systemIndigo])!.draw(in: rect, angle: 35)
@@ -80,12 +70,6 @@ final class ShowcaseTests: XCTestCase {
         let table = try XCTUnwrap(inboxWindow.contentView?.subviews.compactMap { ($0 as? NSScrollView)?.documentView as? NSTableView }.first)
         table.selectRowIndexes([1], byExtendingSelection: false)
         try save(inboxWindow, "inbox")
-
-        // A translation beside what it translates.
-        let card = TranslationCard()
-        card.present(language: "English", beside: NSRect(x: screen.frame.midX - 160, y: screen.frame.midY, width: 320, height: 40), on: screen)
-        card.show("Entanglement doesn't let you send messages faster than light.")
-        try save(card, "translate")
 
         // Every key, one press away.
         try save(KeySheet.makePanel("Screenshot keys", groups: KeyGuide.capture), "keys")
