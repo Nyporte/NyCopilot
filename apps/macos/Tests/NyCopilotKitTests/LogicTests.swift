@@ -94,6 +94,129 @@ final class LogicTests: XCTestCase {
         XCTAssertGreaterThan(try XCTUnwrap(bitmap.colorAt(x: 4, y: 20)).redComponent, 0.9)
     }
 
+    /// A window's white stays exactly white beside near-whites: common colors get palette entries
+    /// of their own, found before the nearest-color cache, which lumps 248–255 together.
+    func testGifWriterKeepsCommonColorsExact() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("c-\(UUID()).gif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let size = (width: 320, height: 200)
+        let writer = try XCTUnwrap(GifWriter(url: url, width: size.width, height: size.height))
+        let context = try XCTUnwrap(CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        // Near-whites (a title bar, borders, antialiasing) read before the white beside them, then a
+        // colorful picture that wants most of the palette.
+        context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+        for x in Array(0..<40) + Array(240..<size.width) {
+            for y in 0..<size.height {
+                if x < 40 {
+                    let gray = CGFloat(244 + (x * 7 + y * 13) % 11) / 255
+                    context.setFillColor(CGColor(srgbRed: gray, green: gray, blue: gray, alpha: 1))
+                } else {
+                    context.setFillColor(CGColor(srgbRed: CGFloat(x - 240) / 80, green: CGFloat(y) / 200, blue: CGFloat((x * y) % 13) / 13, alpha: 1))
+                }
+                context.fill(CGRect(x: x, y: y, width: 1, height: 1))
+            }
+        }
+        writer.add(try XCTUnwrap(context.makeImage()), at: 0)
+        XCTAssertTrue(writer.finish(at: 0.1))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let white = try sRGB(try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil)), x: 140, y: 100)
+        XCTAssertEqual([white.red, white.green, white.blue], [255, 255, 255])
+    }
+
+    /// A color the first frame's palette could only round (a small patch among thousands of others)
+    /// stays the same in the next frame, which has few colors: it's drawn again, now exact, rather
+    /// than left wrong for as long as it doesn't change.
+    func testGifWriterRedrawsColorsItHadToRound() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("r-\(UUID()).gif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let size = (width: 320, height: 200)
+        let writer = try XCTUnwrap(GifWriter(url: url, width: size.width, height: size.height))
+        func frame(busy: Bool) -> CGImage {
+            let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+            context.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            if busy {
+                for x in stride(from: 0, to: size.width, by: 4) {
+                    for y in stride(from: 0, to: size.height, by: 4) {
+                        context.setFillColor(CGColor(red: CGFloat(x) / 320, green: CGFloat(y) / 200, blue: CGFloat((x * y) % 7) / 7, alpha: 1))
+                        context.fill(CGRect(x: x, y: y, width: 4, height: 4))
+                    }
+                }
+            }
+            context.setFillColor(CGColor(red: 1, green: 0, blue: 0.8, alpha: 1))
+            context.fill(CGRect(x: 20, y: 180, width: 4, height: 4))
+            return context.makeImage()!
+        }
+        writer.add(frame(busy: true), at: 0)
+        writer.add(frame(busy: false), at: 0.1)
+        XCTAssertTrue(writer.finish(at: 0.2))
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let shown = try sRGB(try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 1, nil)), x: 22, y: 182)
+        let patch = try sRGB(frame(busy: false), x: 22, y: 182)
+        XCTAssertEqual(shown.red, patch.red, accuracy: 3)
+        XCTAssertEqual(shown.green, patch.green, accuracy: 3)
+        XCTAssertEqual(shown.blue, patch.blue, accuracy: 3)
+    }
+
+    /// A pixel's sRGB bytes, counted from the bottom-left like Core Graphics draws.
+    private func sRGB(_ image: CGImage, x: Int, y: Int) throws -> (red: Int, green: Int, blue: Int) {
+        let context = try XCTUnwrap(CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                              space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
+        // Memory rows count from the top.
+        let offset = ((image.height - 1 - y) * image.width + x) * 4
+        return (Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]))
+    }
+
+    /// Two small changes in opposite corners make a frame as large as the image; the pixels between
+    /// them are left transparent, so they cost next to nothing and still show the frame before.
+    func testGifWriterLeavesUnchangedPixelsTransparent() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("t-\(UUID()).gif")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let size = (width: 320, height: 200)
+        let writer = try XCTUnwrap(GifWriter(url: url, width: size.width, height: size.height))
+        func frame(corners: Bool) -> CGImage {
+            let context = CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
+                                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            // A detailed background, like a screen's, which would be expensive to store again.
+            for x in stride(from: 0, to: size.width, by: 2) {
+                for y in stride(from: 0, to: size.height, by: 2) {
+                    let shade = CGFloat((x * 7 + y * 3) % 12) / 12
+                    context.setFillColor(CGColor(red: shade, green: 1 - shade, blue: (x + y) % 4 == 0 ? 1 : 0.4, alpha: 1))
+                    context.fill(CGRect(x: x, y: y, width: 2, height: 2))
+                }
+            }
+            if corners {
+                context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+                context.fill(CGRect(x: 0, y: 0, width: 6, height: 6))
+                context.fill(CGRect(x: size.width - 6, y: size.height - 6, width: 6, height: 6))
+            }
+            return context.makeImage()!
+        }
+        writer.add(frame(corners: false), at: 0)
+        writer.add(frame(corners: true), at: 0.1)
+        let first = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int)
+        XCTAssertTrue(writer.finish(at: 0.2))
+        let total = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int)
+        XCTAssertLessThan(total - first, 4_000, "the second frame stores its two corners, not the background between them")
+
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let before = NSBitmapImageRep(cgImage: try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil)))
+        let after = NSBitmapImageRep(cgImage: try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 1, nil)))
+        // Between the corners, exactly what the first frame showed; the corners are black.
+        for (x, y) in [(160, 100), (40, 150), (300, 20), (10, 10), (309, 189)] {
+            XCTAssertEqual(after.colorAt(x: x, y: y), before.colorAt(x: x, y: y), "at \(x), \(y)")
+        }
+        // Bitmap rows count from the top: the corners drawn bottom-left and top-right.
+        for (x, y) in [(2, 197), (317, 2)] {
+            XCTAssertLessThan(try XCTUnwrap(after.colorAt(x: x, y: y)).brightnessComponent, 0.05, "at \(x), \(y)")
+        }
+    }
+
     func testSettingsCacheFollowsWrites() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("core-\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }

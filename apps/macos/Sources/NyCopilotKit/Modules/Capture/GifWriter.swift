@@ -4,8 +4,12 @@ import Foundation
 /// Writes an animated GIF one frame at a time, straight to disk, so a long recording never holds
 /// more than two frames in memory (ImageIO's GIF writer keeps every frame until the end, gigabytes
 /// for a minute of screen). Each frame stores only the rectangle that changed since the one before,
-/// with its own 256-color palette; screens change in small places, so files stay small and frames
-/// are quick to encode. A frame's delay is known once the next one arrives, so each is written then.
+/// with its own palette, and inside it the pixels that stayed the same are transparent: two small
+/// changes far apart (a pointer and a clock) make a large rectangle, but long transparent runs cost
+/// almost nothing. A pixel that stayed the same is drawn again anyway when what's shown is off by
+/// more than a little, so a color a frame's palette had to approximate doesn't stay wrong for good.
+/// Screens change in small places, so files stay small and frames are quick to encode. A frame's
+/// delay is known once the next one arrives, so each is written then.
 final class GifWriter {
     let width: Int
     let height: Int
@@ -13,11 +17,13 @@ final class GifWriter {
     /// Frames are drawn here; it owns the pixel memory (RGBA, red in the low byte).
     private let context: CGContext
     private let pixels: UnsafeMutableBufferPointer<UInt32>
-    /// The last frame as shown, to find what changed.
+    /// The last frame, to find what changed.
     private var previous: [UInt32]
+    /// What a viewer sees: each pixel as its palette last drew it.
+    private var shown: [UInt32]
     private var hasPrevious = false
     /// The latest frame, encoded but not yet written: its graphic control block needs its delay.
-    private var pending: (image: Data, time: Double)?
+    private var pending: (image: Data, time: Double, transparent: Bool)?
     private var lzw = LZW()
     private(set) var frameCount = 0
 
@@ -33,6 +39,7 @@ final class GifWriter {
         self.context = context
         pixels = UnsafeMutableBufferPointer(start: data.bindMemory(to: UInt32.self, capacity: width * height), count: width * height)
         previous = [UInt32](repeating: 0, count: width * height)
+        shown = previous
         var header = Data("GIF89a".utf8)
         header.append(le16(width))
         header.append(le16(height))
@@ -46,9 +53,9 @@ final class GifWriter {
     func add(_ image: CGImage, at time: Double) {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let changed = changedRect() else { return }
-        let block = encode(changed)
+        let block = encode(changed, overPrevious: hasPrevious)
         flushPending(until: time)
-        pending = (block, time)
+        pending = (block, time, hasPrevious)
         _ = previous.withUnsafeMutableBufferPointer { $0.update(fromContentsOf: pixels) }
         hasPrevious = true
         frameCount += 1
@@ -90,21 +97,41 @@ final class GifWriter {
         guard let pending else { return }
         // Hundredths of a second; viewers stretch anything under 0.02 s.
         let delay = max(2, min(65535, Int(((time - pending.time) * 100).rounded())))
-        var control = Data([0x21, 0xF9, 0x04, 0x04]) // disposal: leave in place, so the next frame draws over it
+        // Disposal: leave in place, so the next frame draws over it; then whether it has a transparent index.
+        var control = Data([0x21, 0xF9, 0x04, pending.transparent ? 0x05 : 0x04])
         control.append(le16(delay))
-        control.append(contentsOf: [0, 0])
+        control.append(contentsOf: [pending.transparent ? Palette.transparent : 0, 0])
         handle.write(control)
         handle.write(pending.image)
         self.pending = nil
     }
 
-    /// An image descriptor, local palette, and LZW data for one rectangle of the frame.
-    private func encode(_ rect: (x: Int, y: Int, width: Int, height: Int)) -> Data {
-        var palette = Palette(pixels: UnsafeBufferPointer(pixels), width: width, rect: rect)
-        var indices = [UInt8](repeating: 0, count: rect.width * rect.height)
+    /// An image descriptor, local palette, and LZW data for one rectangle of the frame. Drawn over
+    /// the previous frame, its unchanged pixels are left transparent and kept out of the palette.
+    private func encode(_ rect: (x: Int, y: Int, width: Int, height: Int), overPrevious: Bool) -> Data {
+        // Which of the rectangle's pixels are drawn, row by row: those that changed, and those shown
+        // too far from what they are; all of them on the first frame.
+        var drawn = [Bool](repeating: true, count: rect.width * rect.height)
+        if overPrevious {
+            previous.withUnsafeBufferPointer { before in
+                for y in 0..<rect.height {
+                    let source = (rect.y + y) * width + rect.x, target = y * rect.width
+                    for x in 0..<rect.width {
+                        let pixel = pixels[source + x]
+                        drawn[target + x] = pixel != before[source + x] || Self.isFar(shown[source + x], from: pixel)
+                    }
+                }
+            }
+        }
+        var palette = Palette(pixels: UnsafeBufferPointer(pixels), width: width, rect: rect, drawn: drawn, reservingTransparent: overPrevious)
+        var indices = [UInt8](repeating: Palette.transparent, count: rect.width * rect.height)
         for y in 0..<rect.height {
             let source = (rect.y + y) * width + rect.x, target = y * rect.width
-            for x in 0..<rect.width { indices[target + x] = palette.index(of: pixels[source + x]) }
+            for x in 0..<rect.width where drawn[target + x] {
+                let index = palette.index(of: pixels[source + x])
+                indices[target + x] = index
+                shown[source + x] = palette.color(at: index)
+            }
         }
         var block = Data([0x2C])
         block.append(le16(rect.x)); block.append(le16(rect.y))
@@ -115,42 +142,75 @@ final class GifWriter {
         block.append(lzw.encode(indices))
         return block
     }
+
+    /// Whether a shown color is off by more than a palette's usual rounding, in any channel.
+    private static func isFar(_ shown: UInt32, from pixel: UInt32) -> Bool {
+        abs(Int(shown & 0xFF) - Int(pixel & 0xFF)) > 10 || abs(Int((shown >> 8) & 0xFF) - Int((pixel >> 8) & 0xFF)) > 10
+            || abs(Int((shown >> 16) & 0xFF) - Int((pixel >> 16) & 0xFF)) > 10
+    }
 }
 
 private func le16(_ value: Int) -> Data { Data([UInt8(value & 0xFF), UInt8((value >> 8) & 0xFF)]) }
 
-/// Up to 256 colors for one rectangle, by median cut on a sample of its pixels; each pixel then maps
-/// to the nearest, cached by 15-bit color so a frame costs a few thousand searches at most.
+/// Up to 256 colors for one rectangle. Colors that cover much of it — backgrounds, text, flat
+/// controls — get entries of their own and are drawn exactly; the rest are shared out by median cut
+/// on a sample of its pixels. Each pixel then maps to its own entry or the nearest, cached by 15-bit
+/// color so a frame costs a few thousand searches at most.
 private struct Palette {
+    /// The index left out of the colors when a frame has transparent pixels.
+    static let transparent: UInt8 = 255
     private(set) var table = Data(count: 768)
     private var colors: [(r: Int, g: Int, b: Int)] = []
+    /// The common colors' entries, by exact color.
+    private var exact: [UInt32: UInt8] = [:]
     private var cache: [Int16]
 
-    init(pixels: UnsafeBufferPointer<UInt32>, width: Int, rect: (x: Int, y: Int, width: Int, height: Int)) {
+    /// Colors for the `drawn` pixels of the rectangle (row by row within it); with
+    /// `reservingTransparent`, at most 255 of them, so the last index stays free.
+    init(pixels: UnsafeBufferPointer<UInt32>, width: Int, rect: (x: Int, y: Int, width: Int, height: Int),
+         drawn: [Bool], reservingTransparent: Bool) {
         cache = [Int16](repeating: -1, count: 32768)
-        // At most ~40,000 samples, spread over the rectangle.
-        let count = rect.width * rect.height
-        let step = max(1, Int((Double(count) / 40_000).squareRoot()))
+        // At most ~40,000 samples, every so many of the drawn pixels: a few small changes in a large
+        // rectangle are all sampled.
+        let count = drawn.reduce(0) { $1 ? $0 + 1 : $0 }
+        let step = max(1, count / 40_000)
         var samples: [(Int, Int, Int)] = []
-        samples.reserveCapacity(count / (step * step) + 1)
-        var y = rect.y
-        while y < rect.y + rect.height {
-            var x = rect.x
-            while x < rect.x + rect.width {
-                let pixel = pixels[y * width + x]
+        samples.reserveCapacity(count / step + 1)
+        var seen = 0
+        for y in 0..<rect.height {
+            for x in 0..<rect.width where drawn[y * rect.width + x] {
+                defer { seen += 1 }
+                guard seen % step == 0 else { continue }
+                let pixel = pixels[(rect.y + y) * width + rect.x + x]
                 samples.append((Int(pixel & 0xFF), Int((pixel >> 8) & 0xFF), Int((pixel >> 16) & 0xFF)))
-                x += step
             }
-            y += step
         }
-        colors = Self.medianCut(samples, into: 256)
+        // Common: at least 1 in 64 samples, and 16 at most. Every entry kept for one color is one
+        // fewer for everything else, which then rounds worse and is drawn again more often.
+        let room = reservingTransparent ? 255 : 256
+        var tally: [UInt32: Int] = [:]
+        for (r, g, b) in samples { tally[UInt32(r) | UInt32(g) << 8 | UInt32(b) << 16, default: 0] += 1 }
+        let common = tally.filter { $0.value >= max(2, samples.count / 64) }.sorted { $0.value > $1.value }.prefix(16).map(\.key)
+        for (index, color) in common.enumerated() {
+            exact[color] = UInt8(index)
+            colors.append((Int(color & 0xFF), Int((color >> 8) & 0xFF), Int((color >> 16) & 0xFF)))
+        }
+        let rest = samples.filter { exact[UInt32($0.0) | UInt32($0.1) << 8 | UInt32($0.2) << 16] == nil }
+        if !rest.isEmpty || colors.isEmpty { colors += Self.medianCut(rest, into: room - colors.count) }
         for (index, color) in colors.enumerated() {
             table[index * 3] = UInt8(color.r); table[index * 3 + 1] = UInt8(color.g); table[index * 3 + 2] = UInt8(color.b)
         }
     }
 
+    /// The color at `index`, packed like a pixel.
+    func color(at index: UInt8) -> UInt32 {
+        let color = colors[Int(index)]
+        return UInt32(color.r) | UInt32(color.g) << 8 | UInt32(color.b) << 16 | 0xFF00_0000
+    }
+
     /// Pixels are RGBA in memory: red in the low byte on little-endian Macs.
     mutating func index(of pixel: UInt32) -> UInt8 {
+        if let index = exact[pixel & 0xFF_FFFF] { return index }
         let r = Int(pixel & 0xFF), g = Int((pixel >> 8) & 0xFF), b = Int((pixel >> 16) & 0xFF)
         let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
         if cache[key] >= 0 { return UInt8(cache[key]) }
