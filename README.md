@@ -16,7 +16,7 @@ Keep the thought for later. All of it one keystroke away, right where you're wor
 ![10 languages](https://img.shields.io/badge/interface-10%20languages-5e5ce6)
 [![CI](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml)
 
-<img src="docs/images/demo-hero.gif" width="760" alt="F1: drag out a chart, point an arrow at its best month, ⌘C. F2: type a reply in English, Return, and it goes out in Japanese. F4: select a paragraph, Summarize, and the summary streams in. Then every key on one card: F1 Capture, F2 Translate, F3 Jot it down, F4 Ask AI">
+<img src="docs/images/demo-hero.gif" width="760" alt="F1: drag out a chart, P pins it, and it stays on top over the slides being made. F2: type a reply in English, Return, and it goes out in Japanese. F3: jot a to-do from a web page into the inbox. F4: select a paragraph, Summarize, and the summary streams in. Control-Option-Right: drag one window to the left edge and send the other to the right half. Then every key on one card">
 
 </div>
 
