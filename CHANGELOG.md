@@ -5,6 +5,8 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+## 0.5.0 — 2026-11-03
+
 - **F4 asks AI.** Ask AI joins the other one-press keys: F1 captures, F2 translates, F3 jots, F4
   asks. With ⌥⌘ letters it stays ⌥⌘A, and a shortcut you set yourself stays yours.
 - **Mouse speed and acceleration.** Settings → Mouse makes a mouse faster than System Settings
@@ -15,6 +17,11 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
   natural scrolling.
 - **Smooth scrolling.** Each wheel click glides, like Mos, over a distance and time you choose,
   with ⇧ for sideways and ⌥ for faster; games and remote desktops can be left as they are.
+
+### New
+
+- Set mouse speed and acceleration, and reverse or smooth the scroll wheel (#11)
+- F4 asks AI, and a new opening picture for the README (#10)
 
 ## 0.4.1 — 2026-11-01
 
