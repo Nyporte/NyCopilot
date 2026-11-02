@@ -7,6 +7,14 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 - **F4 asks AI.** Ask AI joins the other one-press keys: F1 captures, F2 translates, F3 jots, F4
   asks. With ⌥⌘ letters it stays ⌥⌘A, and a shortcut you set yourself stays yours.
+- **Mouse speed and acceleration.** Settings → Mouse makes a mouse faster than System Settings
+  allows (up to 8×), sets how much acceleration it has, or turns acceleration off: drag, or type
+  the number. The trackpad is left alone, and mice go back to System Settings when it's off or
+  NyCopilot quits.
+- **Reverse the scroll wheel.** A mouse wheel can scroll the Windows way while the trackpad keeps
+  natural scrolling.
+- **Smooth scrolling.** Each wheel click glides, like Mos, over a distance and time you choose,
+  with ⇧ for sideways and ⌥ for faster; games and remote desktops can be left as they are.
 
 ## 0.4.1 — 2026-11-01
 

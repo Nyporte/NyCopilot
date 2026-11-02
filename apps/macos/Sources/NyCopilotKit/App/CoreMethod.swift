@@ -24,6 +24,7 @@ enum CoreMethod: String {
     case inboxUpdate = "inbox.update"
     case inboxWake = "inbox.wake"
     case llmTest = "llm.test"
+    case mousePointer = "mouse.pointer"
     case recordsClear = "records.clear"
     case recordsDelete = "records.delete"
     case recordsGet = "records.get"

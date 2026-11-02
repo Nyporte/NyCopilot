@@ -50,7 +50,8 @@ final class LanguageRenderTests: XCTestCase {
                 .map { WindowsShell.ActionInfo(id: $0.id, title: L($0.title), group: L($0.group)) }
             let panes: [SettingsPane] = [GeneralPane(services: services), ModelPane(services: services), CapturePane(services: services),
                                          TranslatePane(services: services, openHistory: {}), InboxPane(services: services),
-                                         ClipboardPane(services: services), WindowsPane(services: services, actions: actions)]
+                                         ClipboardPane(services: services), WindowsPane(services: services, actions: actions),
+                                         MousePane(services: services, connected: { ["ROG Keris II Origin"] })]
             for pane in panes {
                 let view = pane.view
                 pane.paneWillAppear()

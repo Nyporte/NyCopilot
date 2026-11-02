@@ -77,6 +77,7 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `windows.compute` | `{action, window, screen, repeat?}` | `{frame}` — `screen` is the usable area; `repeat` counts consecutive presses. With `windows.repeat = move_across_displays`, a repeated side layout returns `{frame: null, move: {direction, action}}`: apply `action` on the nearest display in `direction` |
 | `windows.move_to_screen` | `{window, from, to}` | `{frame}` keeping relative position and size |
 | `windows.snap_area` | `{point: {x, y}, screen}` | `{action, frame}` or nulls when the pointer isn't at an edge |
+| `mouse.pointer` | `{system_acceleration?}` | `{enabled, resolution, acceleration, linear}` for every mouse: `resolution` (counts per inch, 10–1995) is 400 divided by `mouse.speed`, whatever resolution a mouse claims; `acceleration` is `mouse.acceleration`, or the system's while following it. At 0, `linear` is `true`, `resolution` is 400, and `acceleration` is `mouse.speed`: macOS then moves the pointer exactly that many points per count (measured on macOS 14), where a resolution would only drop counts. A missing `system_acceleration` defaults to 0.6875 |
 
 | `capture.palette` | — | `["#RRGGBB"]` annotation colors |
 | `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system |
@@ -116,7 +117,12 @@ object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the sys
 (synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), `clipboard.ignored_apps` (synced,
 bundle identifiers; password managers by default), `inbox.markdown_folder` (device, `""`: an absolute folder path
 notes are sent to as Markdown), `ask.send_images` (synced, `true`), `capture.gif_fps` (synced, 5–30, `15`),
-`capture.gif_retina` (synced, `false`), and `capture.gif_cursor` (synced, `true`). Inbox images may be
+`capture.gif_retina` (synced, `false`), `capture.gif_cursor` (synced, `true`), `mouse.enabled` (device, `false`),
+`mouse.speed` (device, `1`, 0.1–8), `mouse.acceleration` (device, `-1` = follow the system, or 0–40, 0 = off), and
+`mouse.reverse_scroll` (device, `false`: a wheel scrolls opposite to the system's direction; trackpads don't change),
+`mouse.smooth_scroll` (device, `false`), `mouse.scroll_lines` (device, `3`, 1–10 lines of 33.6 points a click),
+`mouse.scroll_glide` (device, `200`, 0–600 ms), and `mouse.scroll_exceptions` (device, `[]`, at most 100 bundle
+identifiers of apps whose wheel doesn't glide). Inbox images may be
 `<uuid>.gif` as well as `<uuid>.png`.
 
 ## Events
