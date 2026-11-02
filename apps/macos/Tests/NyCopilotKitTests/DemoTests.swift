@@ -292,6 +292,8 @@ final class DemoTests: XCTestCase {
         let overlay = try XCTUnwrap(NSApp.windows.first { $0 is CaptureWindow && $0.isVisible })
         func find(_ view: NSView) -> CaptureView? { (view as? CaptureView) ?? view.subviews.lazy.compactMap(find).first }
         let view = try XCTUnwrap(overlay.contentView.flatMap(find))
+        // Where the recording's pointer is, not the Mac's own.
+        director.send(.mouseMoved, to: overlay)
         director.cursor = .crosshair
         director.wait(0.35)
         return (session, overlay, view)
