@@ -166,26 +166,31 @@ enum DemoSpot {
     /// one after another, and the key lights when the scene presses it.
     private static func caption(_ beat: Beat, at time: Double, clock: Double, in context: CGContext, size: CGSize, scale: CGFloat) {
         let since = beat.scene.keys.last { $0.labels == beat.keys && $0.time <= clock + 1e-6 }.map { clock - $0.time } ?? .infinity
-        let font = NSFont.systemFont(ofSize: 28 * scale, weight: .bold)
+        let font = NSFont.systemFont(ofSize: 26 * scale, weight: .semibold)
         func words(_ text: String) -> NSAttributedString {
-            NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.white, .shadow: shadow(scale)])
+            NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: NSColor.white, .kern: -0.2 * scale])
         }
         let label = beat.keys.joined()
-        let capHeight = 42 * scale, gap = 16 * scale
-        let capWidth = keycapWidth(label, height: capHeight)
+        let capHeight = 30 * scale, gap = 14 * scale
+        let capWidth = DemoKeycap.width(label, height: capHeight)
         let whole = words(beat.line).size()
         let left = (size.width - capWidth - gap - whole.width) / 2
         let middle = size.height - 52 * scale
         appKit(context) {
-            // On a dark pill, so it reads over anything.
-            let pill = NSRect(x: left - 10 * scale, y: middle - 31 * scale, width: capWidth + gap + whole.width + 32 * scale, height: 62 * scale)
-            NSColor.black.withAlphaComponent(0.5 * CGFloat(easedOut(time / 0.25))).setFill()
-            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+            // On a dark pill with a hairline rim, so it reads over anything.
+            let shown = CGFloat(easedOut(time / 0.25))
+            let pill = NSRect(x: left - 11 * scale, y: middle - 26 * scale, width: capWidth + gap + whole.width + 33 * scale, height: 52 * scale)
+            let outline = NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2)
+            NSColor(white: 0.06, alpha: 0.5 * shown).setFill()
+            outline.fill()
+            NSColor.white.withAlphaComponent(0.14 * shown).setStroke()
+            outline.lineWidth = scale
+            outline.stroke()
             let pop = CGFloat(overshoot(time / 0.32))
             let cap = CGRect(x: left, y: middle - capHeight / 2, width: capWidth, height: capHeight)
             NSGraphicsContext.current?.cgContext.setAlpha(CGFloat(min(1, time / 0.12)))
-            keycap(label, in: cap.insetBy(dx: cap.width * (1 - pop) / 2, dy: cap.height * (1 - pop) / 2), scale: scale,
-                   lit: lit(since), dip: since >= 0 && since < 0.18 ? 0.92 : 1)
+            DemoKeycap.draw(label, in: cap.insetBy(dx: cap.width * (1 - pop) / 2, dy: cap.height * (1 - pop) / 2), scale: scale,
+                            lit: lit(since), dip: since >= 0 && since < 0.18 ? 0.94 : 1)
             let parts = beat.line.split(separator: " ")
             for (index, part) in parts.enumerated() {
                 let rise = easedOut((time - 0.1 - 0.045 * Double(index)) / 0.3)
@@ -234,20 +239,21 @@ enum DemoSpot {
                  top: 262, delay: 0.27)
 
             // The keys, one after another, each lighting as it lands.
-            let column = min(176 * scale, (size.width - 40 * scale) / CGFloat(card.keys.count)), capHeight = 50 * scale
+            let column = min(176 * scale, (size.width - 40 * scale) / CGFloat(card.keys.count)), capHeight = 38 * scale
             for (index, key) in card.keys.enumerated() {
                 let shown = time - (0.45 + 0.12 * Double(index))
                 guard shown > 0 else { continue }
                 let middle = center + (CGFloat(index) - CGFloat(card.keys.count - 1) / 2) * column
                 let pop = CGFloat(overshoot(shown / 0.3))
-                let width = keycapWidth(key.keys, height: capHeight)
-                let cap = CGRect(x: middle - width / 2, y: y(328, 50), width: width, height: capHeight)
+                let width = DemoKeycap.width(key.keys, height: capHeight)
+                let cap = CGRect(x: middle - width / 2, y: y(334, 38), width: width, height: capHeight)
                 cg?.setAlpha(CGFloat(min(1, shown / 0.12)))
-                keycap(key.keys, in: cap.insetBy(dx: cap.width * (1 - pop) / 2, dy: cap.height * (1 - pop) / 2), scale: scale,
-                       lit: lit(shown), dip: 1)
+                DemoKeycap.draw(key.keys, in: cap.insetBy(dx: cap.width * (1 - pop) / 2, dy: cap.height * (1 - pop) / 2), scale: scale,
+                                lit: lit(shown))
                 let label = NSAttributedString(string: key.label, attributes: [
-                    .font: NSFont.systemFont(ofSize: 16 * scale, weight: .semibold), .foregroundColor: NSColor.white, .shadow: shadow(scale)])
-                label.draw(at: NSPoint(x: middle - label.size().width / 2, y: y(392, label.size().height / scale)))
+                    .font: NSFont.systemFont(ofSize: 15 * scale, weight: .medium), .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                    .shadow: shadow(scale)])
+                label.draw(at: NSPoint(x: middle - label.size().width / 2, y: y(384, label.size().height / scale)))
             }
             line(card.footnote, font: .systemFont(ofSize: 14 * scale, weight: .medium), color: NSColor.white.withAlphaComponent(0.7),
                  top: 470, delay: 0.45 + 0.12 * Double(card.keys.count) + 0.1)
@@ -256,37 +262,6 @@ enum DemoSpot {
     }
 
     // MARK: Drawing
-
-    private static func keycapWidth(_ label: String, height: CGFloat) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: height * 0.46, weight: .semibold)
-        return max(height, (label as NSString).size(withAttributes: [.font: font]).width + height * 0.7)
-    }
-
-    /// A key like the ones the scenes show in the corner; lit, it turns the accent blue.
-    private static func keycap(_ label: String, in rect: CGRect, scale: CGFloat, lit: CGFloat, dip: CGFloat) {
-        let cap = rect.insetBy(dx: rect.width * (1 - dip) / 2, dy: rect.height * (1 - dip) / 2).offsetBy(dx: 0, dy: dip < 1 ? -2 * scale : 0)
-        let radius = cap.height * 0.22
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-        shadow.shadowBlurRadius = 14 * scale
-        shadow.shadowOffset = NSSize(width: 0, height: -5 * scale)
-        NSGraphicsContext.saveGraphicsState()
-        shadow.set()
-        NSColor(white: 0.74, alpha: 1).blended(withFraction: lit, of: NSColor(srgbRed: 0.16, green: 0.33, blue: 0.82, alpha: 1))!.setFill()
-        NSBezierPath(roundedRect: cap, xRadius: radius, yRadius: radius).fill()
-        NSGraphicsContext.restoreGraphicsState()
-        let face = NSBezierPath(roundedRect: NSRect(x: cap.minX, y: cap.minY + 3 * scale, width: cap.width, height: cap.height - 3 * scale),
-                                xRadius: radius, yRadius: radius)
-        let accent = NSColor(srgbRed: 0.29, green: 0.5, blue: 1, alpha: 1)
-        NSGradient(starting: NSColor(white: 0.93, alpha: 1).blended(withFraction: lit, of: accent)!,
-                   ending: NSColor(white: 0.99, alpha: 1).blended(withFraction: lit, of: accent.blended(withFraction: 0.25, of: .white)!)!)!
-            .draw(in: face, angle: 90)
-        let ink = NSColor(white: 0.17, alpha: 1).blended(withFraction: lit, of: .white)!
-        let text = NSAttributedString(string: label, attributes: [
-            .font: NSFont.systemFont(ofSize: cap.height * 0.46, weight: .semibold), .foregroundColor: ink])
-        let size = text.size()
-        text.draw(at: NSPoint(x: cap.midX - size.width / 2, y: cap.minY + 3 * scale + (cap.height - 3 * scale - size.height) / 2))
-    }
 
     private static func shadow(_ scale: CGFloat) -> NSShadow {
         let shadow = NSShadow()
