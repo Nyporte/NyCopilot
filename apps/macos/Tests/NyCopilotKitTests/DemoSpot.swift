@@ -91,7 +91,8 @@ enum DemoSpot {
             var local = 0.0
             while local < entry.length - 1e-6 {
                 guard let image = render(entry.shot, at: local) else { return false }
-                writer.add(image, at: clock + local)
+                // Clean, once the dissolve into this shot is over.
+                writer.add(image, at: clock + local, afresh: local == 0)
                 local += 1 / fps
             }
             clock += entry.length
