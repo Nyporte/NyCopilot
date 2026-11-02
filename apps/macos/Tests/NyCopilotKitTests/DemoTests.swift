@@ -17,64 +17,148 @@ final class DemoTests: XCTestCase {
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     }
 
-    // MARK: Screenshot
+    // MARK: The opening picture
 
-    /// F1, the outline finds the window, drag out a region, pick the arrow, draw, ⌘C.
-    func testCaptureDemo() throws {
+    /// The README's first picture, cut like a ten-second ad (see DemoSpot): capture and mark up,
+    /// write in another language, ask AI, then every key on one card.
+    func testHeroDemo() throws {
+        let beats = [
+            DemoSpot.Beat(scene: try heroCapture(), keys: ["F1"], line: "Capture anything. Mark it up."),
+            DemoSpot.Beat(scene: try heroTranslate(), keys: ["F2"], line: "Type in your language. Send in theirs."),
+            DemoSpot.Beat(scene: try heroAsk(), keys: ["⌥", "⌘", "A"], line: "Ask AI about anything you read.")
+        ]
+        let backdrop = try DemoDirector(output: nil, content: NSView(), at: .zero)
+        backdrop.roll()
+        _ = backdrop.cut(hold: 0)
+        let card = DemoSpot.Card(backdrop: backdrop, icon: NSImage(contentsOf: output.appendingPathComponent("icon.png")),
+                                 title: "NyCopilot", line: "The copilot that lives in every app on your Mac.",
+                                 keys: [("F1", "Capture"), ("F2", "Translate"), ("F3", "Jot it down"), ("⌥⌘A", "Ask AI")],
+                                 footnote: "Free and open source  ·  macOS 14 and later", hold: 2.6)
+        XCTAssertTrue(DemoSpot.make(beats, card: card, into: output.appendingPathComponent("demo-hero.gif")))
+    }
+
+    /// F1, drag out the chart, an arrow to the tallest bar, ⌘C.
+    private func heroCapture() throws -> DemoDirector {
         let notes = NotesWindow()
-        let director = try DemoDirector(output: output.appendingPathComponent("demo-capture.gif"), content: notes, at: CGPoint(x: 150, y: 60))
-        director.wait(0.4)
+        let director = try DemoDirector(output: nil, content: notes, at: CGPoint(x: 140, y: 104))
+        director.keysShownElsewhere = ["F1"]
+        let region = notes.chartWithCaption
+        director.move(to: director.onScreen(CGPoint(x: region.minX, y: region.minY), in: notes), duration: 0.01)
         director.roll()
-        director.wait(0.6)
+        director.wait(0.3)
 
         let (session, overlay, _) = try beginCapture(director, over: [notes])
-        let windowRect = director.onScreen(notes.bounds, in: notes)
         var copied = false
         session.onFinish = { action, _, _, _ in copied = action == .copy }
-
-        // The outline glides onto the window under the pointer.
-        director.move(to: CGPoint(x: windowRect.midX - 40, y: windowRect.midY + 40), duration: 0.8) { _ in director.send(.mouseMoved, to: overlay) }
-        director.wait(0.7)
-
-        // Drag out the chart and its caption.
-        let region = notes.chartWithCaption
-        let chart = director.onScreen(region, in: notes)
-        director.move(to: director.onScreen(CGPoint(x: region.minX, y: region.minY), in: notes), duration: 0.6) { _ in director.send(.mouseMoved, to: overlay) }
+        director.send(.mouseMoved, to: overlay)
         director.send(.leftMouseDown, to: overlay)
-        director.move(to: director.onScreen(CGPoint(x: region.maxX, y: region.maxY), in: notes), duration: 1.0, arc: 0.04) { _ in director.send(.leftMouseDragged, to: overlay) }
+        director.move(to: director.onScreen(CGPoint(x: region.maxX, y: region.maxY), in: notes), duration: 0.6, arc: 0.04) { _ in
+            director.send(.leftMouseDragged, to: overlay)
+        }
         director.send(.leftMouseUp, to: overlay)
-        director.cursor = .arrow
-        director.wait(0.6)
-
-        // Pick the arrow tool.
-        let arrow = try XCTUnwrap(toolbarButtons(in: overlay).dropFirst(2).first)
-        director.move(to: director.onScreen(CGPoint(x: arrow.bounds.midX, y: arrow.bounds.midY), in: arrow), duration: 0.7)
-        arrow.mouseEntered(with: NSEvent())
         director.wait(0.25)
-        director.click()
-        arrow.performClick(nil)
-        director.wait(0.3)
-        arrow.mouseExited(with: NSEvent())
 
-        // From the caption to the tallest bar.
+        try pick(.arrow, on: overlay, director, travel: 0.4)
         let bar = notes.tallestBar
         director.cursor = .crosshair
-        director.move(to: director.onScreen(notes.arrowStart, in: notes), duration: 0.7) { _ in director.send(.mouseMoved, to: overlay) }
+        director.move(to: director.onScreen(notes.arrowStart, in: notes), duration: 0.4) { _ in director.send(.mouseMoved, to: overlay) }
         director.send(.leftMouseDown, to: overlay)
-        director.move(to: director.onScreen(CGPoint(x: bar.maxX + 6, y: bar.minY + 10), in: notes), duration: 0.55, arc: 0.06) { _ in
+        director.move(to: director.onScreen(CGPoint(x: bar.maxX + 6, y: bar.minY + 10), in: notes), duration: 0.4, arc: 0.06) { _ in
             director.send(.leftMouseDragged, to: overlay)
         }
         director.send(.leftMouseUp, to: overlay)
         director.cursor = .arrow
-        director.wait(0.7)
+        director.wait(0.35)
 
         director.press("⌘", "C")
-        director.wait(0.15)
+        director.wait(0.1)
         director.type("c", keyCode: 8, modifiers: .command, to: overlay)
-        director.wait(0.35)
-        Toast().show(L("Copied"), style: .success, near: chart)
-        XCTAssertTrue(director.cut(hold: 1.6))
+        Toast().show(L("Copied"), style: .success, near: director.onScreen(region, in: notes))
+        XCTAssertTrue(director.cut(hold: 1.0))
         XCTAssertTrue(copied)
+        return director
+    }
+
+    /// F2 in the reply field, type in English, Return: it goes out in Japanese.
+    private func heroTranslate() throws -> DemoDirector {
+        let chat = ChatWindow()
+        let director = try DemoDirector(output: nil, content: chat, at: CGPoint(x: 180, y: 104))
+        director.keysShownElsewhere = ["F2"]
+        director.move(to: director.onScreen(CGPoint(x: 140, y: chat.field.bounds.midY), in: chat.field), duration: 0.01)
+        director.cursor = .iBeam
+        director.roll()
+        director.wait(0.45)
+
+        director.press("F2")
+        director.wait(0.15)
+        let composer = ComposerPanel()
+        composer.present(over: ScreenGeometry.topLeft(director.onScreen(chat.field.bounds, in: chat.field)), mode: .paste,
+                         language: .init(code: "日", name: "Japanese"))
+        director.wait(0.3)
+        let editor = try XCTUnwrap(composer.window?.firstResponder as? NSTextView)
+        for character in "Sure, 3 pm works. See you then!" {
+            editor.insertText(String(character), replacementRange: NSRange(location: NSNotFound, length: 0))
+            director.wait(character == " " ? 0.05 : 0.03)
+        }
+        director.wait(0.3)
+        director.press("↩")
+        composer.showLoading()
+        director.wait(0.35)
+        composer.close()
+        chat.field.stringValue = "はい、15時で大丈夫です。ではその時に！"
+        XCTAssertTrue(director.cut(hold: 1.2))
+        return director
+    }
+
+    /// Select a paragraph, ⌥⌘A, Summarize: the answer streams in beside it.
+    private func heroAsk() throws -> DemoDirector {
+        let notes = NotesWindow()
+        let director = try DemoDirector(output: nil, content: notes, at: CGPoint(x: 140, y: 104))
+        director.keysShownElsewhere = ["⌥", "⌘", "A"]
+        let text = notes.paragraph
+        director.move(to: director.onScreen(text.firstGlyphPoint, in: text), duration: 0.01)
+        director.cursor = .iBeam
+        director.roll()
+        director.wait(0.25)
+
+        director.move(to: director.onScreen(text.lastGlyphPoint, in: text), duration: 0.7, arc: 0.02) { point in
+            let local = text.convert(text.window!.convertPoint(fromScreen: point), from: nil)
+            text.setSelectedRange(NSRange(location: 0, length: text.characterIndexForInsertion(at: local)))
+        }
+        text.setSelectedRange(NSRange(location: 0, length: text.string.utf16.count))
+        director.cursor = .arrow
+        director.wait(0.2)
+
+        director.press("⌥", "⌘", "A")
+        director.wait(0.15)
+        let ask = AskPanel()
+        let answer = "**Launch moves to October 14.** Onboarding drops to two steps first; pricing stays, and the press kit is due a week early."
+        ask.onAsk = { _, _, _ in
+            var shown = ""
+            for word in answer.split(separator: " ", omittingEmptySubsequences: false) {
+                shown += (shown.isEmpty ? "" : " ") + word
+                await MainActor.run { ask.streamed(shown) }
+                // A word every 40 ms of the recording's time, however slow the machine.
+                let due = await MainActor.run { director.now } + 0.04
+                while await MainActor.run(body: { director.now }) < due { try? await Task.sleep(nanoseconds: 5_000_000) }
+            }
+            return answer
+        }
+        var material = AskMaterial(text: text.string, source: SourceContext(app: "Notes", title: "Q3 launch notes", url: ""))
+        material.anchor = director.onScreen(text.bounds, in: text)
+        ask.prepare(material)
+        if !ask.panel.isVisible { ask.panel.orderFrontRegardless() }
+        director.wait(0.35)
+
+        let summarize = try XCTUnwrap(buttons(in: ask.panel.contentView).first { $0.title == L("Summarize") })
+        director.move(to: director.onScreen(CGPoint(x: summarize.bounds.midX, y: summarize.bounds.midY), in: summarize), duration: 0.45)
+        director.click()
+        summarize.performClick(nil)
+        let asked = Date()
+        while !ask.transcript.string.hasSuffix("early."), Date().timeIntervalSince(asked) < 10 { director.wait(0.05) }
+        XCTAssertTrue(director.cut(hold: 1.3))
+        ask.close()
+        return director
     }
 
     /// F1: the screen as it is now, frozen under a capture, with `windows` to outline.

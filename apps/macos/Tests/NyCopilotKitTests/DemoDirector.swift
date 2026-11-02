@@ -11,7 +11,7 @@ import AppKit
 /// however long the machine took to draw it, so motion stays even on a slow runner. Everything
 /// gets at least that long to run between frames.
 ///
-/// Without an output file it keeps the frames instead, for DemoReel to lay several scenes out together.
+/// Without an output file it keeps the frames instead, for DemoReel or DemoSpot to put several scenes together.
 ///
 /// It takes over the screen while it records, so it runs on GitHub's Macs (.github/workflows/demos.yml).
 @MainActor
@@ -28,6 +28,8 @@ final class DemoDirector {
 
     /// Where keycaps show.
     var keysCorner = Corner.bottomRight
+    /// A key the recording shows some other way (DemoSpot's caption), so it isn't drawn in the corner too.
+    var keysShownElsewhere: [String] = []
     /// A badge by the pointer while it scrolls, since a scroll has no key to show.
     var isScrolling = false
     /// The recording, when there's no output file: each frame and when it was shown.
@@ -42,7 +44,8 @@ final class DemoDirector {
     private var context: CGContext
     private let pixels: (width: Int, height: Int)
     private var isRolling = false
-    private var keys: [(time: Double, labels: [String])] = []
+    /// Each key pressed, and when.
+    private(set) var keys: [(time: Double, labels: [String])] = []
     private var clicks: [(time: Double, point: CGPoint)] = []
 
     static let fps = 30.0
@@ -217,7 +220,7 @@ final class DemoDirector {
     func press(_ labels: String...) { keys.append((now, labels)) }
 
     private func drawKeys(at time: Double) {
-        guard let key = keys.last(where: { time - $0.time < 1.1 }) else { return }
+        guard let key = keys.last(where: { time - $0.time < 1.1 && $0.labels != keysShownElsewhere }) else { return }
         let age = time - key.time
         let alpha = CGFloat(min(age / 0.12, 1) * min((1.1 - age) / 0.3, 1))
         // Pressed for a moment, then up.
