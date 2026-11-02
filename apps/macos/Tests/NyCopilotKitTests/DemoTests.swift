@@ -183,8 +183,10 @@ final class DemoTests: XCTestCase {
         let ask = AskPanel()
         let answer = "**Launch moves to October 14.** Onboarding drops to two steps; the press kit is due a week early."
         ask.onAsk = { _, _, _ in
+            // The bold opening arrives whole, so its asterisks never show half-way.
+            let lead = "**Launch moves to October 14.**"
             var shown = ""
-            for word in answer.split(separator: " ", omittingEmptySubsequences: false) {
+            for word in [lead] + answer.dropFirst(lead.count + 1).split(separator: " ", omittingEmptySubsequences: false).map(String.init) {
                 shown += (shown.isEmpty ? "" : " ") + word
                 await MainActor.run { ask.streamed(shown) }
                 // A word every 45 ms of the recording's time, however slow the machine.
@@ -232,8 +234,10 @@ final class DemoTests: XCTestCase {
         director.stage.contentView?.addSubview(page)
         let footprint = Footprint()
         let crop = director.crop
-        let left = NSRect(x: crop.minX, y: crop.minY, width: crop.width / 2, height: crop.height)
-        let right = NSRect(x: crop.midX, y: crop.minY, width: crop.width / 2, height: crop.height)
+        // Halves of the screen below the caption, which stands in for the menu bar.
+        let screen = NSRect(x: crop.minX, y: crop.minY, width: crop.width, height: crop.height - DemoSpot.band)
+        let left = NSRect(x: screen.minX, y: screen.minY, width: screen.width / 2, height: screen.height)
+        let right = NSRect(x: screen.midX, y: screen.minY, width: screen.width / 2, height: screen.height)
         let offset = CGPoint(x: page.frame.minX - grab.x, y: page.frame.minY - grab.y)
         director.move(to: CGPoint(x: crop.minX + 3, y: grab.y - 40), duration: 0.55, arc: 0.06) { point in
             page.setFrameOrigin(CGPoint(x: point.x + offset.x, y: point.y + offset.y))

@@ -64,6 +64,19 @@ enum DemoSpot {
                 context.translateBy(x: -view.minX, y: -view.minY)
                 context.draw((frames.last { $0.time <= clock + 1e-6 } ?? frames[0]).image, in: full)
                 context.restoreGState()
+                // Moved in, the caption sits on a strip of desktop, so nothing cut off shows around it.
+                let strip = CGFloat(min(1, (size.width / view.width - 1) / 0.12))
+                if strip > 0 {
+                    let top = CGRect(x: 0, y: size.height - band * scale, width: size.width, height: band * scale)
+                    context.saveGState()
+                    context.setAlpha(strip)
+                    context.setShadow(offset: CGSize(width: 0, height: -3 * scale), blur: 14 * scale, color: NSColor.black.withAlphaComponent(0.4).cgColor)
+                    context.beginTransparencyLayer(auxiliaryInfo: nil)
+                    context.clip(to: top)
+                    context.draw(backdrop, in: full)
+                    context.endTransparencyLayer()
+                    context.restoreGState()
+                }
                 caption(beat, at: time, clock: clock, in: context, size: size, scale: scale)
             case .card:
                 context.draw(backdrop, in: full)
