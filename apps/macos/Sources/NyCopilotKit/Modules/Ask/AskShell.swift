@@ -44,7 +44,7 @@ final class AskShell: ModuleShell {
 
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.open, title: L("Ask about the selection, or ask anything"),
-               defaultCombination: .init(keyCode: 0, modifiers: HotKeyCombination.option | HotKeyCombination.command), // ⌥⌘A
+               defaultCombination: .init(keyCode: 118, modifiers: 0), // F4
                handler: { [weak self] in self?.open() })]
     }
 

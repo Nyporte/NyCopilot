@@ -64,9 +64,9 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         scheme.target = self
         scheme.action = #selector(schemeChanged)
         let keyboard = FormSection(L("Shortcuts"), footer: KeyScheme.functionKeysAreStandard
-            ? L("Your F-keys send F1, F2…, so F1, F2, and F3 are one press. ⌥⌘/ shows every shortcut any time.")
+            ? L("Your F-keys send F1, F2…, so F1 to F4 are one press. ⌥⌘/ shows every shortcut any time.")
             : L("Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time."),
-            rows: [FormRow(L("One-press keys"), subtitle: L("Screenshot, Translate, and Inbox"), accessory: scheme)])
+            rows: [FormRow(L("One-press keys"), subtitle: L("Screenshot, Translate, Inbox, and Ask AI"), accessory: scheme)])
 
         accessStep.button.title = L("Allow…")
         accessStep.button.target = self

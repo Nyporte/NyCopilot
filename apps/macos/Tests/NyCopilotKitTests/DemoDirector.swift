@@ -11,7 +11,7 @@ import AppKit
 /// however long the machine took to draw it, so motion stays even on a slow runner. Everything
 /// gets at least that long to run between frames.
 ///
-/// Without an output file it keeps the frames instead, for DemoReel to lay several scenes out together.
+/// Without an output file it keeps the frames instead, for DemoReel or DemoSpot to put several scenes together.
 ///
 /// It takes over the screen while it records, so it runs on GitHub's Macs (.github/workflows/demos.yml).
 @MainActor
@@ -28,8 +28,15 @@ final class DemoDirector {
 
     /// Where keycaps show.
     var keysCorner = Corner.bottomRight
+    /// A key the recording shows some other way (DemoSpot's caption), so it isn't drawn in the corner too.
+    var keysShownElsewhere: [String] = []
     /// A badge by the pointer while it scrolls, since a scroll has no key to show.
     var isScrolling = false
+    /// Off for a scene that's only a backdrop.
+    var showsPointer = true
+    /// Where DemoSpot's camera looks from each moment on: a part of the recording, in points from
+    /// its top-left, or nil for all of it.
+    private(set) var camera: [(time: Double, focus: CGRect?)] = []
     /// The recording, when there's no output file: each frame and when it was shown.
     private(set) var frames: [(image: CGImage, time: Double)] = []
     private(set) var duration: Double = 0
@@ -42,7 +49,8 @@ final class DemoDirector {
     private var context: CGContext
     private let pixels: (width: Int, height: Int)
     private var isRolling = false
-    private var keys: [(time: Double, labels: [String])] = []
+    /// Each key pressed, and when.
+    private(set) var keys: [(time: Double, labels: [String])] = []
     private var clicks: [(time: Double, point: CGPoint)] = []
 
     static let fps = 30.0
@@ -127,7 +135,7 @@ final class DemoDirector {
         context.draw(shot, in: CGRect(origin: .zero, size: size))
         let time = now
         drawClicks(at: time)
-        drawPointer()
+        if showsPointer { drawPointer() }
         drawScrollHint()
         drawKeys(at: time)
         guard let image = context.makeImage() else { return }
@@ -138,6 +146,11 @@ final class DemoDirector {
     private static func bitmap(_ size: (width: Int, height: Int)) -> CGContext? {
         CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+
+    /// Has DemoSpot's camera move in on `rect` (on screen, AppKit coordinates) from now, or back out for nil.
+    func look(at rect: CGRect?) {
+        camera.append((now, rect.map { CGRect(x: $0.minX - crop.minX, y: crop.maxY - $0.maxY, width: $0.width, height: $0.height) }))
     }
 
     // MARK: Pointer
@@ -217,15 +230,13 @@ final class DemoDirector {
     func press(_ labels: String...) { keys.append((now, labels)) }
 
     private func drawKeys(at time: Double) {
-        guard let key = keys.last(where: { time - $0.time < 1.1 }) else { return }
+        guard let key = keys.last(where: { time - $0.time < 1.1 && $0.labels != keysShownElsewhere }) else { return }
         let age = time - key.time
         let alpha = CGFloat(min(age / 0.12, 1) * min((1.1 - age) / 0.3, 1))
         // Pressed for a moment, then up.
         let dip: CGFloat = age > 0.06 && age < 0.22 ? 0.94 : 1
-        let font = NSFont.systemFont(ofSize: 21, weight: .semibold)
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(white: 0.17, alpha: 1)]
-        let height: CGFloat = 46, gap: CGFloat = 10
-        let widths = key.labels.map { max(height, ($0 as NSString).size(withAttributes: attributes).width + 30) }
+        let height: CGFloat = 34, gap: CGFloat = 8
+        let widths = key.labels.map { DemoKeycap.width($0, height: height) }
         let total = widths.reduce(0, +) + gap * CGFloat(widths.count - 1)
         // In a corner, out of the way of panels that open near the middle.
         var x = keysCorner == .bottomRight ? crop.width - total - 30 : 30
@@ -234,25 +245,7 @@ final class DemoDirector {
             NSGraphicsContext.current?.cgContext.setAlpha(alpha)
             for (label, width) in zip(key.labels, widths) {
                 let cap = NSRect(x: x * self.scale, y: y * self.scale, width: width * self.scale, height: height * self.scale)
-                let pressed = cap.insetBy(dx: cap.width * (1 - dip) / 2, dy: cap.height * (1 - dip) / 2)
-                    .offsetBy(dx: 0, dy: dip < 1 ? -2 * self.scale : 0)
-                let shadow = NSShadow()
-                shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-                shadow.shadowBlurRadius = 14 * self.scale
-                shadow.shadowOffset = NSSize(width: 0, height: -5 * self.scale)
-                NSGraphicsContext.saveGraphicsState()
-                shadow.set()
-                // The key's edge, then its face, a little lighter at the top.
-                NSColor(white: 0.74, alpha: 1).setFill()
-                NSBezierPath(roundedRect: pressed, xRadius: 10 * self.scale, yRadius: 10 * self.scale).fill()
-                NSGraphicsContext.restoreGraphicsState()
-                let face = NSRect(x: pressed.minX, y: pressed.minY + 3 * self.scale, width: pressed.width, height: pressed.height - 3 * self.scale)
-                NSGradient(starting: NSColor(white: 0.93, alpha: 1), ending: NSColor(white: 0.99, alpha: 1))!
-                    .draw(in: NSBezierPath(roundedRect: face, xRadius: 10 * self.scale, yRadius: 10 * self.scale), angle: 90)
-                let big = NSFont.systemFont(ofSize: 21 * self.scale * dip, weight: .semibold)
-                let text = NSAttributedString(string: label, attributes: [.font: big, .foregroundColor: NSColor(white: 0.17, alpha: 1)])
-                let size = text.size()
-                text.draw(at: NSPoint(x: face.midX - size.width / 2, y: face.midY - size.height / 2))
+                DemoKeycap.draw(label, in: cap, scale: self.scale, dip: dip)
                 x += width + gap
             }
         }

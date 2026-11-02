@@ -50,12 +50,15 @@ final class GifWriter {
     }
 
     /// Adds a frame shown from `time` (seconds); a frame with nothing changed only extends the last.
-    func add(_ image: CGImage, at time: Double) {
+    /// `afresh` draws every pixel again, like the first frame: after a dissolve, colors left close
+    /// enough to the faded picture would otherwise keep a faint trace of it.
+    func add(_ image: CGImage, at time: Double, afresh: Bool = false) {
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        guard let changed = changedRect() else { return }
-        let block = encode(changed, overPrevious: hasPrevious)
+        let over = hasPrevious && !afresh
+        guard let changed = over ? changedRect() : (0, 0, width, height) else { return }
+        let block = encode(changed, overPrevious: over)
         flushPending(until: time)
-        pending = (block, time, hasPrevious)
+        pending = (block, time, over)
         _ = previous.withUnsafeMutableBufferPointer { $0.update(fromContentsOf: pixels) }
         hasPrevious = true
         frameCount += 1

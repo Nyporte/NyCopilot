@@ -374,14 +374,14 @@ extension DemoTests {
         pin.orderOut(nil)
     }
 
-    /// Clicks a tool on the capture toolbar.
-    private func pick(_ tool: AnnotationTool, on overlay: NSWindow, _ director: DemoDirector) throws {
+    /// Clicks a tool on the capture toolbar, the pointer taking `travel` seconds to get there.
+    func pick(_ tool: AnnotationTool, on overlay: NSWindow, _ director: DemoDirector, travel: Double = 0.6) throws {
         let index = try XCTUnwrap(AnnotationTool.allCases.firstIndex(of: tool))
         let button = try XCTUnwrap(toolbarButtons(in: overlay).first { $0.toolTip == "\(tool.title) (\(index + 1))" })
         director.cursor = .arrow
-        director.move(to: director.onScreen(CGPoint(x: button.bounds.midX, y: button.bounds.midY), in: button), duration: 0.6)
+        director.move(to: director.onScreen(CGPoint(x: button.bounds.midX, y: button.bounds.midY), in: button), duration: travel)
         button.mouseEntered(with: NSEvent())
-        director.wait(0.2)
+        director.wait(travel / 3)
         director.click()
         button.performClick(nil)
         director.wait(0.25)

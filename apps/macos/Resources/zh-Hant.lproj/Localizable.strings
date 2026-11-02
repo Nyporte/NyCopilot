@@ -154,10 +154,10 @@
 "Welcome to NyCopilot" = "歡迎使用 NyCopilot";
 "Pick what you want help with. You can change any of it later in Settings." = "選擇你需要的幫助。之後都可以在設定中更改。";
 "What should NyCopilot do?" = "NyCopilot 應該做什麼？";
-"Your F-keys send F1, F2…, so F1, F2, and F3 are one press. ⌥⌘/ shows every shortcut any time." = "你的 F 鍵會送出 F1、F2…，所以 F1、F2 和 F3 只需按一下。隨時按 ⌥⌘/ 查看所有快速鍵。";
+"Your F-keys send F1, F2…, so F1 to F4 are one press. ⌥⌘/ shows every shortcut any time." = "你的 F 鍵會送出 F1、F2…，所以 F1 到 F4 只需按一下。隨時按 ⌥⌘/ 查看所有快速鍵。";
 "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time." = "除非按住 fn，你的 F 鍵會控制亮度和音量，所以 ⌥⌘ 加字母更方便。隨時按 ⌥⌘/ 查看所有快速鍵。";
 "One-press keys" = "單鍵快速鍵";
-"Screenshot, Translate, and Inbox" = "截圖、翻譯和收件匣";
+"Screenshot, Translate, Inbox, and Ask AI" = "截圖、翻譯、收件匣和問 AI";
 "Allow…" = "允許…";
 "Set Up…" = "設定…";
 "Setup" = "設定";

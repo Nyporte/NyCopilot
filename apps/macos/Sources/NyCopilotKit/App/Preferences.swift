@@ -58,6 +58,17 @@ final class Preferences {
         try? core.setSetting("client.hotkey.\(action)", combination?.storageValue ?? "")
     }
 
+    /// Ask AI was ⌥⌘A in both key schemes before it joined them as F4 or ⌥⌘A. Someone on ⌥⌘ letters
+    /// who never changed it keeps ⌥⌘A rather than moving to the new default; on F-keys, it moves to F4.
+    func keepAskOnLetters() {
+        guard !hasStoredHotKey(for: AskShell.Action.open) else { return }
+        let letters = KeyScheme.letters.combinations
+        let chosen = core.setting(.keyScheme, default: "")
+        let onLetters = KeyScheme(rawValue: chosen).map { $0 == .letters }
+            ?? (hotKey(for: CaptureShell.Action.capture, default: nil) == letters[CaptureShell.Action.capture])
+        if onLetters { setHotKey(letters[AskShell.Action.open], for: AskShell.Action.open) }
+    }
+
     /// Carry settings, shortcuts, and history over from the app's previous identity, exactly once.
     func migrateFromNyTranslate() {
         guard !core.setting(.migratedNyTranslate, default: false) else { return }
