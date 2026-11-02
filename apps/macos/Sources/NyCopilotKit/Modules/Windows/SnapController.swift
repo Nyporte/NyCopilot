@@ -104,7 +104,7 @@ final class SnapController {
 
 /// The translucent preview of where a dragged window will land.
 @MainActor
-private final class Footprint {
+final class Footprint {
     private lazy var panel: NSPanel = {
         let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         panel.float(at: .floating, shadow: false, clickThrough: true, behavior: [.transient, .ignoresCycle])

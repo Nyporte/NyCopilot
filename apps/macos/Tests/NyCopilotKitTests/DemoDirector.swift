@@ -34,6 +34,9 @@ final class DemoDirector {
     var isScrolling = false
     /// Off for a scene that's only a backdrop.
     var showsPointer = true
+    /// Where DemoSpot's camera looks from each moment on: a part of the recording, in points from
+    /// its top-left, or nil for all of it.
+    private(set) var camera: [(time: Double, focus: CGRect?)] = []
     /// The recording, when there's no output file: each frame and when it was shown.
     private(set) var frames: [(image: CGImage, time: Double)] = []
     private(set) var duration: Double = 0
@@ -143,6 +146,11 @@ final class DemoDirector {
     private static func bitmap(_ size: (width: Int, height: Int)) -> CGContext? {
         CGContext(data: nil, width: size.width, height: size.height, bitsPerComponent: 8, bytesPerRow: 0,
                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+
+    /// Has DemoSpot's camera move in on `rect` (on screen, AppKit coordinates) from now, or back out for nil.
+    func look(at rect: CGRect?) {
+        camera.append((now, rect.map { CGRect(x: $0.minX - crop.minX, y: crop.maxY - $0.maxY, width: $0.width, height: $0.height) }))
     }
 
     // MARK: Pointer
