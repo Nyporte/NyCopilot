@@ -153,6 +153,40 @@ dragging it to the edge of the screen.
   Rectangle and its repeat behavior; **Settings → Windows → Import** runs it again. Quit other window
   managers that use the same shortcuts.
 
+## Mouse
+
+Make a mouse faster than System Settings allows, or turn its acceleration off, in **Settings → Mouse**.
+It's off until you turn on **Set mouse speed and acceleration**; then every connected mouse follows
+the sliders as you move them. The trackpad keeps its own settings.
+
+- **Speed** is how far the pointer goes for the same movement: 1× is macOS's standard for a mouse,
+  up to 8×. Like Windows, it treats every mouse alike, so a mouse feels the same on its cable and
+  through its receiver. With acceleration at 0, Speed is the points the pointer moves for each step
+  the mouse reports, as on Windows: below 1, slow movements still go a pixel at a time.
+- **Acceleration** is how much further quick movements carry the pointer. It starts at what
+  System Settings → Mouse uses; 0 (all the way left) turns it off, so the pointer moves the same
+  distance however fast you move. **Reset** goes back to 1× and System Settings' acceleration.
+- Drag either slider, or type a number in the box beside it and press Return.
+- **Reverse scrolling** turns a mouse wheel the other way from System Settings while the trackpad
+  keeps its direction. With natural scrolling on (macOS's default), that's the way Windows scrolls.
+  It needs Accessibility.
+- **Smooth scrolling** makes each wheel click glide instead of jump, like Mos. **Distance per click**
+  is how many lines one click scrolls (Windows scrolls 3; spinning quickly goes further), and
+  **Glide** is how long a single click takes to arrive. While you keep spinning, each click picks
+  up the speed the page already has and lasts until the next one, so the page moves at an even
+  pace even with a short glide, and stops cleanly when you stop. Hold ⇧ to scroll sideways, ⌥ to go five times as
+  far, or ⌘ for a plain click (for zooming). Add games and remote desktops to **Apps that scroll as
+  usual**: they get the wheel's clicks as they are.
+- Turn it off, or quit NyCopilot, and mice go back to System Settings. A mouse you connect later
+  gets the same settings.
+- **To feel like Windows:** turn Acceleration to 0 (Windows with "Enhance pointer precision" off,
+  how most people who play games set it) and turn on Reverse scrolling. The Speed row then shows
+  Windows' default for your display: 0.5× on a Retina display, 1× on a standard one. For another
+  Windows pointer speed, multiply by its factor: the 3rd to 11th of its 11 marks are 0.25, 0.5,
+  0.75, 1 (the default), 1.5, 2, 2.5, 3, and 3.5 times. To go faster without losing precision, raise the mouse's own DPI instead.
+- One app at a time: if BetterMouse, LinearMouse, or a similar app also sets the pointer's speed
+  or scrolling, turn that off there; with Mos, quit it. The pane says when one is running.
+
 ## Screenshot & Pin
 
 **F1** freezes your screens for capturing:

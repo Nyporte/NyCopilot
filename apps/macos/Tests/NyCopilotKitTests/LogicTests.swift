@@ -5,7 +5,7 @@ import XCTest
 @testable import NyCopilotKit
 
 /// The parts with no screen in them: timing curves, snooze times, key schemes, exports, the GIF
-/// encoder, stuck capture streams, and the core bridge's settings cache.
+/// encoder, stuck capture streams, the core bridge's settings cache, and reversing and gliding a wheel.
 final class LogicTests: XCTestCase {
     func testBezierCurvesEaseOutAndOvershootThenSettle() {
         XCTAssertEqual(BezierCurve.easeOut.value(at: 0), 0, accuracy: 0.001)
@@ -322,6 +322,83 @@ final class LogicTests: XCTestCase {
         await streams.stopFailed("test", lost)
         XCTAssertEqual(restarts.count, 2)
         XCTAssertEqual(warnings.count, 1, "the restart failed, so say so")
+    }
+
+    func testReversingAWheelFlipsBothAxesInEveryUnit() throws {
+        let event = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 2, wheel1: 3, wheel2: -2, wheel3: 0))
+        let before = (event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1), event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1),
+                      event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2))
+        MouseWheel.reverse(event)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventDeltaAxis1), -3)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventDeltaAxis2), 2)
+        XCTAssertEqual(event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1), -before.0)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1), -before.1)
+        XCTAssertEqual(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2), -before.2)
+        XCTAssertNotEqual(before.1, 0, "a line step carries points too")
+    }
+
+    /// Frames at `hz` for `seconds`: the points sent each frame, vertically.
+    private func frames(_ glide: inout ScrollGlide, hz: Double, seconds: Double) -> [Int] {
+        (0..<Int((seconds * hz).rounded())).map { _ in glide.frame(dt: 1 / hz).y }
+    }
+
+    func testAGlidingClickSendsItsWholeDistanceAndStopsOnTime() {
+        var slow = ScrollGlide()
+        slow.add(x: 0, y: 3, lines: 3, boost: 1, glide: 0.2, at: 0)
+        let steps = frames(&slow, hz: 144, seconds: 0.2)
+        XCTAssertEqual(steps.reduce(0, +), 101, "3 lines of 33.6 points, rounded once at the end")
+        XCTAssertTrue(steps.allSatisfy { $0 >= 0 })
+        XCTAssertGreaterThan(steps[1], steps[20], "from a standstill it starts at once, then eases off")
+        XCTAssertTrue(slow.isIdle, "and it's done when the glide is")
+
+        var quick = ScrollGlide()
+        quick.add(x: 0, y: -80, lines: 3, boost: 1, glide: 0.2, at: 0)
+        XCTAssertEqual(frames(&quick, hz: 144, seconds: 0.3).reduce(0, +), -240, "a quick spin goes as far as macOS sends it, times the lines")
+        var boosted = ScrollGlide()
+        boosted.add(x: 0, y: 1, lines: 1, boost: 5, glide: 0.2, at: 0)
+        XCTAssertEqual(frames(&boosted, hz: 60, seconds: 0.3).reduce(0, +), 168)
+    }
+
+    func testASteadySpinScrollsAtASteadyPaceEvenWithAShortGlide() {
+        // A click every 80 ms with a 50 ms glide: each used to finish (and the page stop) before the next.
+        var spin = ScrollGlide()
+        var steps: [Int] = []
+        for click in 0..<10 {
+            spin.add(x: 0, y: 1, lines: 3, boost: 1, glide: 0.05, at: Double(click) * 0.08)
+            steps += frames(&spin, hz: 144, seconds: 0.08)
+        }
+        let middle = steps[Int(0.24 * 144)..<Int(0.72 * 144)]
+        XCTAssertGreaterThanOrEqual(Double(middle.min() ?? 0), 0.4 * Double(middle.max() ?? 0), "no stalls between clicks: \(Array(middle))")
+        steps += frames(&spin, hz: 144, seconds: 0.4)
+        XCTAssertEqual(steps.reduce(0, +), 1008, "every click arrives")
+        XCTAssertTrue(spin.isIdle)
+
+        var single = ScrollGlide()
+        single.add(x: 0, y: 1, lines: 3, boost: 1, glide: 0.05, at: 5)
+        _ = frames(&single, hz: 144, seconds: 8 / 144)
+        XCTAssertTrue(single.isIdle, "a lone click keeps the short glide: done in the 8 frames 50 ms spans")
+    }
+
+    func testAGlideFeelsTheSameAtAnyRefreshRate() {
+        var at60 = ScrollGlide(), at144 = ScrollGlide()
+        at60.add(x: 0, y: 1, lines: 3, boost: 1, glide: 0.2, at: 0)
+        at144.add(x: 0, y: 1, lines: 3, boost: 1, glide: 0.2, at: 0)
+        XCTAssertEqual(Double(frames(&at60, hz: 60, seconds: 0.1).reduce(0, +)), Double(frames(&at144, hz: 144, seconds: 0.1).reduce(0, +)), accuracy: 2)
+    }
+
+    func testClickingTheOtherWayTurnsAtOnceAndNoGlideSendsAllAtOnce() {
+        var turning = ScrollGlide()
+        turning.add(x: 0, y: 1, lines: 3, boost: 1, glide: 0.2, at: 0)
+        _ = frames(&turning, hz: 144, seconds: 0.02)
+        turning.add(x: 0, y: -1, lines: 3, boost: 1, glide: 0.2, at: 0.02)
+        let after = frames(&turning, hz: 144, seconds: 0.4)
+        XCTAssertTrue(after.allSatisfy { $0 <= 0 }, "nothing more goes the old way")
+        XCTAssertEqual(after.reduce(0, +), -101)
+
+        var instant = ScrollGlide()
+        instant.add(x: 2, y: 0, lines: 2, boost: 1, glide: 0, at: 0)
+        XCTAssertEqual(instant.frame(dt: 1 / 144).x, 67)
+        XCTAssertTrue(instant.isIdle)
     }
 
     private final class Counter: @unchecked Sendable { var count = 0 }

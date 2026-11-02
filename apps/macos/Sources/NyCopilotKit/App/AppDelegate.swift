@@ -14,7 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Every module this build ships, in menu order. Add new module shells here.
     private func makeModules() -> [ModuleShell] {
         [TranslateShell(services: services), WindowsShell(services: services), CaptureShell(services: services),
-         ClipboardShell(services: services), InboxShell(services: services), AskShell(services: services)]
+         ClipboardShell(services: services), InboxShell(services: services), AskShell(services: services), MouseShell(services: services)]
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
