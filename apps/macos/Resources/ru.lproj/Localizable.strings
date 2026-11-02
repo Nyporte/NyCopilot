@@ -154,10 +154,10 @@
 "Welcome to NyCopilot" = "Добро пожаловать в NyCopilot";
 "Pick what you want help with. You can change any of it later in Settings." = "Выберите, с чем вам помочь. Всё можно изменить позже в Настройках.";
 "What should NyCopilot do?" = "Что должен делать NyCopilot?";
-"Your F-keys send F1, F2…, so F1, F2, and F3 are one press. ⌥⌘/ shows every shortcut any time." = "Ваши F-клавиши отправляют F1, F2…, поэтому F1, F2 и F3 срабатывают одним нажатием. ⌥⌘/ в любой момент показывает все сочетания клавиш.";
+"Your F-keys send F1, F2…, so F1 to F4 are one press. ⌥⌘/ shows every shortcut any time." = "Ваши F-клавиши отправляют F1, F2…, поэтому F1–F4 срабатывают одним нажатием. ⌥⌘/ в любой момент показывает все сочетания клавиш.";
 "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time." = "Ваши F-клавиши управляют яркостью и громкостью, если не удерживать fn, поэтому удобнее ⌥⌘ с буквами. ⌥⌘/ в любой момент показывает все сочетания клавиш.";
 "One-press keys" = "Клавиши одним нажатием";
-"Screenshot, Translate, and Inbox" = "Снимок экрана, перевод и Входящие";
+"Screenshot, Translate, Inbox, and Ask AI" = "Снимок экрана, перевод, Входящие и «Спросить ИИ»";
 "Allow…" = "Разрешить…";
 "Set Up…" = "Настроить…";
 "Setup" = "Настройка";

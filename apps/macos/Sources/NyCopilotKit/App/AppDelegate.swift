@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let preferences = Preferences(core: core)
         preferences.migrateFromNyTranslate()
+        preferences.keepAskOnLetters()
         services = CopilotServices(core: core, preferences: preferences, hotKeys: HotKeyCenter(preferences: preferences))
         services.openSettings = { [weak self] pane in self?.showSettings(pane: pane) }
         services.showWelcome = { [weak self] in self?.showWelcome() }

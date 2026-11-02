@@ -22,18 +22,20 @@ final class DemoTests: XCTestCase {
     /// The README's first picture, cut like a ten-second ad (see DemoSpot): capture and mark up,
     /// write in another language, ask AI, then every key on one card.
     func testHeroDemo() throws {
+        // The card's desktop first, with nothing on it yet.
+        let backdrop = try DemoDirector(output: nil, content: NSView(), at: .zero)
+        backdrop.wait(0.3)
+        backdrop.roll()
+        _ = backdrop.cut(hold: 0)
         let beats = [
             DemoSpot.Beat(scene: try heroCapture(), keys: ["F1"], line: "Capture anything. Mark it up."),
             DemoSpot.Beat(scene: try heroTranslate(), keys: ["F2"], line: "Type in your language. Send in theirs."),
-            DemoSpot.Beat(scene: try heroAsk(), keys: ["⌥", "⌘", "A"], line: "Ask AI about anything you read.")
+            DemoSpot.Beat(scene: try heroAsk(), keys: ["F4"], line: "Ask AI about anything you read.")
         ]
-        let backdrop = try DemoDirector(output: nil, content: NSView(), at: .zero)
-        backdrop.roll()
-        _ = backdrop.cut(hold: 0)
         let card = DemoSpot.Card(backdrop: backdrop, icon: NSImage(contentsOf: output.appendingPathComponent("icon.png")),
                                  title: "NyCopilot", line: "The copilot that lives in every app on your Mac.",
-                                 keys: [("F1", "Capture"), ("F2", "Translate"), ("F3", "Jot it down"), ("⌥⌘A", "Ask AI")],
-                                 footnote: "Free and open source  ·  macOS 14 and later", hold: 2.6)
+                                 keys: [("F1", "Capture"), ("F2", "Translate"), ("F3", "Jot it down"), ("F4", "Ask AI")],
+                                 footnote: "Free and open source  ·  macOS 14 and later", hold: 2.4)
         XCTAssertTrue(DemoSpot.make(beats, card: card, into: output.appendingPathComponent("demo-hero.gif")))
     }
 
@@ -45,36 +47,36 @@ final class DemoTests: XCTestCase {
         let region = notes.chartWithCaption
         director.move(to: director.onScreen(CGPoint(x: region.minX, y: region.minY), in: notes), duration: 0.01)
         director.roll()
-        director.wait(0.3)
+        director.wait(0.2)
 
         let (session, overlay, _) = try beginCapture(director, over: [notes])
         var copied = false
         session.onFinish = { action, _, _, _ in copied = action == .copy }
         director.send(.mouseMoved, to: overlay)
         director.send(.leftMouseDown, to: overlay)
-        director.move(to: director.onScreen(CGPoint(x: region.maxX, y: region.maxY), in: notes), duration: 0.6, arc: 0.04) { _ in
+        director.move(to: director.onScreen(CGPoint(x: region.maxX, y: region.maxY), in: notes), duration: 0.5, arc: 0.04) { _ in
             director.send(.leftMouseDragged, to: overlay)
         }
         director.send(.leftMouseUp, to: overlay)
-        director.wait(0.25)
+        director.wait(0.15)
 
-        try pick(.arrow, on: overlay, director, travel: 0.4)
+        try pick(.arrow, on: overlay, director, travel: 0.35)
         let bar = notes.tallestBar
         director.cursor = .crosshair
-        director.move(to: director.onScreen(notes.arrowStart, in: notes), duration: 0.4) { _ in director.send(.mouseMoved, to: overlay) }
+        director.move(to: director.onScreen(notes.arrowStart, in: notes), duration: 0.3) { _ in director.send(.mouseMoved, to: overlay) }
         director.send(.leftMouseDown, to: overlay)
-        director.move(to: director.onScreen(CGPoint(x: bar.maxX + 6, y: bar.minY + 10), in: notes), duration: 0.4, arc: 0.06) { _ in
+        director.move(to: director.onScreen(CGPoint(x: bar.maxX + 6, y: bar.minY + 10), in: notes), duration: 0.35, arc: 0.06) { _ in
             director.send(.leftMouseDragged, to: overlay)
         }
         director.send(.leftMouseUp, to: overlay)
         director.cursor = .arrow
-        director.wait(0.35)
+        director.wait(0.25)
 
         director.press("⌘", "C")
         director.wait(0.1)
         director.type("c", keyCode: 8, modifiers: .command, to: overlay)
         Toast().show(L("Copied"), style: .success, near: director.onScreen(region, in: notes))
-        XCTAssertTrue(director.cut(hold: 1.0))
+        XCTAssertTrue(director.cut(hold: 0.8))
         XCTAssertTrue(copied)
         return director
     }
@@ -87,7 +89,7 @@ final class DemoTests: XCTestCase {
         director.move(to: director.onScreen(CGPoint(x: 140, y: chat.field.bounds.midY), in: chat.field), duration: 0.01)
         director.cursor = .iBeam
         director.roll()
-        director.wait(0.45)
+        director.wait(0.35)
 
         director.press("F2")
         director.wait(0.15)
@@ -106,30 +108,30 @@ final class DemoTests: XCTestCase {
         director.wait(0.35)
         composer.close()
         chat.field.stringValue = "はい、15時で大丈夫です。ではその時に！"
-        XCTAssertTrue(director.cut(hold: 1.2))
+        XCTAssertTrue(director.cut(hold: 1.0))
         return director
     }
 
-    /// Select a paragraph, ⌥⌘A, Summarize: the answer streams in beside it.
+    /// Select a paragraph, F4, Summarize: the answer streams in beside it.
     private func heroAsk() throws -> DemoDirector {
         let notes = NotesWindow()
         let director = try DemoDirector(output: nil, content: notes, at: CGPoint(x: 140, y: 104))
-        director.keysShownElsewhere = ["⌥", "⌘", "A"]
+        director.keysShownElsewhere = ["F4"]
         let text = notes.paragraph
         director.move(to: director.onScreen(text.firstGlyphPoint, in: text), duration: 0.01)
         director.cursor = .iBeam
         director.roll()
         director.wait(0.25)
 
-        director.move(to: director.onScreen(text.lastGlyphPoint, in: text), duration: 0.7, arc: 0.02) { point in
+        director.move(to: director.onScreen(text.lastGlyphPoint, in: text), duration: 0.6, arc: 0.02) { point in
             let local = text.convert(text.window!.convertPoint(fromScreen: point), from: nil)
             text.setSelectedRange(NSRange(location: 0, length: text.characterIndexForInsertion(at: local)))
         }
         text.setSelectedRange(NSRange(location: 0, length: text.string.utf16.count))
         director.cursor = .arrow
-        director.wait(0.2)
+        director.wait(0.15)
 
-        director.press("⌥", "⌘", "A")
+        director.press("F4")
         director.wait(0.15)
         let ask = AskPanel()
         let answer = "**Launch moves to October 14.** Onboarding drops to two steps first; pricing stays, and the press kit is due a week early."
@@ -156,7 +158,7 @@ final class DemoTests: XCTestCase {
         summarize.performClick(nil)
         let asked = Date()
         while !ask.transcript.string.hasSuffix("early."), Date().timeIntervalSince(asked) < 10 { director.wait(0.05) }
-        XCTAssertTrue(director.cut(hold: 1.3))
+        XCTAssertTrue(director.cut(hold: 1.1))
         ask.close()
         return director
     }
@@ -253,7 +255,7 @@ final class DemoTests: XCTestCase {
 
     // MARK: Ask AI
 
-    /// Select a paragraph, ⌥⌘A, Summarize, the answer streams in.
+    /// Select a paragraph, F4, Summarize, the answer streams in.
     func testAskDemo() throws {
         let notes = NotesWindow()
         let director = try DemoDirector(output: output.appendingPathComponent("demo-ask.gif"), content: notes, at: CGPoint(x: 70, y: 60))
@@ -272,7 +274,7 @@ final class DemoTests: XCTestCase {
         director.cursor = .arrow
         director.wait(0.4)
 
-        director.press("⌥", "⌘", "A")
+        director.press("F4")
         director.wait(0.2)
         let ask = AskPanel()
         let answer = "**Launch moves to October 14.** Beta feedback asked for faster onboarding, so the team trims setup to "

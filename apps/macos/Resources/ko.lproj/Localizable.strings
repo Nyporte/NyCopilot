@@ -154,10 +154,10 @@
 "Welcome to NyCopilot" = "NyCopilot에 오신 것을 환영합니다";
 "Pick what you want help with. You can change any of it later in Settings." = "도움받고 싶은 기능을 고르세요. 나중에 설정에서 언제든 바꿀 수 있습니다.";
 "What should NyCopilot do?" = "NyCopilot으로 무엇을 할까요?";
-"Your F-keys send F1, F2…, so F1, F2, and F3 are one press. ⌥⌘/ shows every shortcut any time." = "사용 중인 F 키는 F1, F2…를 보내므로 F1, F2, F3을 한 번에 누를 수 있습니다. 언제든 ⌥⌘/로 모든 단축키를 볼 수 있습니다.";
+"Your F-keys send F1, F2…, so F1 to F4 are one press. ⌥⌘/ shows every shortcut any time." = "사용 중인 F 키는 F1, F2…를 보내므로 F1~F4를 한 번에 누를 수 있습니다. 언제든 ⌥⌘/로 모든 단축키를 볼 수 있습니다.";
 "Your F-keys control brightness and volume unless you hold fn, so ⌥⌘ letters are easier. ⌥⌘/ shows every shortcut any time." = "사용 중인 F 키는 fn을 누르지 않으면 밝기와 음량을 조절하므로 ⌥⌘와 글자 키가 더 편합니다. 언제든 ⌥⌘/로 모든 단축키를 볼 수 있습니다.";
 "One-press keys" = "한 번 누르는 키";
-"Screenshot, Translate, and Inbox" = "스크린샷, 번역, 수신함";
+"Screenshot, Translate, Inbox, and Ask AI" = "스크린샷, 번역, 수신함, AI에게 묻기";
 "Allow…" = "허용…";
 "Set Up…" = "설정…";
 "Setup" = "설정";

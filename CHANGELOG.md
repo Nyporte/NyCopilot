@@ -5,6 +5,9 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+- **F4 asks AI.** Ask AI joins the other one-press keys: F1 captures, F2 translates, F3 jots, F4
+  asks. With ⌥⌘ letters it stays ⌥⌘A, and a shortcut you set yourself stays yours.
+
 ## 0.4.1 — 2026-11-01
 
 - **No more stuck recording indicator.** When the disk is nearly full, macOS's screen capture service

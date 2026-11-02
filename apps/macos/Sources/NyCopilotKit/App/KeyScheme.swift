@@ -1,17 +1,17 @@
 import AppKit
 import MacPlatform
 
-/// Two ways to lay out the one-press shortcuts: function keys (F1 capture, F2 translate, F3 inbox —
-/// one press on keyboards whose F-keys send F1, F2…) or letters with ⌥⌘ (⌥⌘S, ⌥⌘T, ⌥⌘J — which work
-/// on any keyboard).
+/// Two ways to lay out the one-press shortcuts: function keys (F1 capture, F2 translate, F3 inbox,
+/// F4 ask — one press on keyboards whose F-keys send F1, F2…) or letters with ⌥⌘ (⌥⌘S, ⌥⌘T, ⌥⌘J,
+/// ⌥⌘A — which work on any keyboard).
 /// Everything else is the same in both.
 enum KeyScheme: String, CaseIterable {
     case functionKeys, letters
 
     var title: String {
         switch self {
-        case .functionKeys: "F1 · F2 · F3"
-        case .letters: "⌥⌘S · ⌥⌘T · ⌥⌘J"
+        case .functionKeys: "F1 – F4"
+        case .letters: "⌥⌘ S · T · J · A"
         }
     }
 
@@ -50,14 +50,16 @@ enum KeyScheme: String, CaseIterable {
                     CaptureShell.Action.togglePins: .init(keyCode: 122, modifiers: option),
                     TranslateShell.Action.compose: .init(keyCode: 120, modifiers: 0),
                     InboxShell.Action.capture: .init(keyCode: 99, modifiers: 0),
-                    InboxShell.Action.open: .init(keyCode: 99, modifiers: shift)]
+                    InboxShell.Action.open: .init(keyCode: 99, modifiers: shift),
+                    AskShell.Action.open: .init(keyCode: 118, modifiers: 0)]
         case .letters:
             return [CaptureShell.Action.capture: .init(keyCode: 1, modifiers: option | command), // ⌥⌘S
                     CaptureShell.Action.pinClipboard: .init(keyCode: 35, modifiers: option | command), // ⌥⌘P
                     CaptureShell.Action.togglePins: .init(keyCode: 35, modifiers: option | command | shift),
                     TranslateShell.Action.compose: .init(keyCode: 17, modifiers: option | command), // ⌥⌘T
                     InboxShell.Action.capture: .init(keyCode: 38, modifiers: option | command), // ⌥⌘J
-                    InboxShell.Action.open: .init(keyCode: 38, modifiers: option | command | shift)]
+                    InboxShell.Action.open: .init(keyCode: 38, modifiers: option | command | shift),
+                    AskShell.Action.open: .init(keyCode: 0, modifiers: option | command)] // ⌥⌘A
         }
     }
 }

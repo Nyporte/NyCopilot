@@ -13,7 +13,7 @@ ships six:
   (⌥⌘V).
 - **Inbox** — catch a thought in a second — typed, selected, or a screenshot — and deal with it
   later: send it to Reminders, Notes, or a Markdown folder, or snooze it (F3).
-- **Ask AI** — explain, summarize, rewrite, or ask about whatever you select or capture (⌥⌘A).
+- **Ask AI** — explain, summarize, rewrite, or ask about whatever you select or capture (F4, or ⌥⌘A with ⌥⌘ letters).
 
 Whatever you're looking at — a screenshot, a pin, a clipboard entry, an inbox note, an answer — takes
 the same keys: **R** translate, **I** keep in the inbox, **A** ask AI, **P** pin (with ⌘ where you
@@ -56,9 +56,9 @@ A setup guide opens on first launch (and from Settings → General → **Show Se
    the inbox, clipboard history, window layouts — each with the key that starts it. The rest stay out
    of the way (their shortcuts and menu items go) until you turn them on in Settings → General →
    Features.
-2. **Shortcuts.** Screenshot, Translate, and Inbox start with one press: **F1**, **F2**, and **F3**, or **⌥⌘S**,
-   **⌥⌘T**, and **⌥⌘J**. The guide recommends letters when your keyboard's F-keys control brightness and volume
-   (unless you hold fn), and F-keys when they're standard function keys.
+2. **Shortcuts.** Screenshot, Translate, Inbox, and Ask AI start with one press: **F1**, **F2**, **F3**, and
+   **F4**, or **⌥⌘S**, **⌥⌘T**, **⌥⌘J**, and **⌥⌘A**. The guide recommends letters when your keyboard's
+   F-keys control brightness and volume (unless you hold fn), and F-keys when they're standard function keys.
 3. **Setup.** **Allow Accessibility**, which reading selections, pasting, and moving windows need.
    **Connect a model** is optional: on macOS 14.4 and later, translation works at once through macOS's
    own translation panel. A model — any OpenAI-compatible Chat Completions endpoint, hosted or local
@@ -270,7 +270,7 @@ One place for things to deal with later, with one way in for each moment:
 
 ## Ask AI
 
-- **⌥⌘A** with text selected anywhere opens the Ask panel beside it: **Explain**, **Summarize**,
+- **F4** (or **⌥⌘A** with ⌥⌘ letters) with text selected anywhere opens the Ask panel beside it: **Explain**, **Summarize**,
   **Rewrite** (⌘1–3), or type a question; **Return** on an empty box explains. Follow up as long as
   you like. With nothing selected, ask anything.
 - **A** in a screenshot, on a pin, on an inbox note, or **⌘A** in the clipboard list asks about that
@@ -287,7 +287,7 @@ One place for things to deal with later, with one way in for each moment:
 Every module lists its shortcuts in its own Settings tab. A shortcut needs ⌘, ⌥, or ⌃, or can be a
 function key on its own (F1, F2…). On Apple keyboards the F-keys control brightness and volume unless
 you hold fn or turn on "Use F1, F2, etc. keys as standard function keys" in System Settings →
-Keyboard — or pick **⌥⌘ letters** in the setup guide (⌥⌘S screenshot, ⌥⌘T translate, ⌥⌘J inbox, ⌥⌘P pin
+Keyboard — or pick **⌥⌘ letters** in the setup guide (⌥⌘S screenshot, ⌥⌘T translate, ⌥⌘J inbox, ⌥⌘A ask, ⌥⌘P pin
 clipboard). **⌥⌘/** (or **Keyboard Shortcuts** in the menu bar menu) shows every shortcut as it's set
 now, and the shared keys. Tips show up a couple of times at the moment they help — the third
 capture, the first pin — and then not again. **Settings → General** shows the Accessibility and Screen Recording status, an **Open at
