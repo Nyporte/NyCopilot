@@ -5,8 +5,9 @@ import AppKit
 /// line on what it gets you and the key that does it, then a card with every key. Each scene is
 /// recorded on its own by a DemoDirector (with no output file), and the composer adds the motion:
 /// the camera moves in on what matters (DemoDirector.look), the line comes in word by word with its
-/// key popping up on a pill, the key lights when the scene presses it, and each next scene opens out
-/// of the middle over the last. The card hands back to the first scene, so the loop has no seam.
+/// key popping up on a pill, the key lights when the scene presses it, and each scene dissolves
+/// gently into the next. The card hands back to the first scene, so the loop has no seam. It's
+/// all at 30 frames a second, made at the size the README shows it.
 @MainActor
 enum DemoSpot {
     struct Beat {
@@ -26,20 +27,19 @@ enum DemoSpot {
         let hold: Double
     }
 
-    /// How long one shot takes to hand over to the next, and how smooth that is: much of the frame
-    /// moves, so fewer frames keep the file small.
-    static let turn = 0.4, turnFPS = 20.0
-    /// How long the camera takes to move, how far in it may go, and how smooth it is while moving
-    /// (the whole frame changes, so again fewer frames).
-    static let glide = 0.45, deepest: CGFloat = 1.35, glideFPS = 15.0
+    /// How long one shot takes to dissolve into the next.
+    static let turn = 0.5
+    /// How long the camera takes to move, and how far in it may go.
+    static let glide = 0.55, deepest: CGFloat = 1.35
     /// The caption's band along the top, in points: the camera keeps what it moves in on below it.
     static let band: CGFloat = 96
 
     private enum Shot { case beat(Int), card }
 
-    static func make(_ beats: [Beat], card: Card, into url: URL, fps: Double = 30) -> Bool {
+    /// `shrink` sizes the picture against the recording: the README shows it 760 points wide.
+    static func make(_ beats: [Beat], card: Card, into url: URL, fps: Double = 30, shrink: CGFloat = 0.8) -> Bool {
         guard let first = beats.first?.scene.frames.first?.image, let backdrop = card.backdrop.frames.first?.image else { return false }
-        let width = first.width, height = first.height
+        let width = Int((CGFloat(first.width) * shrink).rounded()), height = Int((CGFloat(first.height) * shrink).rounded())
         let scale = CGFloat(width) / beats[0].scene.crop.width
         let size = CGSize(width: width, height: height)
         guard let writer = GifWriter(url: url, width: width, height: height) else { return false }
@@ -88,28 +88,25 @@ enum DemoSpot {
         var clock = 0.0
         for (index, entry) in shots.enumerated() {
             let next = shots[(index + 1) % shots.count].shot
-            var local = 0.0, shown = -Double.infinity, view = CGRect.null
+            var local = 0.0
             while local < entry.length - 1e-6 {
-                defer { local += 1 / fps }
-                if case .beat(let index) = entry.shot {
-                    let now = camera(beats[index].scene, at: start(beats[index]) + local, size: size, scale: scale)
-                    if now != view, view != .null, local - shown < 1 / glideFPS - 1e-6 { continue }
-                    view = now
-                }
                 guard let image = render(entry.shot, at: local) else { return false }
                 writer.add(image, at: clock + local)
-                shown = local
+                local += 1 / fps
             }
             clock += entry.length
-            // The next shot opens out of the middle over this one.
             var turned = 0.0
             while turned < turn - 1e-6 {
                 guard let context = bitmap(width, height), let leaving = render(entry.shot, at: entry.length),
                       let coming = render(next, at: 0) else { return false }
-                handOver(from: leaving, to: coming, at: turned / turn, in: context, size: size, scale: scale)
+                let full = CGRect(origin: .zero, size: size)
+                context.interpolationQuality = .high
+                context.draw(leaving, in: full)
+                context.setAlpha(CGFloat(gently(turned / turn)))
+                context.draw(coming, in: full)
                 guard let image = context.makeImage() else { return false }
                 writer.add(image, at: clock + turned)
-                turned += 1 / turnFPS
+                turned += 1 / fps
             }
             clock += turn
         }
@@ -122,39 +119,13 @@ enum DemoSpot {
     }
 
     private static func eased(_ t: Double) -> Double { t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2 }
+    /// Slow at both ends, for a dissolve that doesn't call attention to itself.
+    private static func gently(_ t: Double) -> Double { (1 - cos(.pi * max(0, min(1, t)))) / 2 }
     private static func easedOut(_ t: Double) -> Double { 1 - pow(1 - max(0, min(1, t)), 3) }
     /// Past the mark and back, like a spring settling.
     private static func overshoot(_ t: Double) -> Double {
         let t = max(0, min(1, t)), c = 1.70158
         return 1 + (c + 1) * pow(t - 1, 3) + c * pow(t - 1, 2)
-    }
-
-    // MARK: Hand-over
-
-    private static func handOver(from leaving: CGImage, to coming: CGImage, at progress: Double,
-                                 in context: CGContext, size: CGSize, scale: CGFloat) {
-        let full = CGRect(origin: .zero, size: size)
-        context.draw(leaving, in: full)
-        context.setFillColor(NSColor.black.withAlphaComponent(0.4).cgColor)
-        context.fill(full)
-        let open = CGFloat(easedOut(progress)), rest = 1 - open
-        let grow = 0.45 + 0.55 * open
-        let rect = CGRect(x: size.width * (1 - grow) / 2, y: size.height * (1 - grow) / 2 - 50 * scale * rest,
-                          width: size.width * grow, height: size.height * grow).integral
-        let radius = 22 * scale * rest
-        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-        context.setAlpha(CGFloat(min(1, progress / 0.25)))
-        context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: -14 * scale * rest), blur: 40 * scale * rest,
-                          color: NSColor.black.withAlphaComponent(0.55 * rest).cgColor)
-        context.addPath(path)
-        context.setFillColor(NSColor.black.cgColor)
-        context.fillPath()
-        context.restoreGState()
-        context.addPath(path)
-        context.clip()
-        context.interpolationQuality = .high
-        context.draw(coming, in: rect)
     }
 
     // MARK: Camera

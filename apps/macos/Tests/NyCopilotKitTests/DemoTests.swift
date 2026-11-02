@@ -75,9 +75,18 @@ final class DemoTests: XCTestCase {
         // Over to the slides; the pin stays on top, and goes beside the slide it's for.
         director.press("⌘", "⇥")
         let slides = SlidesWindow()
+        slides.alphaValue = 0
         director.place(slides, at: CGPoint(x: 36, y: 96))
+        let began = director.now
+        while director.now - began < 0.22 {
+            let t = CGFloat(min((director.now - began) / 0.22, 1))
+            slides.alphaValue = t
+            notes.alphaValue = 1 - t
+            director.wait(1.0 / 30)
+        }
+        slides.alphaValue = 1
         notes.isHidden = true
-        director.wait(0.35)
+        director.wait(0.2)
         let grab = CGPoint(x: pin.frame.midX, y: pin.frame.midY)
         director.move(to: grab, duration: 0.35)
         director.click()
@@ -255,7 +264,7 @@ final class DemoTests: XCTestCase {
     }
 
     /// Moves and sizes a window on the stage to `frame` (on screen), quickly, the way a layout lands.
-    private func resize(_ window: NSView, to frame: NSRect, _ director: DemoDirector, duration: Double = 0.16) {
+    private func resize(_ window: NSView, to frame: NSRect, _ director: DemoDirector, duration: Double = 0.24) {
         let from = window.frame, began = director.now
         while true {
             let t = min((director.now - began) / duration, 1), eased = CGFloat(1 - pow(1 - t, 3))
