@@ -16,7 +16,7 @@ Keep the thought for later. All of it one keystroke away, right where you're wor
 ![10 languages](https://img.shields.io/badge/interface-10%20languages-5e5ce6)
 [![CI](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Nyporte/NyCopilot/actions/workflows/ci.yml)
 
-<img src="docs/images/demo-capture.gif" width="760" alt="Press F1: the outline finds the window under the pointer, drag out a chart, pick the arrow, point it at the tallest bar, ⌘C copies">
+<img src="docs/images/demo-hero.gif" width="760" alt="F1: drag out a chart, point an arrow at its best month, ⌘C. F2: type a reply in English, Return, and it goes out in Japanese. F4: select a paragraph, Summarize, and the summary streams in. Then every key on one card: F1 Capture, F2 Translate, F3 Jot it down, F4 Ask AI">
 
 </div>
 
@@ -32,7 +32,7 @@ a notes app, and by the time it's open the idea is gone.
 **NyCopilot does all of that where you already are.** It sits quietly in your menu bar and wakes up
 on a keystroke, over whatever app you're in, then gets out of the way.
 
-- **One keystroke, no detours.** F1 captures, F2 translates, F3 jots a note, ⌥⌘A asks AI. Nothing
+- **One keystroke, no detours.** F1 captures, F2 translates, F3 jots a note, F4 asks AI. Nothing
   to open, nothing to switch to.
 - **One capture, many next steps.** Whatever you're looking at, whether a screenshot, a pinned
   image, a clipboard entry or a note, answers the same keys: **R** translates it, **A** asks AI
@@ -74,9 +74,9 @@ or any AI model you connect, which can follow your style instructions ("formal J
 
 ## Ask AI: explain, summarize, rewrite, right where you read
 
-<img src="docs/images/demo-ask.gif" width="720" alt="Select a paragraph, press ⌥⌘A, click Summarize: the summary streams in beside the text">
+<img src="docs/images/demo-ask.gif" width="720" alt="Select a paragraph, press F4, click Summarize: the summary streams in beside the text">
 
-Select a paragraph, a word or a screenshot and press **⌥⌘A** (or **A** on a capture). Explain,
+Select a paragraph, a word or a screenshot and press **F4** (or **A** on a capture). Explain,
 Summarize and Rewrite are one click away; anything else, just ask, and keep the conversation going.
 Answers stream in as they're written, in your language, and a rewrite can replace your selection
 in place.
@@ -142,7 +142,7 @@ Deutsch, Português (Brasil), and Русский**. It follows your Mac, or pick
 1. **[Download the latest release](https://github.com/Nyporte/NyCopilot/releases/latest)**,
    unzip it, and move **NyCopilot** to Applications. It's signed and notarized by Apple.
 2. **Open it.** A short guide asks what you want help with and sets up the shortcuts: F-keys or
-   ⌥⌘ letters, whichever suits your keyboard (F1 · F2 · F3, or ⌥⌘S · ⌥⌘T · ⌥⌘J).
+   ⌥⌘ letters, whichever suits your keyboard (F1 · F2 · F3 · F4, or ⌥⌘S · ⌥⌘T · ⌥⌘J · ⌥⌘A).
 3. **Allow Accessibility** when asked, so NyCopilot can read selections and paste results. The first
    capture asks for Screen Recording.
 
