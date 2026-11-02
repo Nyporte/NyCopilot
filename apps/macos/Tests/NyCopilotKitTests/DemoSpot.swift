@@ -5,8 +5,8 @@ import AppKit
 /// line on what it gets you and the key that does it, then a card with every key. Each scene is
 /// recorded on its own by a DemoDirector (with no output file), and the composer adds the motion:
 /// the camera moves in on what matters (DemoDirector.look), the line comes in word by word with its
-/// key popping up, the key lights when the scene presses it, and between scenes the shot steps back
-/// like a card and the next slides in. The card hands back to the first scene, so the loop has no seam.
+/// key popping up on a pill, the key lights when the scene presses it, and each next scene opens out
+/// of the middle over the last. The card hands back to the first scene, so the loop has no seam.
 @MainActor
 enum DemoSpot {
     struct Beat {
@@ -26,11 +26,14 @@ enum DemoSpot {
         let hold: Double
     }
 
-    /// How long one shot takes to hand over to the next, and how smooth that is: everything moves,
-    /// so fewer frames keep the file small.
-    static let turn = 0.42, turnFPS = 20.0
-    /// How long the camera takes to move in, and how far it may.
-    static let glide = 0.5, deepest: CGFloat = 1.35
+    /// How long one shot takes to hand over to the next, and how smooth that is: much of the frame
+    /// moves, so fewer frames keep the file small.
+    static let turn = 0.4, turnFPS = 20.0
+    /// How long the camera takes to move, how far in it may go, and how smooth it is while moving
+    /// (the whole frame changes, so again fewer frames).
+    static let glide = 0.45, deepest: CGFloat = 1.35, glideFPS = 15.0
+    /// The caption's band along the top, in points: the camera keeps what it moves in on below it.
+    static let band: CGFloat = 96
 
     private enum Shot { case beat(Int), card }
 
@@ -72,19 +75,25 @@ enum DemoSpot {
         var clock = 0.0
         for (index, entry) in shots.enumerated() {
             let next = shots[(index + 1) % shots.count].shot
-            var local = 0.0
+            var local = 0.0, shown = -Double.infinity, view = CGRect.null
             while local < entry.length - 1e-6 {
+                defer { local += 1 / fps }
+                if case .beat(let index) = entry.shot {
+                    let now = camera(beats[index].scene, at: start(beats[index]) + local, size: size, scale: scale)
+                    if now != view, view != .null, local - shown < 1 / glideFPS - 1e-6 { continue }
+                    view = now
+                }
                 guard let image = render(entry.shot, at: local) else { return false }
                 writer.add(image, at: clock + local)
-                local += 1 / fps
+                shown = local
             }
             clock += entry.length
-            // The shot steps back and slides away as the next comes in and steps forward.
+            // The next shot opens out of the middle over this one.
             var turned = 0.0
             while turned < turn - 1e-6 {
                 guard let context = bitmap(width, height), let leaving = render(entry.shot, at: entry.length),
                       let coming = render(next, at: 0) else { return false }
-                handOver(from: leaving, to: coming, backdrop: backdrop, at: turned / turn, in: context, size: size, scale: scale)
+                handOver(from: leaving, to: coming, at: turned / turn, in: context, size: size, scale: scale)
                 guard let image = context.makeImage() else { return false }
                 writer.add(image, at: clock + turned)
                 turned += 1 / turnFPS
@@ -109,34 +118,30 @@ enum DemoSpot {
 
     // MARK: Hand-over
 
-    private static func handOver(from leaving: CGImage, to coming: CGImage, backdrop: CGImage, at progress: Double,
+    private static func handOver(from leaving: CGImage, to coming: CGImage, at progress: Double,
                                  in context: CGContext, size: CGSize, scale: CGFloat) {
         let full = CGRect(origin: .zero, size: size)
-        context.draw(backdrop, in: full)
-        context.setFillColor(NSColor.black.withAlphaComponent(0.45).cgColor)
+        context.draw(leaving, in: full)
+        context.setFillColor(NSColor.black.withAlphaComponent(0.4).cgColor)
         context.fill(full)
-        let away = CGFloat(eased(progress)), back = CGFloat(sin(.pi * progress))
-        let shrink = 1 - 0.16 * back, gap = 36 * scale
-        let card = CGSize(width: size.width * shrink, height: size.height * shrink)
-        let leavingX = (size.width - card.width) / 2 - away * (card.width + gap)
-        for (image, x) in [(leaving, leavingX), (coming, leavingX + card.width + gap)] {
-            let rect = CGRect(x: x, y: (size.height - card.height) / 2, width: card.width, height: card.height).integral
-            guard rect.maxX > 0, rect.minX < size.width else { continue }
-            let radius = 16 * scale * back
-            context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: -12 * scale * back), blur: 34 * scale * back,
-                              color: NSColor.black.withAlphaComponent(0.5 * back).cgColor)
-            context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
-            context.setFillColor(NSColor.black.cgColor)
-            context.fillPath()
-            context.restoreGState()
-            context.saveGState()
-            context.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
-            context.clip()
-            context.interpolationQuality = .high
-            context.draw(image, in: rect)
-            context.restoreGState()
-        }
+        let open = CGFloat(easedOut(progress)), rest = 1 - open
+        let grow = 0.45 + 0.55 * open
+        let rect = CGRect(x: size.width * (1 - grow) / 2, y: size.height * (1 - grow) / 2 - 50 * scale * rest,
+                          width: size.width * grow, height: size.height * grow).integral
+        let radius = 22 * scale * rest
+        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        context.setAlpha(CGFloat(min(1, progress / 0.25)))
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -14 * scale * rest), blur: 40 * scale * rest,
+                          color: NSColor.black.withAlphaComponent(0.55 * rest).cgColor)
+        context.addPath(path)
+        context.setFillColor(NSColor.black.cgColor)
+        context.fillPath()
+        context.restoreGState()
+        context.addPath(path)
+        context.clip()
+        context.interpolationQuality = .high
+        context.draw(coming, in: rect)
     }
 
     // MARK: Camera
@@ -151,9 +156,11 @@ enum DemoSpot {
                                 width: focus.width * scale, height: focus.height * scale).insetBy(dx: -40 * scale, dy: -40 * scale)
             var width = max(pixels.width, pixels.height * size.width / size.height, size.width / deepest)
             width = min(width, size.width)
-            let height = width * size.height / size.width
+            let height = width * size.height / size.width, zoom = size.width / width
             let x = max(0, min(pixels.midX - width / 2, size.width - width))
-            let y = max(0, min(pixels.midY - height / 2, size.height - height))
+            // Centered, but low enough that its top clears the caption.
+            let clear = pixels.maxY - (size.height - band * scale) / zoom
+            let y = max(0, min(max(pixels.midY - height / 2, clear), size.height - height))
             return CGRect(x: x, y: y, width: width, height: height)
         }
         var view = full
@@ -173,13 +180,6 @@ enum DemoSpot {
     /// The key and the line, centered over the top of the scene: the key pops up, the words rise in
     /// one after another, and the key lights when the scene presses it.
     private static func caption(_ beat: Beat, at time: Double, clock: Double, in context: CGContext, size: CGSize, scale: CGFloat) {
-        // A soft shade along the top, so the line reads over anything.
-        let shade = 130 * scale
-        context.drawLinearGradient(CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
-                                              colors: [NSColor.black.withAlphaComponent(0.42).cgColor, NSColor.black.withAlphaComponent(0).cgColor] as CFArray,
-                                              locations: [0, 1])!,
-                                   start: CGPoint(x: 0, y: size.height), end: CGPoint(x: 0, y: size.height - shade), options: [])
-
         let since = beat.scene.keys.last { $0.labels == beat.keys && $0.time <= clock + 1e-6 }.map { clock - $0.time } ?? .infinity
         let font = NSFont.systemFont(ofSize: 28 * scale, weight: .bold)
         func words(_ text: String) -> NSAttributedString {
@@ -192,6 +192,10 @@ enum DemoSpot {
         let left = (size.width - capWidth - gap - whole.width) / 2
         let middle = size.height - 52 * scale
         appKit(context) {
+            // On a dark pill, so it reads over anything.
+            let pill = NSRect(x: left - 10 * scale, y: middle - 31 * scale, width: capWidth + gap + whole.width + 32 * scale, height: 62 * scale)
+            NSColor.black.withAlphaComponent(0.5 * CGFloat(easedOut(time / 0.25))).setFill()
+            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
             let pop = CGFloat(overshoot(time / 0.32))
             let cap = CGRect(x: left, y: middle - capHeight / 2, width: capWidth, height: capHeight)
             NSGraphicsContext.current?.cgContext.setAlpha(CGFloat(min(1, time / 0.12)))
@@ -227,12 +231,6 @@ enum DemoSpot {
             let t = easedOut((time - delay) / 0.35)
             return (CGFloat(t), CGFloat(1 - t) * 16 * scale)
         }
-        // A glow behind the icon.
-        let glow = CGPoint(x: center, y: y(144, 0))
-        context.drawRadialGradient(CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
-                                              colors: [NSColor.white.withAlphaComponent(0.22 * min(1, time / 0.4)).cgColor,
-                                                       NSColor.white.withAlphaComponent(0).cgColor] as CFArray, locations: [0, 1])!,
-                                   startCenter: glow, startRadius: 0, endCenter: glow, endRadius: 260 * scale, options: [])
         func line(_ text: String, font: NSFont, color: NSColor, top: CGFloat, delay: Double) {
             let (alpha, lift) = rise(delay)
             let string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color, .shadow: shadow(scale)])
