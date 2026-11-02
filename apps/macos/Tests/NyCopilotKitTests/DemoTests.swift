@@ -24,6 +24,7 @@ final class DemoTests: XCTestCase {
     func testHeroDemo() throws {
         // The card's desktop first, with nothing on it yet.
         let backdrop = try DemoDirector(output: nil, content: NSView(), at: .zero)
+        backdrop.showsPointer = false
         backdrop.wait(0.3)
         backdrop.roll()
         _ = backdrop.cut(hold: 0)

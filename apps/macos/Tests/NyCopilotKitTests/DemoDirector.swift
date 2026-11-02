@@ -32,6 +32,8 @@ final class DemoDirector {
     var keysShownElsewhere: [String] = []
     /// A badge by the pointer while it scrolls, since a scroll has no key to show.
     var isScrolling = false
+    /// Off for a scene that's only a backdrop.
+    var showsPointer = true
     /// The recording, when there's no output file: each frame and when it was shown.
     private(set) var frames: [(image: CGImage, time: Double)] = []
     private(set) var duration: Double = 0
@@ -130,7 +132,7 @@ final class DemoDirector {
         context.draw(shot, in: CGRect(origin: .zero, size: size))
         let time = now
         drawClicks(at: time)
-        drawPointer()
+        if showsPointer { drawPointer() }
         drawScrollHint()
         drawKeys(at: time)
         guard let image = context.makeImage() else { return }
