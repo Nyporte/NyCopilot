@@ -52,6 +52,11 @@ struct MenuBarState: Equatable {
     /// bar could bring them back.
     static func canHide(divider: CGFloat, chevron: CGFloat) -> Bool { divider <= chevron + 1 }
 
+    /// The place to give the divider before it comes back into the bar, or nil to leave it where
+    /// it is: macOS deletes an item's `saved` place while it's out of the bar, so the one NyCopilot
+    /// `kept` before it left goes back, unless macOS has a place for it again.
+    static func dividerPosition(saved: Double?, kept: Double?) -> Double? { saved == nil ? kept : nil }
+
     /// `point` is on the menu bar of a screen with `frame` and `visibleFrame` — then icons about to
     /// be clicked shouldn't vanish. The menu bar is as tall as the space above the visible frame
     /// (taller beside a notch), or the status bar's thickness while it's hidden.

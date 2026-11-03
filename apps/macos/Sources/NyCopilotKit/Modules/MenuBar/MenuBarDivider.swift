@@ -32,8 +32,15 @@ final class MenuBarDivider: NSObject {
         chevron = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         chevron.autosaveName = "NyCopilot.MenuBar.Chevron"
         divider = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        divider.autosaveName = "NyCopilot.MenuBar.Divider"
+        // Out of the bar when NyCopilot last quit (Menu Bar off), the divider comes back hidden
+        // once it's named, and macOS deletes its place then: keep it first, and bring it back in.
+        Self.keepPlace(of: Self.dividerName)
+        divider.autosaveName = Self.dividerName
         super.init()
+        if !divider.isVisible {
+            Self.restorePlace(of: Self.dividerName)
+            divider.isVisible = true
+        }
         for item in [chevron, divider] {
             item.button?.target = self
             item.button?.action = #selector(clicked(_:))
@@ -50,6 +57,7 @@ final class MenuBarDivider: NSObject {
         // macOS remembers a hidden item by its name; it's shown again here, never left out.
         set {
             isOn = newValue
+            if newValue { Self.restorePlace(of: Self.dividerName) } else { Self.keepPlace(of: Self.dividerName) }
             divider.isVisible = newValue
             chevron.isVisible = newValue && collapsed
         }
@@ -182,6 +190,25 @@ final class MenuBarDivider: NSObject {
     @objc private func toggleFromMenu() { onToggle() }
     @objc private func settingsFromMenu() { onSettings() }
     @objc private func showInMenuBarFromMenu() { onShowInMenuBar?() }
+
+    private static let dividerName = "NyCopilot.MenuBar.Divider"
+    private static func savedKey(_ name: String) -> String { "NSStatusItem Preferred Position \(name)" }
+    private static func keptKey(_ name: String) -> String { "NyCopilot.KeptPosition.\(name)" }
+
+    /// Before an item leaves the bar, where it is: macOS forgets it then.
+    private static func keepPlace(of name: String) {
+        guard let saved = UserDefaults.standard.object(forKey: savedKey(name)) as? Double else { return }
+        UserDefaults.standard.set(saved, forKey: keptKey(name))
+    }
+
+    /// Before an item comes back, where it was kept, unless macOS has a place for it.
+    private static func restorePlace(of name: String) {
+        let defaults = UserDefaults.standard
+        guard let position = MenuBarState.dividerPosition(saved: defaults.object(forKey: savedKey(name)) as? Double,
+                                                          kept: defaults.object(forKey: keptKey(name)) as? Double) else { return }
+        defaults.set(position, forKey: savedKey(name))
+        Diagnostics.note("menubar", "arrow put back at \(Int(position)) from the right")
+    }
 
     private static func arrow(_ symbol: String, _ description: String) -> NSImage? {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)?
