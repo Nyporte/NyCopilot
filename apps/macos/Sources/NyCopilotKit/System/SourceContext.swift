@@ -17,11 +17,9 @@ struct SourceContext: Sendable {
         guard AXIsProcessTrusted() else { return SourceContext(app: name) }
         return await Task.detached(priority: .userInitiated) {
             var context = SourceContext(app: name)
-            let element = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(element, 0.2)
-            guard let window = Self.element(element, kAXFocusedWindowAttribute) else { return context }
-            AXUIElementSetMessagingTimeout(window, 0.2)
-            let title = Self.string(window, kAXTitleAttribute) ?? ""
+            guard let window = AX.element(AX.application(pid, timeout: 0.2), kAXFocusedWindowAttribute) else { return context }
+            AX.setTimeout(window, 0.2)
+            let title = AX.string(window, kAXTitleAttribute) ?? ""
             // A window titled with just the app's name says nothing more.
             context.title = title == name ? "" : title
             context.url = Self.address(window, kAXDocumentAttribute) ?? Self.webAddress(in: window) ?? ""
@@ -36,19 +34,16 @@ struct SourceContext: Sendable {
         while head < queue.count, head < 300 {
             let element = queue[head]
             head += 1
-            AXUIElementSetMessagingTimeout(element, 0.1)
-            if string(element, kAXRoleAttribute) == "AXWebArea" { return address(element, "AXURL") }
-            var children: CFTypeRef?
-            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success,
-               let list = children as? [AXUIElement] { queue += list.prefix(50) }
+            AX.setTimeout(element, 0.1)
+            if AX.string(element, kAXRoleAttribute) == "AXWebArea" { return address(element, "AXURL") }
+            if let list = AX.attribute(element, kAXChildrenAttribute) as? [AXUIElement] { queue += list.prefix(50) }
         }
         return nil
     }
 
     /// A URL attribute, whether the app gives it as a URL or as text; web and file addresses only.
     private static func address(_ element: AXUIElement, _ name: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success, let value else { return nil }
+        guard let value = AX.attribute(element, name) else { return nil }
         let text = (value as? URL)?.absoluteString ?? (value as? String)
         guard let text, isMeaningful(address: text) else { return nil }
         return text
@@ -60,18 +55,5 @@ struct SourceContext: Sendable {
         guard let url = URL(string: address), let scheme = url.scheme?.lowercased() else { return false }
         if scheme == "http" || scheme == "https" { return true }
         return scheme == "file" && !url.path.contains(".app/Contents/")
-    }
-
-    private static func string(_ element: AXUIElement, _ name: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
-        return value as? String
-    }
-
-    private static func element(_ element: AXUIElement, _ name: String) -> AXUIElement? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeBitCast(value, to: AXUIElement.self)
     }
 }

@@ -17,6 +17,17 @@ struct WindowRect: Codable, Equatable {
     }
 
     func contains(_ point: CGPoint) -> Bool { point.x >= x && point.x < x + w && point.y >= y && point.y < y + h }
+
+    init(x: Double, y: Double, w: Double, h: Double) {
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+    }
+
+    init(_ rect: CGRect) { self.init(x: rect.minX, y: rect.minY, w: rect.width, h: rect.height) }
+
+    var cgRect: CGRect { CGRect(x: x, y: y, width: w, height: h) }
 }
 
 /// One display: its whole frame (for hit-testing the pointer) and its usable area (without the
@@ -32,33 +43,27 @@ enum WindowControl {
     static func focusedWindow() -> AXUIElement? {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
-        let element = AXUIElementCreateApplication(app.processIdentifier)
-        AXUIElementSetMessagingTimeout(element, 0.3)
-        guard let window = elementAttribute(element, kAXFocusedWindowAttribute) else { return nil }
+        guard let window = AX.element(AX.application(app.processIdentifier, timeout: 0.3), kAXFocusedWindowAttribute) else { return nil }
         return isMovable(window) ? window : nil
     }
 
     /// The window under a point (Accessibility coordinates), for drag snapping.
     static func window(at point: CGPoint) -> AXUIElement? {
         let systemWide = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(systemWide, 0.15)
+        AX.setTimeout(systemWide, 0.15)
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(systemWide, Float(point.x), Float(point.y), &hit) == .success,
               let hit else { return nil }
         var pid: pid_t = 0
         guard AXUIElementGetPid(hit, &pid) == .success, pid != ProcessInfo.processInfo.processIdentifier else { return nil }
-        AXUIElementSetMessagingTimeout(hit, 0.15)
-        let window = (attribute(hit, kAXRoleAttribute) as? String) == kAXWindowRole ? hit : elementAttribute(hit, kAXWindowAttribute)
+        AX.setTimeout(hit, 0.15)
+        let window = AX.string(hit, kAXRoleAttribute) == kAXWindowRole ? hit : AX.element(hit, kAXWindowAttribute)
         guard let window, isMovable(window) else { return nil }
         return window
     }
 
     static func frame(of window: AXUIElement) -> WindowRect? {
-        var position = CGPoint.zero
-        var size = CGSize.zero
-        guard read(window, kAXPositionAttribute, .cgPoint, into: &position),
-              read(window, kAXSizeAttribute, .cgSize, into: &size) else { return nil }
-        return WindowRect(x: position.x, y: position.y, w: size.width, h: size.height)
+        AX.frame(of: window).map(WindowRect.init)
     }
 
     /// Move and resize, then return where the window actually ended up. Apps with a minimum size
@@ -67,10 +72,9 @@ enum WindowControl {
     static func setFrame(_ target: WindowRect, of window: AXUIElement, within bounds: WindowRect) -> WindowRect? {
         var pid: pid_t = 0
         AXUIElementGetPid(window, &pid)
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.3)
+        let app = AX.application(pid, timeout: 0.3)
         // Some apps animate every Accessibility move while this is on; switch it off for the move.
-        let enhanced = attribute(app, "AXEnhancedUserInterface") as? Bool == true
+        let enhanced = AX.attribute(app, "AXEnhancedUserInterface") as? Bool == true
         if enhanced { AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse) }
         defer { if enhanced { AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue) } }
 
@@ -106,17 +110,12 @@ enum WindowControl {
 
     // MARK: Coordinates
 
-    private static var primaryHeight: Double { Double(ScreenGeometry.primaryHeight) }
+    /// AppKit → the core's rectangles (see ScreenGeometry).
+    static func axRect(_ rect: NSRect) -> WindowRect { WindowRect(ScreenGeometry.topLeft(rect)) }
 
-    static func axRect(_ rect: NSRect) -> WindowRect {
-        WindowRect(x: rect.minX, y: primaryHeight - rect.maxY, w: rect.width, h: rect.height)
-    }
+    static func appKitRect(_ rect: WindowRect) -> NSRect { ScreenGeometry.appKit(rect.cgRect) }
 
-    static func appKitRect(_ rect: WindowRect) -> NSRect {
-        NSRect(x: rect.x, y: primaryHeight - rect.y - rect.h, width: rect.w, height: rect.h)
-    }
-
-    static func axPoint(_ point: NSPoint) -> CGPoint { CGPoint(x: point.x, y: primaryHeight - point.y) }
+    static func axPoint(_ point: NSPoint) -> CGPoint { ScreenGeometry.topLeft(point) }
 
     private static func distance(_ point: CGPoint, _ rect: WindowRect) -> Double {
         hypot(point.x - (rect.x + rect.w / 2), point.y - (rect.y + rect.h / 2))
@@ -129,27 +128,9 @@ enum WindowControl {
         var settable = DarwinBoolean(false)
         guard AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &settable) == .success,
               settable.boolValue else { return false }
-        if attribute(window, "AXFullScreen") as? Bool == true { return false }
-        if attribute(window, kAXMinimizedAttribute) as? Bool == true { return false }
+        if AX.attribute(window, "AXFullScreen") as? Bool == true { return false }
+        if AX.attribute(window, kAXMinimizedAttribute) as? Bool == true { return false }
         return true
-    }
-
-    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
-        return value
-    }
-
-    private static func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
-        guard let value = attribute(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeBitCast(value, to: AXUIElement.self)
-    }
-
-    private static func read<T>(_ element: AXUIElement, _ name: String, _ type: AXValueType, into output: inout T) -> Bool {
-        guard let value = attribute(element, name), CFGetTypeID(value) == AXValueGetTypeID() else { return false }
-        let axValue = unsafeBitCast(value, to: AXValue.self)
-        guard AXValueGetType(axValue) == type else { return false }
-        return withUnsafeMutablePointer(to: &output) { AXValueGetValue(axValue, type, $0) }
     }
 
     private static func write(_ element: AXUIElement, _ name: String, point: CGPoint) {

@@ -18,48 +18,25 @@ enum ScrollArea {
     /// The frontmost normal window at `point` that isn't NyCopilot's.
     private static func window(at point: CGPoint) -> (bounds: CGRect, pid: pid_t)? {
         let own = ProcessInfo.processInfo.processIdentifier
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-        for info in list {
-            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid != own,
-                  (info[kCGWindowLayer as String] as? Int) == 0,
-                  let bounds = (info[kCGWindowBounds as String] as? [String: CGFloat]).flatMap({ CGRect(dictionaryRepresentation: $0 as CFDictionary) }),
-                  bounds.contains(point) else { continue }
-            return (bounds, pid)
-        }
-        return nil
+        return ScreenGrabber.windowList().first { $0.pid != own && $0.layer == 0 && $0.bounds.contains(point) }
+            .map { ($0.bounds, $0.pid) }
     }
 
     /// The nearest scroll area enclosing the element at `point` in that app.
     private static func scrollView(at point: CGPoint, in pid: pid_t) -> CGRect? {
-        let app = AXUIElementCreateApplication(pid)
         // An app that doesn't answer quickly shouldn't hold up a capture.
-        AXUIElementSetMessagingTimeout(app, 0.25)
+        let app = AX.application(pid, timeout: 0.25)
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success, var element = hit else { return nil }
         for _ in 0..<40 {
             // Each element answers with its own timeout, not the app's.
-            AXUIElementSetMessagingTimeout(element, 0.25)
-            if string(element, kAXRoleAttribute) == kAXScrollAreaRole as String, let frame = frame(of: element), frame.height >= 40 {
+            AX.setTimeout(element, 0.25)
+            if AX.string(element, kAXRoleAttribute) == kAXScrollAreaRole as String, let frame = AX.frame(of: element), frame.height >= 40 {
                 return frame
             }
-            guard let parent = value(element, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { return nil }
-            element = parent as! AXUIElement
+            guard let parent = AX.parent(of: element) else { return nil }
+            element = parent
         }
         return nil
-    }
-
-    private static func value(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
-    }
-
-    private static func string(_ element: AXUIElement, _ name: String) -> String? { value(element, name) as? String }
-
-    private static func frame(of element: AXUIElement) -> CGRect? {
-        guard let position = value(element, kAXPositionAttribute), let size = value(element, kAXSizeAttribute),
-              CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
-        var origin = CGPoint.zero, extent = CGSize.zero
-        guard AXValueGetValue(position as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
-        return CGRect(origin: origin, size: extent)
     }
 }

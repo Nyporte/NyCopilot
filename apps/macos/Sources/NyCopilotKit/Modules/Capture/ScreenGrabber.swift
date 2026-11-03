@@ -157,20 +157,14 @@ enum ScreenGrabber {
     private static func visibleWindows(includingOwn: Bool) -> [FrozenScreen.Window] {
         let own = ProcessInfo.processInfo.processIdentifier
         let displays = NSScreen.screens.map(ScreenGeometry.topLeftFrame)
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         var windows: [FrozenScreen.Window] = []
         var dock: FrozenScreen.Window?
-        for info in list {
-            let pid = info[kCGWindowOwnerPID as String] as? pid_t ?? 0
-            let layer = info[kCGWindowLayer as String] as? Int ?? 0
-            guard includingOwn || pid != own,
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.05,
-                  layer < Int(CGWindowLevelForKey(.screenSaverWindow)),
-                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
-                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+        for info in windowList() {
+            let pid = info.pid, layer = info.layer, rect = info.bounds
+            guard includingOwn || pid != own, info.alpha > 0.05, layer < Int(CGWindowLevelForKey(.screenSaverWindow)),
                   rect.width >= 8, rect.height >= 8 else { continue }
             if layer != 0, displays.contains(where: { $0.intersection(rect).width * $0.intersection(rect).height >= $0.width * $0.height * 0.9 }) {
-                if info[kCGWindowOwnerName as String] as? String == "Dock" { dock = dockBar(pid: pid).map { .init(rect: $0, pid: pid) } }
+                if info.owner == "Dock" { dock = dockBar(pid: pid).map { .init(rect: $0, pid: pid) } }
                 continue
             }
             // The Dock's own bar sits above normal windows, wherever it fell in the list.
@@ -179,6 +173,26 @@ enum ScreenGrabber {
         }
         if let dock { windows.append(dock) }
         return windows
+    }
+
+    /// One on-screen window as the window server lists it, in global top-left coordinates.
+    struct ListedWindow {
+        let bounds: CGRect
+        let pid: pid_t
+        let layer: Int
+        let alpha: Double
+        let owner: String?
+    }
+
+    /// Every on-screen window but the desktop's, front to back.
+    static func windowList() -> [ListedWindow] {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.compactMap { info in
+            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+            return ListedWindow(bounds: rect, pid: info[kCGWindowOwnerPID as String] as? pid_t ?? 0, layer: info[kCGWindowLayer as String] as? Int ?? 0,
+                                alpha: info[kCGWindowAlpha as String] as? Double ?? 1, owner: info[kCGWindowOwnerName as String] as? String)
+        }
     }
 
     /// `rect` (view points) moved by up to 12 points so its edges sit on the strongest edges in the
@@ -232,13 +246,9 @@ enum ScreenGrabber {
 
     /// The Dock's visible bar, from Accessibility (its window covers the whole screen).
     private static func dockBar(pid: pid_t) -> CGRect? {
-        guard AXIsProcessTrusted() else { return nil }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.2)
-        var children: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXChildrenAttribute as CFString, &children) == .success,
-              let list = (children as? [AXUIElement])?.first else { return nil }
-        return AccessibilityFrame.of(list)
+        guard AXIsProcessTrusted(), let bar = (AX.attribute(AX.application(pid, timeout: 0.2), kAXChildrenAttribute) as? [AXUIElement])?.first,
+              let frame = AX.frame(of: bar), frame.width > 0, frame.height > 0 else { return nil }
+        return frame
     }
 
     /// Global top-left coordinates → this screen's flipped view coordinates, clipped to the screen.
