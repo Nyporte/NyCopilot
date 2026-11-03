@@ -417,15 +417,15 @@ final class LogicTests: XCTestCase {
     }
 
     /// Hidden, the divider grows wide enough to carry the icons left of it off every screen; shown,
-    /// it's a thin line, and shown icons hide again only when asked to.
-    func testMenuBarDividerHidesByGrowingAndShowsAsALine() {
+    /// it's a narrow gap, and shown icons hide again only when asked to.
+    func testMenuBarDividerHidesByGrowingAndShowsAsANarrowGap() {
         var state = MenuBarState(isOn: true, collapsed: true, collapseAfter: 10)
         XCTAssertEqual(state.dividerLength, 10_000)
         XCTAssertGreaterThan(state.dividerLength, 7680, "wider than an 8K display at 1×")
         XCTAssertNil(state.hideAgainIn, "already hidden")
         state.collapsed = false
         XCTAssertEqual(state.dividerLength, MenuBarState.lineLength)
-        XCTAssertLessThan(state.dividerLength, 20)
+        XCTAssertLessThanOrEqual(state.dividerLength, 2, "an 18 pt gap once macOS pads it")
         XCTAssertEqual(state.hideAgainIn, 10)
         state.collapseAfter = 0
         XCTAssertNil(state.hideAgainIn, "never")
@@ -460,9 +460,16 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(MenuBarState.read(relaunched, moduleOn: true).dividerLength, MenuBarState.lineLength)
     }
 
-    /// Hiding with the chevron left of the divider would hide the chevron too; a pointer on the
+    /// Hiding with the chevron left of the divider would hide the chevron too; the line is there
+    /// only to ⌘-drag past; a pointer on the
     /// menu bar (taller beside a notch, or hidden in full screen) keeps shown icons shown.
     func testMenuBarHidesOnlyWithTheChevronInSightAndNotUnderThePointer() {
+        // The line shows only while ⌘ is held (when icons are ⌘-dragged), or always when ⌘ can't be seen.
+        XCTAssertFalse(MenuBarState.showsLine(collapsed: false, commandHeld: false, canSeeCommand: true))
+        XCTAssertTrue(MenuBarState.showsLine(collapsed: false, commandHeld: true, canSeeCommand: true))
+        XCTAssertTrue(MenuBarState.showsLine(collapsed: false, commandHeld: false, canSeeCommand: false))
+        XCTAssertFalse(MenuBarState.showsLine(collapsed: true, commandHeld: true, canSeeCommand: true), "off screen")
+
         // Measured on macOS 14: the divider's window ends where the chevron's begins.
         XCTAssertTrue(MenuBarState.canHide(divider: 1370, chevron: 1370))
         XCTAssertTrue(MenuBarState.canHide(divider: 1342, chevron: 1370))

@@ -116,9 +116,9 @@ shortcut, or drag it to a screen edge. Coming from Rectangle? Import your shortc
 
 ## Menu Bar: hide the icons you rarely need
 
-Turn it on in Settings → Menu Bar and a thin divider and a chevron join your menu bar. ⌘-drag the
-icons you rarely need to the left of the divider; click the chevron and they're gone, click again
-and they're back. They can hide again on their own after a few seconds, and stay hidden across restarts.
+Turn it on in Settings → Menu Bar and a chevron joins your menu bar. Hold ⌘ and a thin divider
+shows beside it: ⌘-drag the icons you rarely need to the left of the divider. Click the chevron and
+they're gone, click again and they're back. They can hide again on their own after a few seconds, and stay hidden across restarts.
 
 ## Every key, one press away
 

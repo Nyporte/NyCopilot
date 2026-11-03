@@ -1,9 +1,11 @@
 import AppKit
 
-/// The two items Menu Bar puts in the menu bar: a thin divider, and right of it a chevron that
-/// hides or shows the icons left of the divider. Hiding makes the divider `MenuBarState.hidingLength`
-/// wide, which pushes those icons past the left edge of the screen; macOS keeps their apps running
-/// and their places as they were.
+/// The two items Menu Bar puts in the menu bar: a divider, and right of it a chevron that hides or
+/// shows the icons left of the divider. Hiding makes the divider `MenuBarState.hidingLength` wide,
+/// which pushes those icons past the left edge of the screen; macOS keeps their apps running and
+/// their places as they were. (The chevron can't do this alone: an item that doesn't fit on screen
+/// isn't drawn at all.) Shown, the divider is a narrow empty gap whose line appears only while ⌘ is
+/// held, which is when icons are ⌘-dragged past it; its width never changes, so nothing moves.
 @MainActor
 final class MenuBarDivider: NSObject {
     var onToggle: () -> Void = {}
@@ -12,6 +14,8 @@ final class MenuBarDivider: NSObject {
     private let divider: NSStatusItem
     private let chevron: NSStatusItem
     private var collapsed = false
+    private var commandHeld = false
+    private var monitors: [Any] = []
 
     override init() {
         // Each new item goes left of the ones already there, so the first time, the divider lands
@@ -27,8 +31,14 @@ final class MenuBarDivider: NSObject {
             item.button?.action = #selector(clicked)
             item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        divider.button?.image = Self.line
         divider.button?.toolTip = L("⌘-drag menu bar icons left of this line to hide them")
+        // Seeing ⌘ in other apps needs Accessibility, which NyCopilot asks for anyway; without it
+        // the line just stays.
+        let watch: (NSEvent) -> Void = { [weak self] event in
+            MainActor.assumeIsolated { self?.setCommandHeld(event.modifierFlags.contains(.command)) }
+        }
+        monitors = [NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: watch),
+                    NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { watch($0); return $0 }].compactMap { $0 }
         show(collapsed: false)
     }
 
@@ -49,8 +59,7 @@ final class MenuBarDivider: NSObject {
     func show(collapsed: Bool) {
         self.collapsed = collapsed
         divider.length = MenuBarState.dividerLength(collapsed: collapsed)
-        // Off screen there's nothing to draw.
-        divider.button?.image = collapsed ? nil : Self.line
+        showLine()
         let image = NSImage(systemSymbolName: collapsed ? "chevron.left" : "chevron.right",
                             accessibilityDescription: collapsed ? L("Show Hidden Icons") : L("Hide Menu Bar Icons"))?
             .withSymbolConfiguration(.init(pointSize: 12, weight: .semibold))
@@ -60,8 +69,23 @@ final class MenuBarDivider: NSObject {
     }
 
     func remove() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors = []
         NSStatusBar.system.removeStatusItem(chevron)
         NSStatusBar.system.removeStatusItem(divider)
+    }
+
+    private func setCommandHeld(_ held: Bool) {
+        guard held != commandHeld else { return }
+        commandHeld = held
+        showLine()
+    }
+
+    /// Off screen there's nothing to draw; on screen, the line shows while ⌘ is held, or always
+    /// when NyCopilot can't see ⌘.
+    private func showLine() {
+        let visible = MenuBarState.showsLine(collapsed: collapsed, commandHeld: commandHeld, canSeeCommand: Accessibility.isTrusted)
+        divider.button?.image = visible ? Self.line : nil
     }
 
     /// A click toggles; a right-click (or ⌃-click) offers the same and Settings.

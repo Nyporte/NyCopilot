@@ -5,8 +5,8 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
-- **Tidy the menu bar.** Settings → Menu Bar puts a thin divider and a chevron in the menu bar:
-  ⌘-drag the icons you rarely need left of the divider, and a click on the chevron hides them (or
+- **Tidy the menu bar.** Settings → Menu Bar puts a chevron in the menu bar, and a divider beside
+  it that shows while ⌘ is held: ⌘-drag the icons you rarely need left of the divider, and a click on the chevron hides them (or
   shows them again). They can hide again on their own after a few seconds, stay hidden across
   restarts, and can have a shortcut. It's off until you turn it on.
 - **Screen translation settles.** Holding F2 no longer takes every highlight down and reads the
