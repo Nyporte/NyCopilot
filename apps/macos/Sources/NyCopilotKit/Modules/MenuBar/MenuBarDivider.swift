@@ -18,6 +18,7 @@ final class MenuBarDivider: NSObject {
     private var isOn = true
     private var whenPlaced: ((_ edges: (divider: CGFloat, chevron: CGFloat)?) -> Void)?
     private var placement = 0
+    private var placingSince = Date()
     private var moveObservers: [NSObjectProtocol] = []
 
     override init() {
@@ -59,16 +60,16 @@ final class MenuBarDivider: NSObject {
         return (divider.maxX, chevron.minX)
     }
 
-    /// Brings the chevron back beside the divider and, once macOS has placed it, hands over where
-    /// both are, so hiding can be refused if the chevron didn't land right of the divider.
-    func prepareToHide(_ placed: @escaping (_ edges: (divider: CGFloat, chevron: CGFloat)?) -> Void) {
+    /// Hides at once and brings the chevron back beside the divider; once macOS has placed it,
+    /// hands over where both are, so the hiding can be undone if the chevron didn't land right of
+    /// the divider (where it would be hidden too). Growing first, rather than waiting for the
+    /// chevron, keeps the icons from sliding left to make room for it before they go.
+    func hide(_ placed: @escaping (_ edges: (divider: CGFloat, chevron: CGFloat)?) -> Void) {
         placeChevronBesideDivider()
         whenPlaced = placed
         placement += 1
-        // While macOS places the chevron (about 0.1 s) both items are in the menu bar; only ◂ should
-        // show. If hiding is refused, `show(collapsed: false)` puts ▸ back.
-        divider.button?.image = nil
-        chevron.isVisible = isOn
+        placingSince = Date()
+        show(collapsed: true)
         // macOS places it about 0.1 s later (measured), and says so by moving its window; just after
         // launch, the divider is placed the same way.
         if moveObservers.isEmpty {
@@ -92,6 +93,7 @@ final class MenuBarDivider: NSObject {
         let ready = edges.map { MenuBarState.canHide(divider: $0.divider, chevron: $0.chevron) } ?? false
         guard let placed = whenPlaced, giveUp || ready else { return }
         whenPlaced = nil
+        Diagnostics.note("menubar", "chevron \(ready ? "placed" : "not placed") after \(Int(Date().timeIntervalSince(placingSince) * 1000)) ms")
         placed(edges)
     }
 

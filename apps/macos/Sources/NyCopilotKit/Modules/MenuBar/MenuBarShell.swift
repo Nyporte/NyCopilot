@@ -58,15 +58,15 @@ final class MenuBarShell: ModuleShell {
         setCollapsed(!state.collapsed)
     }
 
-    /// `apply` follows from the setting's change event. Hiding waits for the chevron to be back
-    /// in the menu bar, right of the divider, so there's always something to click to show again.
+    /// `apply` follows from the setting's change event. Hiding is undone unless the chevron comes
+    /// back right of the divider, so there's always something to click to show again.
     private func setCollapsed(_ collapsed: Bool) {
         guard collapsed, let divider else {
             Diagnostics.note("menubar", "showing")
             try? services.core.setSetting(.menuBarCollapsed, collapsed)
             return
         }
-        divider.prepareToHide { [weak self] edges in
+        divider.hide { [weak self] edges in
             guard let self else { return }
             let placed = edges.map { ": the divider ends at x \(Int($0.divider)), the chevron starts at x \(Int($0.chevron))" } ?? ""
             guard let edges, MenuBarState.canHide(divider: edges.divider, chevron: edges.chevron) else {
@@ -76,8 +76,7 @@ final class MenuBarShell: ModuleShell {
                 services.toast.show(L("Couldn’t hide the icons"), detail: L("⌘-drag the arrow a little, then try again."), style: .warning)
                 return
             }
-            Diagnostics.note("menubar", "hiding\(placed)")
-            divider.show(collapsed: true)
+            Diagnostics.note("menubar", "hidden\(placed)")
             try? services.core.setSetting(.menuBarCollapsed, true)
         }
     }
