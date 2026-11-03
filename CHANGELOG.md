@@ -5,6 +5,10 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+- **Screen translation settles.** Holding F2 no longer takes every highlight down and reads the
+  screen again, over and over: NyCopilot could see its own overlay in the screen it watched, when
+  it had started before its menu bar icon was up. Pointing at a block shows its translation again.
+
 ## 0.5.0 — 2026-11-03
 
 - **F4 asks AI.** Ask AI joins the other one-press keys: F1 captures, F2 translates, F3 jots, F4

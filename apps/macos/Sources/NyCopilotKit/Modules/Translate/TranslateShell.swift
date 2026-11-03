@@ -95,10 +95,13 @@ final class TranslateShell: ModuleShell {
     /// translated on a card instead; otherwise the composer opens, so the shortcut always does
     /// something useful.
     private func beginComposition() {
-        if selection.isVisible { selection.dismiss(); return }
-        if composer.isVisible { composer.bringToFront(); return }
+        if selection.isVisible { Diagnostics.note("translate", "tap closed the card"); selection.dismiss(); return }
+        if composer.isVisible { Diagnostics.note("translate", "tap raised the open composer"); composer.bringToFront(); return }
         guard let foreground = NSWorkspace.shared.frontmostApplication,
-              foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+              foreground.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            Diagnostics.note("translate", "NyCopilot is in front; nothing to read")
+            return
+        }
         cancelOperation()
         sourceApp = foreground
         let id = operationID
@@ -114,10 +117,13 @@ final class TranslateShell: ModuleShell {
             } catch {
                 captured = nil
             }
-            guard !Task.isCancelled, operationID == id,
-                  NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else { return }
+            guard !Task.isCancelled, operationID == id else { return }
+            guard NSWorkspace.shared.frontmostApplication?.processIdentifier == foreground.processIdentifier else {
+                Diagnostics.note("translate", "\(foreground.localizedName ?? "?") left the front while its field was read; nothing shown")
+                return
+            }
             // A field you can type in gets the composer, even with text selected: it replaces the selection.
-            if captured?.isVerified == false, let (text, bounds) = await Self.selectedText(in: foreground.processIdentifier) {
+            if captured?.isVerified == false, let (text, bounds) = await Self.selectedText(in: foreground.processIdentifier, appName: foreground.localizedName) {
                 guard !Task.isCancelled, operationID == id else { return }
                 let elapsed = Int(Date().timeIntervalSince(started) * 1000)
                 Diagnostics.note("translate", "selection in \(foreground.localizedName ?? "?"): card \(bounds == nil ? "at the pointer" : "beside it") after \(elapsed) ms")
@@ -131,11 +137,16 @@ final class TranslateShell: ModuleShell {
     }
 
     /// The selection, through Accessibility when the app describes it, or else by asking it to copy.
-    private static func selectedText(in pid: pid_t) async -> (String, CGRect?)? {
+    private static func selectedText(in pid: pid_t, appName: String?) async -> (String, CGRect?)? {
         switch await InputTarget.selection(pid: pid) {
         case .text(let text, let bounds): return (text, bounds)
-        case .nothing: return nil
-        case .unknown: return await InputTarget.copiedSelection(pid: pid).map { ($0, nil) }
+        case .nothing:
+            Diagnostics.note("translate", "\(appName ?? "?") says nothing is selected")
+            return nil
+        case .unknown:
+            let copied = await InputTarget.copiedSelection(pid: pid)
+            if copied == nil { Diagnostics.note("translate", "\(appName ?? "?") doesn’t describe its selection, and ⌘C copied nothing") }
+            return copied.map { ($0, nil) }
         }
     }
 

@@ -37,12 +37,8 @@ enum ScreenGrabber {
         let started = Date()
         let windows = visibleWindows(includingOwn: !hidingOwnWindows)
         // The display list barely changes, so the lookup made at launch (or after the last capture)
-        // serves; NyCopilot's windows are left out by app, which needs no fresh window list.
-        var content = try await shareableContent(reusingRecent: true)
-        let ids = NSScreen.screens.compactMap(displayID)
-        if !ids.allSatisfy({ id in content.displays.contains { $0.displayID == id } }) {
-            content = try await shareableContent(reusingRecent: false)
-        }
+        // usually serves; NyCopilot's windows are left out by app, which needs no fresh window list.
+        let content = try await shareableContent(for: NSScreen.screens.compactMap(displayID), hidingOwnWindows: hidingOwnWindows)
         let looked = Date()
         // Every display at once rather than one after another.
         let screens = NSScreen.screens, lookup = content
@@ -97,17 +93,39 @@ enum ScreenGrabber {
         return content
     }
 
+    /// A lookup for capturing these displays: the recent one if it will do, else a fresh one.
+    @MainActor
+    static func shareableContent(for displays: [CGDirectDisplayID], hidingOwnWindows: Bool = true) async throws -> SCShareableContent {
+        let recent = try await shareableContent(reusingRecent: true)
+        return serves(displays: recent.displays.map(\.displayID), applications: recent.applications.map(\.processID),
+                      for: displays, hidingOwnWindows: hidingOwnWindows)
+            ? recent : try await shareableContent(reusingRecent: false)
+    }
+
+    /// Whether a lookup knows these displays and, to leave NyCopilot out, NyCopilot itself.
+    /// ScreenCaptureKit lists an app only while it has a window on screen, so the lookup made at
+    /// launch, before even the menu bar icon is up, has no NyCopilot in it: kept, it left the
+    /// screen translation overlay in every glance, and every glance saw its own highlights change.
+    nonisolated static func serves(displays known: [CGDirectDisplayID], applications: [pid_t], for displays: [CGDirectDisplayID],
+                                   hidingOwnWindows: Bool, own: pid_t = ProcessInfo.processInfo.processIdentifier) -> Bool {
+        displays.allSatisfy(known.contains) && (!hidingOwnWindows || applications.contains(own))
+    }
+
+    /// NyCopilot as a lookup lists it, for a filter that leaves its windows out.
+    static func ownApplications(in content: SCShareableContent) -> [SCRunningApplication] {
+        content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+    }
+
     /// One display as it is now, without any NyCopilot window, `pixelsPerPoint` pixels per point:
     /// small for spotting changes, full for reading text. The cursor is left out.
     @MainActor
     static func snapshot(of screen: NSScreen, pixelsPerPoint: CGFloat) async throws -> CGImage? {
         guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
         let width = Int((screen.frame.width * pixelsPerPoint).rounded()), height = Int((screen.frame.height * pixelsPerPoint).rounded())
-        var content = try await shareableContent(reusingRecent: true)
-        if !content.displays.contains(where: { $0.displayID == id }) { content = try await shareableContent(reusingRecent: false) }
+        let content = try await shareableContent(for: [id])
         guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
         // By app rather than by window, so windows opened since the lookup are left out too.
-        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        let own = ownApplications(in: content)
         let configuration = SCStreamConfiguration()
         configuration.width = width
         configuration.height = height
@@ -122,7 +140,7 @@ enum ScreenGrabber {
         do {
             guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
             // By app rather than by window, so pins opened since the lookup are left out too.
-            let own = hidingOwnWindows ? content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier } : []
+            let own = hidingOwnWindows ? ownApplications(in: content) : []
             let configuration = SCStreamConfiguration()
             configuration.width = Int(pixels.width)
             configuration.height = Int(pixels.height)
