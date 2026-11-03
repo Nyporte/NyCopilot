@@ -137,6 +137,8 @@ final class MenuBarDivider: NSObject {
         let ready = edges.map { MenuBarState.canHide(divider: $0.divider, chevron: $0.chevron) } ?? false
         guard let placed = whenPlaced, giveUp || ready else { return }
         whenPlaced = nil
+        // Again once placed: just after launch, the clock may not have been placed yet before.
+        if ready { moveKeptItemsInSight() }
         Diagnostics.note("menubar", "chevron \(ready ? "placed" : "not placed") after \(Int(Date().timeIntervalSince(placingSince) * 1000)) ms")
         placed(edges)
     }
@@ -153,15 +155,20 @@ final class MenuBarDivider: NSObject {
     }
 
     /// An item that must stay in sight but was ⌘-dragged left of the arrow goes right beside the
-    /// chevron before the icons hide, the way the chevron is placed: out of the bar, its place set,
-    /// back in.
+    /// chevron before the icons hide (and again once they have, in case it wasn't placed yet), the
+    /// way the chevron is placed: out of the bar, its place set, back in. Hidden, it ends left of
+    /// the divider's right edge too, so the same test finds it.
     private func moveKeptItemsInSight() {
         let key = { (name: String) in "NSStatusItem Preferred Position \(name)" }
-        guard let dividerMaxX = divider.button?.window?.frame.maxX, dividerMaxX > 0,
-              let chevron = UserDefaults.standard.object(forKey: key(chevron.autosaveName)) as? Double else { return }
-        for item in keepInSight() {
-            guard let frame = item.button?.window?.frame, frame.maxY > 0,
-                  MenuBarState.wouldHide(itemMaxX: frame.maxX, dividerMaxX: dividerMaxX) else { continue }
+        let kept = keepInSight()
+        guard !kept.isEmpty, let chevron = UserDefaults.standard.object(forKey: key(chevron.autosaveName)) as? Double else { return }
+        // Where the window server has them: just after launch, AppKit still reports an item placed
+        // off screen as unplaced (measured: y −24 while the window list had it at x −3573).
+        let windows = ItemFinder.statusItems()
+        let frame = { (item: NSStatusItem) in item.button?.window.flatMap { window in windows.first { $0.window == CGWindowID(window.windowNumber) }?.frame } }
+        guard let dividerMaxX = frame(divider)?.maxX else { return }
+        for item in kept {
+            guard let itemMaxX = frame(item)?.maxX, MenuBarState.wouldHide(itemMaxX: itemMaxX, dividerMaxX: dividerMaxX) else { continue }
             item.isVisible = false
             UserDefaults.standard.set(MenuBarState.inSightPosition(chevron: chevron), forKey: key(item.autosaveName))
             item.isVisible = true
