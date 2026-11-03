@@ -114,6 +114,12 @@ skipped too.
 Snap the front window to a half, a third, two thirds, a corner, or the next display with a
 shortcut, or drag it to a screen edge. Coming from Rectangle? Import your shortcuts in one click.
 
+## Menu Bar: hide the icons you rarely need
+
+Turn it on in Settings → Menu Bar and a thin divider and a chevron join your menu bar. ⌘-drag the
+icons you rarely need to the left of the divider; click the chevron and they're gone, click again
+and they're back. They can hide again on their own after a few seconds, and stay hidden across restarts.
+
 ## Every key, one press away
 
 <img src="docs/images/keys.png" width="520" alt="The keys sheet for screenshots">

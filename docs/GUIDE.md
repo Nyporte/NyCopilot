@@ -53,7 +53,7 @@ signature, prints a warning, and loses those grants on every rebuild. Choose a c
 A setup guide opens on first launch (and from Settings → General → **Show Setup Guide…**):
 
 1. **What should NyCopilot do?** Check the features you want — translating, screenshots, Ask AI,
-   the inbox, clipboard history, window layouts — each with the key that starts it. The rest stay out
+   the inbox, clipboard history, window layouts, a tidy menu bar — each with the key that starts it. The rest stay out
    of the way (their shortcuts and menu items go) until you turn them on in Settings → General →
    Features.
 2. **Shortcuts.** Screenshot, Translate, Inbox, and Ask AI start with one press: **F1**, **F2**, **F3**, and
@@ -186,6 +186,27 @@ the sliders as you move them. The trackpad keeps its own settings.
   0.75, 1 (the default), 1.5, 2, 2.5, 3, and 3.5 times. To go faster without losing precision, raise the mouse's own DPI instead.
 - One app at a time: if BetterMouse, LinearMouse, or a similar app also sets the pointer's speed
   or scrolling, turn that off there; with Mos, quit it. The pane says when one is running.
+
+## Menu Bar
+
+Hide the menu bar icons you rarely need behind a divider, in **Settings → Menu Bar**. It's off
+until you turn on **Hide icons behind a divider** (or check **Tidy the menu bar** in the setup guide);
+then a thin divider and a chevron appear in the menu bar, left of NyCopilot's own icon.
+
+- **⌘-drag** the icons you want out of the way to the left of the divider, and the ones you always
+  want to see to the right of it. macOS's own icons (Wi-Fi, Control Center) can be dragged too.
+- **Click the chevron** to hide the icons left of the divider; click it again to show them. The
+  menu bar menu has the same as **Hide Menu Bar Icons** / **Show Hidden Icons**, and **Settings →
+  Menu Bar → Shortcut** can give it a key (there's none by default). Right-click the chevron for Settings.
+- **Hide again** hides shown icons on their own after 5, 10 (the default), or 30 seconds, or a
+  minute, or never. They wait while the pointer is on the menu bar.
+- Whether icons are hidden is kept when NyCopilot quits and comes back. Turn the switch off (or
+  Menu Bar off in General → Features) and the divider leaves and every icon shows.
+- Hiding works by making the divider very wide, which pushes the icons left of it past the edge of
+  the screen; their apps keep running. If the divider is ever right of the chevron, NyCopilot won't
+  hide (that would hide the chevron too) and says so: ⌘-drag the divider back left of the chevron.
+- On a Mac with a notch, icons that don't fit beside the notch stay out of sight even when shown, as
+  they do without NyCopilot. Hide more of them to make room for the rest.
 
 ## Screenshot & Pin
 

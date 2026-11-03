@@ -38,7 +38,8 @@ final class LanguageRenderTests: XCTestCase {
         let preferences = Preferences(core: core)
         let services = CopilotServices(core: core, preferences: preferences, hotKeys: HotKeyCenter(preferences: preferences))
         services.moduleList = { [("translate", L("Translate"), ""), ("capture", L("Screenshot & Pin"), ""), ("ask", L("Ask AI"), ""),
-                                 ("inbox", L("Inbox"), ""), ("clipboard", L("Clipboard"), ""), ("windows", L("Window Layouts"), "")] }
+                                 ("inbox", L("Inbox"), ""), ("clipboard", L("Clipboard"), ""), ("windows", L("Window Layouts"), ""),
+                                 ("menubar", L("Menu Bar"), "")] }
         return services
     }
 
@@ -51,7 +52,8 @@ final class LanguageRenderTests: XCTestCase {
             let panes: [SettingsPane] = [GeneralPane(services: services), ModelPane(services: services), CapturePane(services: services),
                                          TranslatePane(services: services, openHistory: {}), InboxPane(services: services),
                                          ClipboardPane(services: services), WindowsPane(services: services, actions: actions),
-                                         MousePane(services: services, connected: { ["ROG Keris II Origin"] })]
+                                         MousePane(services: services, connected: { ["ROG Keris II Origin"] }),
+                                         MenuBarPane(services: services)]
             for pane in panes {
                 let view = pane.view
                 pane.paneWillAppear()

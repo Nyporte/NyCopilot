@@ -13,6 +13,8 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         /// The shortcut shown beside it.
         let action: String?
         var fixedKeys: String? = nil
+        /// A module that also has its own switch (off until asked for) is checked only with both on.
+        var enabled: SettingKey? = nil
     }
 
     private static let goals: [Goal] = [
@@ -27,7 +29,10 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         Goal(module: "clipboard", title: L("Remember what I copy"),
              detail: L("Everything you copy, text and images, ready to paste again."), action: ClipboardShell.Action.open),
         Goal(module: "windows", title: L("Arrange windows"),
-             detail: L("Halves, thirds, and corners, by shortcut or by dragging."), action: nil, fixedKeys: "⌃⌥ ← →")
+             detail: L("Halves, thirds, and corners, by shortcut or by dragging."), action: nil, fixedKeys: "⌃⌥ ← →"),
+        Goal(module: "menubar", title: L("Tidy the menu bar"),
+             detail: L("Hide the menu bar icons you rarely need; one click shows them."), action: MenuBarShell.Action.toggle,
+             enabled: .menuBarEnabled)
     ]
 
     private let services: CopilotServices
@@ -89,7 +94,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
             root.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 32),
             root.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -32),
             root.topAnchor.constraint(equalTo: content.topAnchor, constant: 30),
-            root.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -20),
+            root.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -18),
             goals.widthAnchor.constraint(equalTo: root.widthAnchor),
             keyboard.widthAnchor.constraint(equalTo: root.widthAnchor),
             setup.widthAnchor.constraint(equalTo: root.widthAnchor),
@@ -116,7 +121,8 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         keys.widthAnchor.constraint(equalToConstant: 76).isActive = true
         let row = Design.hstack([box, text, Design.spacer(), keys], spacing: 10)
         row.alignment = .centerY
-        row.edgeInsets = NSEdgeInsets(top: 9, left: 12, bottom: 9, right: 14)
+        // Tight enough that every goal fits on a 13-inch laptop screen.
+        row.edgeInsets = NSEdgeInsets(top: 7, left: 12, bottom: 7, right: 14)
         goalRows.append((goal, box, keys))
         return row
     }
@@ -140,7 +146,8 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
         let loaded = Set(services.moduleList().map(\.id))
         for row in goalRows {
             row.box.superview?.isHidden = !loaded.contains(row.goal.module)
-            row.box.state = services.isModuleOn(row.goal.module) ? .on : .off
+            let enabled = row.goal.enabled.map { services.core.setting($0, default: false) } ?? true
+            row.box.state = services.isModuleOn(row.goal.module) && enabled ? .on : .off
         }
         let current = services.preferences.hasCompletedWelcome ? KeyScheme.current(services) : KeyScheme.recommended
         scheme.selectedSegment = KeyScheme.allCases.firstIndex(of: current) ?? 0
@@ -174,6 +181,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
     @objc private func finish() {
         for row in goalRows where row.box.superview?.isHidden == false {
             services.setModule(row.goal.module, row.box.state == .on)
+            if let enabled = row.goal.enabled { try? services.core.setSetting(enabled, row.box.state == .on) }
         }
         let failures = chosenScheme.apply(services)
         services.preferences.hasCompletedWelcome = true

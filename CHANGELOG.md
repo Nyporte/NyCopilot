@@ -5,6 +5,10 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
+- **Tidy the menu bar.** Settings → Menu Bar puts a thin divider and a chevron in the menu bar:
+  ⌘-drag the icons you rarely need left of the divider, and a click on the chevron hides them (or
+  shows them again). They can hide again on their own after a few seconds, stay hidden across
+  restarts, and can have a shortcut. It's off until you turn it on.
 - **Screen translation settles.** Holding F2 no longer takes every highlight down and reads the
   screen again, over and over: NyCopilot could see its own overlay in the screen it watched, when
   it had started before its menu bar icon was up. Pointing at a block shows its translation again.
