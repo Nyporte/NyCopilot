@@ -61,8 +61,9 @@ final class ClockItem: NSObject, NSMenuDelegate {
     private func tick() {
         let now = Date()
         let shown = ClockTick.shown(now: now, due: due)
-        if let due { Self.ticks.debug("tick due \(due.timeIntervalSince1970, format: .fixed(precision: 3)) late \(Int(now.timeIntervalSince(due) * 1000)) ms") }
         let text = face.text(at: shown)
+        let lateness = due.map { "\(Int(now.timeIntervalSince($0) * 1000)) ms after its moment" } ?? "read afresh"
+        Self.ticks.debug("\(text, privacy: .public), \(lateness, privacy: .public)")
         if item.button?.title != text {
             item.button?.attributedTitle = NSAttributedString(string: text, attributes: [.font: Self.font, .baselineOffset: 0.5])
         }
