@@ -172,22 +172,20 @@ final class ComposerPanel: NSWindowController, NSWindowDelegate, NSTextViewDeleg
         hideError()
         let anchor = axFrame.map(ScreenGeometry.appKit)
         let point = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) ?? NSScreen.main {
-            // Three tenths of the screen wide (at least 300 pt), starting where the cursor is so typed text lines up with it.
-            let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
-            let width = min(max(visible.width * 3 / 10, 300), visible.width)
-            cardWidth.constant = width
-            errorLabel.preferredMaxLayoutWidth = width - Self.horizontalPadding * 2 - 120
-            let x = max(visible.minX, min((anchor?.minX ?? point.x) - Self.horizontalPadding, visible.maxX - width))
-            // Just below the cursor's line, or just above it near the bottom of the screen. The top-left
-            // is fixed from here on; the card only grows downward and then scrolls.
-            let initial = Self.verticalPadding * 2 + Self.lineHeight
-            let below = (anchor?.minY ?? point.y) - 6
-            let top = below - initial * 2 >= visible.minY ? below : (anchor?.maxY ?? point.y) + 6 + initial
-            origin = NSPoint(x: x, y: min(top, visible.maxY))
-            floor = visible.minY
-            window.setFrame(NSRect(x: origin.x, y: origin.y - initial, width: width, height: initial), display: false)
-        }
+        // Three tenths of the screen wide (at least 300 pt), starting where the cursor is so typed text lines up with it.
+        let visible = ScreenGeometry.screen(at: point).visibleFrame.insetBy(dx: 12, dy: 12)
+        let width = min(max(visible.width * 3 / 10, 300), visible.width)
+        cardWidth.constant = width
+        errorLabel.preferredMaxLayoutWidth = width - Self.horizontalPadding * 2 - 120
+        let x = max(visible.minX, min((anchor?.minX ?? point.x) - Self.horizontalPadding, visible.maxX - width))
+        // Just below the cursor's line, or just above it near the bottom of the screen. The top-left
+        // is fixed from here on; the card only grows downward and then scrolls.
+        let initial = Self.verticalPadding * 2 + Self.lineHeight
+        let below = (anchor?.minY ?? point.y) - 6
+        let top = below - initial * 2 >= visible.minY ? below : (anchor?.maxY ?? point.y) + 6 + initial
+        origin = NSPoint(x: x, y: min(top, visible.maxY))
+        floor = visible.minY
+        window.setFrame(NSRect(x: origin.x, y: origin.y - initial, width: width, height: initial), display: false)
         wasOverflowing = false
         resizeToContent()
         NSApp.bringForward()

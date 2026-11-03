@@ -407,7 +407,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     private func place(near anchor: NSRect?) {
         let pointer = NSEvent.mouseLocation
         let reference = anchor ?? NSRect(origin: pointer, size: .zero)
-        let screen = NSScreen.screens.first { $0.frame.intersects(reference.insetBy(dx: -1, dy: -1)) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = ScreenGeometry.screen(at: NSPoint(x: reference.midX, y: reference.midY))
         let visible = screen.visibleFrame.insetBy(dx: 12, dy: 12)
         let height = panel.frame.height
         var x = (anchor?.minX ?? visible.midX - Self.width / 2)

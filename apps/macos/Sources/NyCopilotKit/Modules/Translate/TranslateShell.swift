@@ -174,7 +174,7 @@ final class TranslateShell: ModuleShell {
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
                 // Nothing set up yet: macOS translates it, and its Replace hands the result back.
-                if (error as? NyCore.Failure)?.code == "provider_not_configured", SystemTranslation.isAvailable {
+                if SystemTranslation.standsIn(for: error) {
                     composer.stopLoading()
                     SystemTranslation.present(text, near: composer.frame ?? .zero) { [weak self] translated in
                         Task { await self?.deliver(translated, id: id) }
@@ -220,7 +220,7 @@ final class TranslateShell: ModuleShell {
     /// The result is already in history. Paste once into the field the composer came from; if that
     /// can't be done safely, the translation goes on the clipboard with a short note.
     private func deliver(_ text: String, id: UUID) async {
-        let anchor = Self.anchor(for: target).map(Self.appKitRect)
+        let anchor = Self.anchor(for: target).map(ScreenGeometry.appKit)
         guard let target else {
             Diagnostics.note("paste", "copied instead: Accessibility is off")
             composer.hideForInsertion()
@@ -295,20 +295,9 @@ final class TranslateShell: ModuleShell {
         log.notice("composer anchored to \(source, privacy: .public) \(String(describing: anchor), privacy: .public)")
         return anchor
     }
-
-    private static func appKitRect(_ ax: CGRect) -> NSRect { ScreenGeometry.appKit(ax) }
 }
 
 extension NyCore {
-    /// Fire-and-forget: tells the core to discard a request's result if it is still running.
-    func cancel(requestID: String) { _ = try? call(.coreCancel, ["request_id": requestID]) }
-
-    /// The language you read in: screen translation's choice, or else the Mac's own language.
-    var readingLanguage: String {
-        let chosen: String = setting(.screenLanguage, default: "")
-        return chosen.isEmpty ? ScreenText.deviceLanguage : chosen
-    }
-
     /// The core's favorites, which Tab steps through in the composer, until someone changes them.
     static let coreFavorites = ["English", "Simplified Chinese", "Japanese"]
 

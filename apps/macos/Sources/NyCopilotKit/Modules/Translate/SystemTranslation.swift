@@ -13,6 +13,11 @@ enum SystemTranslation {
         return false
     }
 
+    /// A translation failed only because no service is set up, and macOS can translate it instead.
+    static func standsIn(for error: Error) -> Bool {
+        (error as? NyCore.Failure)?.code == "provider_not_configured" && isAvailable
+    }
+
     private static var host: NSPanel?
 
     /// Shows the panel beside `anchor` (AppKit coordinates). With `replace`, the panel offers to

@@ -69,7 +69,7 @@ final class AskShell: ModuleShell {
             var material = AskMaterial(source: await SourceContext.of(foreign), app: foreign)
             if let foreign, Accessibility.isTrusted, let selected = await InputTarget.selectedText(pid: foreign.processIdentifier) {
                 material.text = selected.text
-                material.anchor = selected.bounds.map(Self.appKitRect)
+                material.anchor = selected.bounds.map(ScreenGeometry.appKit)
                 if let target = try? await InputTarget.capture(pid: foreign.processIdentifier), target.hasSelection {
                     material.replaceable = target
                 }
@@ -165,6 +165,4 @@ final class AskShell: ModuleShell {
             }
         }
     }
-
-    static func appKitRect(_ rect: CGRect) -> NSRect { ScreenGeometry.appKit(rect) }
 }

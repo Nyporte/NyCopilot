@@ -29,7 +29,7 @@ final class SelectionTranslator {
         let pointer = NSEvent.mouseLocation
         let source = bounds.map(ScreenGeometry.appKit)
             ?? NSRect(x: pointer.x, y: pointer.y - 4, width: 1, height: 8)
-        let screen = NSScreen.screens.first { $0.frame.intersects(source) } ?? NSScreen.main ?? NSScreen.screens[0]
+        let screen = ScreenGeometry.screen(at: NSPoint(x: source.midX, y: source.midY))
         let language = Self.language(for: text, core: services.core)
         card.present(language: services.core.nativeName(of: language), beside: source, on: screen, hint: L("⌘C copy   esc close"))
         card.showWaiting()
@@ -78,7 +78,7 @@ final class SelectionTranslator {
             card.show(result.text)
         } catch {
             guard !Task.isCancelled, card.isVisible else { return }
-            if (error as? NyCore.Failure)?.code == "provider_not_configured", SystemTranslation.isAvailable {
+            if SystemTranslation.standsIn(for: error) {
                 let frame = card.frame
                 dismiss()
                 SystemTranslation.present(text, near: frame)

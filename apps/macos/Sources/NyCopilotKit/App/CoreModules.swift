@@ -14,6 +14,9 @@ extension NyCore {
         return Set((try? call(.coreInfo, as: Info.self))?.modules ?? [])
     }
 
+    /// Fire-and-forget: tells the core to discard a request's result if it is still running.
+    func cancel(requestID: String) { _ = try? call(.coreCancel, ["request_id": requestID]) }
+
     // MARK: Inbox
 
     /// Notes waiting.
@@ -65,6 +68,13 @@ extension NyCore {
         let targetLanguage: String
         let engine: String
         let notice: String?
+    }
+
+    /// The language you read in: screen translation's choice, or else the Mac's own language.
+    /// Screen translation, translated selections, and Ask AI's answers use it.
+    var readingLanguage: String {
+        let chosen: String = setting(.screenLanguage, default: "")
+        return chosen.isEmpty ? ScreenText.deviceLanguage : chosen
     }
 
     /// Translates with the first engine that succeeds; `keys` are the engines' secrets.
