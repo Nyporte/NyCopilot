@@ -1,6 +1,9 @@
 # Menu Bar, stage 2: a bar that shows the hidden icons
 
-Status: **plan only**, not built. Stage 1 (the arrow, `Modules/MenuBar`) ships first.
+Status: **built** (`HiddenItemsBar`, `ItemFinder` in `Modules/MenuBar`), behind
+`menubar.show_in_bar` (off). The plan below is kept with what measuring changed in it; see
+**Measured** at the end. Checked on macOS 14 with one external display only: not yet on a notched
+MacBook, at 120 Hz, or on macOS 15+.
 
 ## Why
 
@@ -15,7 +18,7 @@ down under the menu bar and shows them would make them reachable on any display.
 Clicking the chevron (or the shortcut) while **Show hidden icons in a bar** is on opens a panel
 just under the menu bar, right-aligned under the chevron, with the hidden icons in a row as they
 look in the menu bar. Clicking one opens its menu as if it had been clicked in the menu bar. The bar
-closes on Esc, on a click elsewhere, or after the item's menu closes.
+closes on Esc, on a click elsewhere, or when an icon is picked.
 
 ## Approach
 
@@ -24,15 +27,24 @@ closes on Esc, on a click elsewhere, or after the item's menu closes.
    but (without Screen Recording) no titles. Hidden ones are the ones whose frame lies left of the
    divider's window, so off screen while hidden. Order them by x. Name each by its owner
    (`kCGWindowOwnerName`, `kCGWindowOwnerPID`) for accessibility labels.
-2. **Draw them.** While the items are off screen there are no pixels to capture, so the bar works
-   in two steps, out of sight: show the icons (divider back to a line), capture each item's window
-   with ScreenCaptureKit (`SCScreenshotManager.captureImage` with an `SCContentFilter` for that one
-   `SCWindow`, which NyCopilot's Screen Recording permission already covers), then hide them again
-   and show the images in the bar. The swap takes one frame each way; it can be hidden from view
-   under the bar's own panel, the way F1 freezes the screen before acting. Captures are cached per
-   item and refreshed each time the bar opens (icons change: a battery level, a sync badge).
-   Without Screen Recording, the bar falls back to app icons (`NSRunningApplication.icon`) and names.
-3. **Forward clicks.** A click on an image has to reach the real item, which is off screen:
+2. **Draw them.** ~~Show the icons out of sight, capture, hide again.~~ Not needed (measured):
+   ScreenCaptureKit captures a window by itself wherever it is, off screen included.
+   `SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)` lists the hidden
+   items' windows, and `SCScreenshotManager.captureImage` with
+   `SCContentFilter(desktopIndependentWindow:)` returns each icon as drawn for the menu bar (white
+   on a dark menu bar), so nothing moves. Taken each time the bar opens (icons change: a battery
+   level, a sync badge); the bar shows once all are in, under the menu bar's appearance. Without
+   Screen Recording, the bar falls back to app icons (`NSRunningApplication.icon`) and names, and
+   never asks for the permission itself.
+3. **Forward clicks.** A click on an image has to reach the real item, which is off screen.
+   Measured: pressed off screen, an item opens its menu off screen too (Tailscale's at x −3396), so
+   a pick first shows the icons in the menu bar (stage 1's show, kept as the state), waits for the
+   divider's window to move into place (`NSWindow.didMoveNotification`, 130–220 ms after showing,
+   every time after all other icons were on screen; nothing else marks it: AX `kAXMoved` isn't
+   sent for menu bar items), checks the item is now on a screen, and presses it there. Its menu
+   opens under it as usual. The icons stay while the app has a menu open and hide when
+   `AXMenuClosed` arrives; an icon that opens no menu within a second leaves them to hide as after
+   any other show. The original plan:
    - Preferred: **Accessibility.** Each app's status items are `AXMenuBarItem`s under the app's
      `AXExtrasMenuBar` attribute (`kAXExtrasMenuBarAttribute`); `AXUIElementPerformAction(item,
      kAXPressAction)` opens its menu without moving anything. NyCopilot already has Accessibility.
@@ -80,6 +92,31 @@ closes on Esc, on a click elsewhere, or after the item's menu closes.
   separate divider was tried: macOS cut the item to 5,016 pt, ending where NyCopilot's icon began,
   and drew none of it (`kCGWindowIsOnscreen` false), arrow included, so nothing was left to click.
   A status item is shown only if all of it fits, which is why the divider is a separate item.
+
+## Measured (macOS 14.8, 1920×1080 external display, 2026-11-03)
+
+- Window list: hidden items keep their window numbers, sit at x −3576…−3354 with
+  `kCGWindowIsOnscreen` false; the divider is cut to 5,016 pt and ends where the arrow starts. A
+  hidden Control Center window sits right of it, off screen: hidden items are found from the
+  divider's left edge, on its menu bar's top edge.
+- AX: `AXExtrasMenuBar` children report frames off screen too, 8 pt inside the window (padding;
+  Claude's fills it). Control Center lists Clock first, so order is not x order; it has five
+  windows for four items. Matching is by the AX frame's centre inside the window.
+- Capture off screen: lookup 54 ms (216 windows), each capture 4–85 ms. `CGWindowListCreateImage`
+  returned nil for the same windows.
+- Press (shown): Control Center (Sound), Clash Verge and Tailscale menus open under the item;
+  WeChat opens its main window, as a click does. While a menu tracks, `AXPress` doesn't return
+  (default timeout 1.5 s; −25204), so it runs off the main thread with a 0.25 s timeout and that
+  error counts as pressed. Clash Verge: `AXPress` opens its menu, a synthesized left click its
+  dashboard window. `AXMenuOpened` arrived 32 ms after the press; `AXMenuClosed` when it closed.
+- Built, in the real app: the bar opens 66–224 ms after the click (captures of 4 icons), right-aligned
+  under the arrow, with nothing in the menu bar moving. Picking Clash Verge or Tailscale opened its
+  menu 140–180 ms later under its icon; the icons hid ~0.1 s after the menu closed. Esc, a click
+  elsewhere, and a second click on the arrow close the bar. (The arrow click first took the key
+  from the bar, closing it, and then opened it again; a close with the pointer on the arrow now
+  counts as that click.)
+- Not seen yet: an app that ignores `AXPress` (the synthesized click is the fallback for one with
+  no AX item or an AX error), the notch, and the macOS 15 Screen Recording reminder.
 
 ## How to check it when built
 

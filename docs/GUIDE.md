@@ -200,6 +200,15 @@ an arrow appears in the menu bar, left of NyCopilot's own icon.
   Shortcut** can give it a key (there's none by default). Right-click the arrow for Settings.
 - **Hide again** hides shown icons on their own after 5, 10 (the default), or 30 seconds, or a
   minute, or never. They wait while the pointer is on the menu bar.
+- **Show hidden icons in a bar** (off by default): clicking the arrow (or the shortcut, or **Show
+  Hidden Icons**) opens a row of the hidden icons just under the menu bar, under the arrow, instead
+  of showing them in it. Click one to open its menu: the icons show in the menu bar for as long as
+  that menu is open, so it opens under its icon as usual, and hide again when it closes (an icon
+  that opens a window instead hides as after any other show). Esc or a click elsewhere closes the
+  bar. Right-click the arrow for **Show Icons in the Menu Bar**, to ⌘-drag them. The pictures are
+  taken where the icons are, out of sight, so nothing in the menu bar moves; they need Screen
+  Recording, without which each app's icon stands in. If an icon still doesn't fit in the menu bar
+  when shown (beside a notch, say), a toast says it couldn't be reached.
 - Whether icons are hidden is kept when NyCopilot quits and comes back. Turn the switch off (or
   Menu Bar off in General → Features) and the arrow leaves and every icon shows.
 - How it works: shown, the arrow (▸) is itself the divider. Hiding brings a second arrow (◂) in

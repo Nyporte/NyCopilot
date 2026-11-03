@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "Coloca uma seta na barra de menus.";
 "Couldn’t hide the icons" = "Não foi possível ocultar os ícones";
 "⌘-drag the arrow a little, then try again." = "Arraste a seta um pouco com ⌘ e tente de novo.";
+"Show hidden icons in a bar" = "Mostrar ícones ocultos em uma barra";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "Clicar na seta os mostra em uma fileira abaixo da barra de menus; clicar em um abre o menu dele. As imagens precisam de Gravação de Tela.";
+"Show Icons in the Menu Bar" = "Mostrar Ícones na Barra de Menus";
+"No icons are hidden" = "Nenhum ícone está oculto";
+"Couldn’t reach that icon" = "Não foi possível abrir esse ícone";
+"It didn’t fit in the menu bar." = "Ele não coube na barra de menus.";
+"Hidden menu bar icons" = "Ícones ocultos da barra de menus";

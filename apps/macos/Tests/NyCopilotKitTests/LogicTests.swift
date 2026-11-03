@@ -457,6 +457,99 @@ final class LogicTests: XCTestCase {
 
         try relaunched.setSetting(.menuBarCollapsed, false)
         XCTAssertEqual(MenuBarState.read(relaunched, moduleOn: true).dividerLength, MenuBarState.shownLength)
+
+        XCTAssertFalse(MenuBarState.read(relaunched, moduleOn: true).showInBar, "the bar is off until asked for")
+        try relaunched.setSetting(.menuBarShowInBar, true)
+        XCTAssertTrue(MenuBarState.read(relaunched, moduleOn: true).showInBar)
+    }
+
+    /// The arrow opens the bar only while icons are hidden and the bar is asked for; shown, it hides.
+    func testMenuBarArrowOpensTheBarOnlyWhileHidden() {
+        var state = MenuBarState(isOn: true, collapsed: true, collapseAfter: 10, showInBar: true)
+        XCTAssertTrue(state.opensBar)
+        state.collapsed = false
+        XCTAssertFalse(state.opensBar, "shown: a click hides them")
+        state.collapsed = true
+        state.showInBar = false
+        XCTAssertFalse(state.opensBar, "shows them in the menu bar, as before")
+        state.showInBar = true
+        state.isOn = false
+        XCTAssertFalse(state.opensBar)
+    }
+
+    /// One status window as the window list gives it.
+    private func statusWindow(_ number: Int, _ owner: String, pid: Int, x: CGFloat, y: CGFloat = 0, width: CGFloat,
+                              height: CGFloat = 24, layer: Int = 25, onScreen: Bool = false) -> [String: Any] {
+        [kCGWindowNumber as String: number, kCGWindowOwnerName as String: owner, kCGWindowOwnerPID as String: pid,
+         kCGWindowLayer as String: layer, kCGWindowIsOnscreen as String: onScreen,
+         kCGWindowBounds as String: ["X": x, "Y": y, "Width": width, "Height": height]]
+    }
+
+    /// The window list measured with icons hidden on a 1920-wide display (macOS 14): the divider
+    /// cut to 5,016 pt ending at the arrow, hidden icons left of it, off screen.
+    private var hiddenMenuBar: [[String: Any]] {
+        [statusWindow(35, "Control Center", pid: 465, x: -3576, width: 38),
+         statusWindow(75138, "WeChat", pid: 69596, x: -3504, width: 38),
+         statusWindow(91246, "Lark Helper", pid: 56366, x: -3538, width: 34),
+         statusWindow(45888, "Claude", pid: 44042, x: -3466, width: 40),
+         statusWindow(53, "Tailscale", pid: 646, x: -3392, width: 38),
+         statusWindow(91210, "NyCopilot", pid: 56239, x: -3354, width: 5016),
+         statusWindow(90834, "AccessibilityVisualsAgent", pid: 54333, x: 88, y: 768, width: 224, height: 224),
+         statusWindow(2104, "Control Center", pid: 465, x: 1435, width: 39),
+         statusWindow(91209, "NyCopilot", pid: 56239, x: 1662, width: 26, onScreen: true),
+         statusWindow(91207, "NyCopilot", pid: 56239, x: 1688, width: 34, onScreen: true),
+         statusWindow(34, "Control Center", pid: 465, x: 1722, width: 76, onScreen: true),
+         statusWindow(1, "Finder", pid: 400, x: 0, width: 1920, layer: 0, onScreen: true)]
+    }
+
+    /// Hidden icons are the status windows left of the divider on its menu bar, in order; the
+    /// divider, the arrow, icons right of it, other screens' menu bars, and other windows aren't.
+    func testMenuBarFindsTheIconsHiddenLeftOfTheDivider() {
+        let items = hiddenMenuBar.compactMap(ItemFinder.Item.init)
+        XCTAssertEqual(items.count, 11, "the Finder window isn't a status item")
+        let hidden = ItemFinder.hidden(in: items, divider: 91210, own: 56239)
+        XCTAssertEqual(hidden.map(\.owner), ["Control Center", "Lark Helper", "WeChat", "Claude", "Tailscale"])
+        XCTAssertEqual(hidden.first?.frame, CGRect(x: -3576, y: 0, width: 38, height: 24))
+        XCTAssertFalse(hidden.contains { $0.onScreen })
+
+        XCTAssertEqual(ItemFinder.hidden(in: items, divider: 999, own: 56239), [], "no divider, nothing to tell apart")
+        XCTAssertEqual(ItemFinder.hidden(in: items, divider: 91209, own: 56239).count, 6,
+                       "measured from the arrow instead, the hidden Control Center window right of the divider counts too")
+
+        // A second display above this one has its own menu bar, 1,080 pt higher.
+        let above = items + [ItemFinder.Item(window: 7, pid: 900, owner: "Other", frame: CGRect(x: -100, y: -1080, width: 30, height: 24), onScreen: true)]
+        XCTAssertFalse(ItemFinder.hidden(in: above, divider: 91210, own: 56239).contains { $0.owner == "Other" })
+    }
+
+    /// An icon's Accessibility item is the one whose frame sits inside its window (8 pt in, for
+    /// the padding), whatever order the app lists them in; one icon and one item go together
+    /// anyway; otherwise none is guessed.
+    func testMenuBarMatchesIconsToTheirAccessibilityItems() {
+        let controlCenter = ItemFinder.Item(window: 35, pid: 465, owner: "Control Center", frame: CGRect(x: -3576, y: 0, width: 38, height: 24), onScreen: false)
+        // As measured: Clock, Control Center, Battery, Sound; five windows for four items.
+        let axFrames: [CGRect?] = [CGRect(x: 1884, y: 1, width: 28, height: 22), CGRect(x: 1846, y: 1, width: 26, height: 22),
+                                   CGRect(x: 1730, y: 1, width: 59, height: 22), CGRect(x: -3568, y: 1, width: 22, height: 22)]
+        XCTAssertEqual(ItemFinder.match(controlCenter, appIcons: 5, axFrames: axFrames), 3)
+        XCTAssertNil(ItemFinder.match(controlCenter, appIcons: 5, axFrames: Array(axFrames.prefix(3))), "not listed: no guessing by order")
+
+        // Claude's item is as big as its window.
+        let claude = ItemFinder.Item(window: 45888, pid: 44042, owner: "Claude", frame: CGRect(x: -3466, y: 0, width: 40, height: 24), onScreen: false)
+        XCTAssertEqual(ItemFinder.match(claude, appIcons: 1, axFrames: [CGRect(x: -3466, y: 0, width: 40, height: 24)]), 0)
+        XCTAssertEqual(ItemFinder.match(claude, appIcons: 1, axFrames: [nil]), 0, "one icon, one item")
+        XCTAssertEqual(ItemFinder.match(claude, appIcons: 1, axFrames: [CGRect(x: 1550, y: 1, width: 40, height: 22)]), 0, "a stale frame")
+        XCTAssertNil(ItemFinder.match(claude, appIcons: 2, axFrames: [CGRect(x: 1550, y: 1, width: 40, height: 22)]))
+        XCTAssertNil(ItemFinder.match(claude, appIcons: 1, axFrames: []), "no AX items: the click is synthesized")
+    }
+
+    /// The bar hangs right-aligned under the arrow, below the menu bar, and stays on its screen.
+    func testHiddenItemsBarSitsUnderTheArrow() {
+        let arrow = NSRect(x: 1662, y: 1056, width: 26, height: 24)
+        let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        XCTAssertEqual(HiddenItemsBar.frame(size: NSSize(width: 200, height: 32), under: arrow, on: screen),
+                       NSRect(x: 1488, y: 1020, width: 200, height: 32))
+        XCTAssertEqual(HiddenItemsBar.frame(size: NSSize(width: 200, height: 32), under: NSRect(x: 100, y: 1056, width: 26, height: 24), on: screen).minX, 4,
+                       "kept on screen")
+        XCTAssertEqual(HiddenItemsBar.frame(size: NSSize(width: 200, height: 32), under: NSRect(x: 1910, y: 1056, width: 26, height: 24), on: screen).maxX, 1916)
     }
 
     /// The chevron comes back right beside the divider, and hiding with it anywhere left of the

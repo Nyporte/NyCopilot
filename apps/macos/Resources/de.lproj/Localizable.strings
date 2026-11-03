@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "Setzt einen Pfeil in die Menüleiste.";
 "Couldn’t hide the icons" = "Symbole konnten nicht ausgeblendet werden";
 "⌘-drag the arrow a little, then try again." = "Ziehe den Pfeil mit ⌘ ein wenig und versuche es erneut.";
+"Show hidden icons in a bar" = "Ausgeblendete Symbole in einer Leiste zeigen";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "Ein Klick auf den Pfeil zeigt sie stattdessen in einer Reihe unter der Menüleiste; ein Klick auf eines öffnet sein Menü. Ihre Bilder brauchen die Bildschirmaufnahme.";
+"Show Icons in the Menu Bar" = "Symbole in der Menüleiste zeigen";
+"No icons are hidden" = "Keine Symbole ausgeblendet";
+"Couldn’t reach that icon" = "Dieses Symbol ließ sich nicht öffnen";
+"It didn’t fit in the menu bar." = "Es passte nicht in die Menüleiste.";
+"Hidden menu bar icons" = "Ausgeblendete Menüleistensymbole";

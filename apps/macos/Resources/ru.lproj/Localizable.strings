@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "Добавляет в строку меню стрелку.";
 "Couldn’t hide the icons" = "Не удалось скрыть значки";
 "⌘-drag the arrow a little, then try again." = "Немного сдвиньте стрелку с ⌘ и попробуйте снова.";
+"Show hidden icons in a bar" = "Показывать скрытые значки на панели";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "Нажатие на стрелку покажет их в ряд под строкой меню; нажатие на значок откроет его меню. Для их изображений нужна запись экрана.";
+"Show Icons in the Menu Bar" = "Показать значки в строке меню";
+"No icons are hidden" = "Скрытых значков нет";
+"Couldn’t reach that icon" = "Не удалось открыть этот значок";
+"It didn’t fit in the menu bar." = "Он не поместился в строке меню.";
+"Hidden menu bar icons" = "Скрытые значки строки меню";
