@@ -1,35 +1,9 @@
 import AppKit
 @preconcurrency import ScreenCaptureKit
 
-/// One display frozen at the moment a capture starts: its pixels and the windows on it, so the
-/// selection UI works on a still image while the real screen keeps running underneath.
-/// Immutable once frozen, so it can be handed between tasks.
-struct FrozenScreen: @unchecked Sendable {
-    let screen: NSScreen
-    let image: CGImage
-    /// On-screen windows, front to back, in this screen's flipped view coordinates (top-left origin).
-    let windows: [Window]
-
-    var scale: CGFloat { CGFloat(image.width) / screen.frame.width }
-
-    /// A window's visible area and the app it belongs to, for finding the elements inside it.
-    struct Window {
-        let rect: CGRect
-        let pid: pid_t
-    }
-}
-
-/// Screen Recording permission and whole-display capture.
+/// Whole-display capture through ScreenCaptureKit, for screenshots, scrolling capture, GIF
+/// recording, and screen translation. Needs Screen Recording (see SystemAccess).
 enum ScreenGrabber {
-    static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
-
-    /// Shows the system prompt the first time; afterwards macOS only offers System Settings.
-    static func requestPermission() {
-        if !CGRequestScreenCaptureAccess() {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-        }
-    }
-
     /// Every display, captured as close to the same instant as possible. With `hidingOwnWindows`,
     /// NyCopilot's windows (pins included) are left out of both the pixels and window detection.
     @MainActor
@@ -37,16 +11,18 @@ enum ScreenGrabber {
         let started = Date()
         let windows = visibleWindows(includingOwn: !hidingOwnWindows)
         // The display list barely changes, so the lookup made at launch (or after the last capture)
-        // usually serves; NyCopilot's windows are left out by app, which needs no fresh window list.
-        let content = try await shareableContent(for: NSScreen.screens.compactMap(displayID), hidingOwnWindows: hidingOwnWindows)
+        // usually serves, and one lookup serves every display.
+        let screens = NSScreen.screens
+        _ = try await shareableContent(for: screens.compactMap(displayID), hidingOwnWindows: hidingOwnWindows)
+        var filters: [SCContentFilter?] = []
+        for screen in screens { filters.append(try? await filter(for: screen, excludingOwnWindows: hidingOwnWindows)) }
         let looked = Date()
         // Every display at once rather than one after another.
-        let screens = NSScreen.screens, lookup = content
         let images = await withTaskGroup(of: (Int, CGImage?).self) { group in
             for (index, screen) in screens.enumerated() {
-                let target = (id: displayID(screen), size: CGSize(width: screen.frame.width * screen.backingScaleFactor,
-                                                                   height: screen.frame.height * screen.backingScaleFactor))
-                group.addTask { (index, try? await capture(target.id, pixels: target.size, hidingOwnWindows: hidingOwnWindows, content: lookup)) }
+                let filter = filters[index], size = CGSize(width: screen.frame.width * screen.backingScaleFactor,
+                                                           height: screen.frame.height * screen.backingScaleFactor)
+                group.addTask { (index, try? await capture(filter, pixels: size)) }
             }
             var images = [CGImage?](repeating: nil, count: screens.count)
             for await (index, image) in group { images[index] = image }
@@ -73,7 +49,7 @@ enum ScreenGrabber {
     /// Looks up the displays ahead of the first capture, so pressing the shortcut doesn't wait for it.
     @MainActor
     static func warmUp() {
-        guard hasPermission else { return }
+        guard ScreenRecording.isGranted else { return }
         Task { _ = try? await shareableContent(reusingRecent: false) }
     }
 
@@ -95,7 +71,7 @@ enum ScreenGrabber {
 
     /// A lookup for capturing these displays: the recent one if it will do, else a fresh one.
     @MainActor
-    static func shareableContent(for displays: [CGDirectDisplayID], hidingOwnWindows: Bool = true) async throws -> SCShareableContent {
+    private static func shareableContent(for displays: [CGDirectDisplayID], hidingOwnWindows: Bool) async throws -> SCShareableContent {
         let recent = try await shareableContent(reusingRecent: true)
         return serves(displays: recent.displays.map(\.displayID), applications: recent.applications.map(\.processID),
                       for: displays, hidingOwnWindows: hidingOwnWindows)
@@ -111,44 +87,38 @@ enum ScreenGrabber {
         displays.allSatisfy(known.contains) && (!hidingOwnWindows || applications.contains(own))
     }
 
-    /// NyCopilot as a lookup lists it, for a filter that leaves its windows out.
-    static func ownApplications(in content: SCShareableContent) -> [SCRunningApplication] {
-        content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+    /// All of `screen`'s display, without NyCopilot's own windows (pins included) when
+    /// `excludingOwnWindows`. They're left out by app rather than by window, so windows opened since
+    /// the lookup are left out too. A lookup that doesn't know the display is made afresh.
+    @MainActor
+    static func filter(for screen: NSScreen, excludingOwnWindows: Bool) async throws -> SCContentFilter {
+        guard let id = displayID(screen) else { throw Failure.captureFailed }
+        let content = try await shareableContent(for: [id], hidingOwnWindows: excludingOwnWindows)
+        guard let display = content.displays.first(where: { $0.displayID == id }) else { throw Failure.captureFailed }
+        let own = excludingOwnWindows ? content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier } : []
+        return SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
     }
 
     /// One display as it is now, without any NyCopilot window, `pixelsPerPoint` pixels per point:
     /// small for spotting changes, full for reading text. The cursor is left out.
     @MainActor
-    static func snapshot(of screen: NSScreen, pixelsPerPoint: CGFloat) async throws -> CGImage? {
-        guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
-        let width = Int((screen.frame.width * pixelsPerPoint).rounded()), height = Int((screen.frame.height * pixelsPerPoint).rounded())
-        let content = try await shareableContent(for: [id])
-        guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
-        // By app rather than by window, so windows opened since the lookup are left out too.
-        let own = ownApplications(in: content)
+    static func snapshot(of screen: NSScreen, pixelsPerPoint: CGFloat) async throws -> CGImage {
         let configuration = SCStreamConfiguration()
-        configuration.width = width
-        configuration.height = height
+        configuration.width = Int((screen.frame.width * pixelsPerPoint).rounded())
+        configuration.height = Int((screen.frame.height * pixelsPerPoint).rounded())
         configuration.showsCursor = false
-        return try await SCScreenshotManager.captureImage(
-            contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
+        let filter = try await filter(for: screen, excludingOwnWindows: true)
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }
 
-    private static func capture(_ id: CGDirectDisplayID?, pixels: CGSize, hidingOwnWindows: Bool,
-                                content: SCShareableContent) async throws -> CGImage? {
-        guard let id else { return nil }
-        do {
-            guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
-            // By app rather than by window, so pins opened since the lookup are left out too.
-            let own = hidingOwnWindows ? ownApplications(in: content) : []
-            let configuration = SCStreamConfiguration()
-            configuration.width = Int(pixels.width)
-            configuration.height = Int(pixels.height)
-            configuration.showsCursor = false
-            configuration.captureResolution = .best
-            return try await SCScreenshotManager.captureImage(
-                contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
-        }
+    private static func capture(_ filter: SCContentFilter?, pixels: CGSize) async throws -> CGImage? {
+        guard let filter else { return nil }
+        let configuration = SCStreamConfiguration()
+        configuration.width = Int(pixels.width)
+        configuration.height = Int(pixels.height)
+        configuration.showsCursor = false
+        configuration.captureResolution = .best
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }
 
     /// Normal windows, menus, menu bar items, and the Dock, front to back, in global top-left

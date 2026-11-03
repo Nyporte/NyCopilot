@@ -100,8 +100,8 @@ final class CaptureShell: ModuleShell {
         if let recording, recording.isActive { recording.shortcutPressed(); return }
         // A scrolling capture owns its keys and stream until it's finished or cancelled.
         guard session == nil, scrolling == nil, !isStarting else { return }
-        guard ScreenGrabber.hasPermission else {
-            ScreenGrabber.requestPermission()
+        guard ScreenRecording.isGranted else {
+            ScreenRecording.requestAccess()
             services.toast.show(L("Allow Screen Recording to capture"), detail: L("Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording, then press the shortcut again."), style: .warning)
             return
         }

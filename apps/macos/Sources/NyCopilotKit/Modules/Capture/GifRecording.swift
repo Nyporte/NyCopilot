@@ -104,13 +104,8 @@ final class GifRecording {
     }
 
     private func startStream() async throws {
-        guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            throw ScreenGrabber.Failure.captureFailed
-        }
-        let content = try await ScreenGrabber.shareableContent(for: [displayID])
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
         // The outline, the bar, and pins stay out of the recording.
-        let own = ScreenGrabber.ownApplications(in: content)
+        let filter = try await ScreenGrabber.filter(for: screen, excludingOwnWindows: true)
         let origin = CaptureSession.globalOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = region.offsetBy(dx: -origin.x, dy: -origin.y)
@@ -124,8 +119,7 @@ final class GifRecording {
         frames.begin()
         // macOS ended the stream itself: keep what was recorded rather than wait on a dead stream.
         let stream = try await CaptureStreams.shared.start(
-            "GIF recording", filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-            configuration: configuration, output: frames, queue: frames.queue) { [weak self] in self?.stop() }
+            "GIF recording", filter: filter, configuration: configuration, output: frames, queue: frames.queue) { [weak self] in self?.stop() }
         if isOver { await CaptureStreams.shared.stop(stream); return }
         self.stream = stream
     }

@@ -93,14 +93,9 @@ final class ScrollCapture {
     }
 
     private func stream(_ watched: CGRect, size: (width: Int, height: Int), into frames: FrameStitcher) async throws {
-        guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            throw ScreenGrabber.Failure.captureFailed
-        }
-        // F1 just looked this up; asking again would cost a noticeable moment.
-        let content = try await ScreenGrabber.shareableContent(for: [displayID])
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
-        // NyCopilot's own windows — the outline, the panel, pins — never appear in the image.
-        let own = ScreenGrabber.ownApplications(in: content)
+        // NyCopilot's own windows — the outline, the panel, pins — never appear in the image. F1 just
+        // looked the display up, so this doesn't ask again.
+        let filter = try await ScreenGrabber.filter(for: screen, excludingOwnWindows: true)
         let origin = CaptureSession.globalOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = watched.offsetBy(dx: -origin.x, dy: -origin.y)
@@ -112,8 +107,7 @@ final class ScrollCapture {
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         configuration.queueDepth = 4
         let stream = try await CaptureStreams.shared.start(
-            "scrolling capture", filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-            configuration: configuration, output: frames, queue: frames.queue) { [weak self] in
+            "scrolling capture", filter: filter, configuration: configuration, output: frames, queue: frames.queue) { [weak self] in
             // macOS ended it: keep what was stitched so far.
             self?.finish(.copy)
         }

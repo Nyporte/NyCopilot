@@ -45,8 +45,8 @@ final class ScreenTranslator {
 
     func start() {
         guard !isActive else { return }
-        guard ScreenGrabber.hasPermission else {
-            ScreenGrabber.requestPermission()
+        guard ScreenRecording.isGranted else {
+            ScreenRecording.requestAccess()
             services.toast.show(L("Allow Screen Recording to translate the screen"),
                                 detail: L("Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording."), style: .warning)
             return

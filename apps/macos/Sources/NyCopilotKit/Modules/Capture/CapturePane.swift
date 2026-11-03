@@ -89,7 +89,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
     }
 
     override func paneWillAppear() {
-        let granted = ScreenGrabber.hasPermission
+        let granted = ScreenRecording.isGranted
         permissionBadge.set(granted ? L("Allowed") : L("Not allowed"), color: granted ? .systemGreen : .systemOrange)
         permissionButton.isHidden = granted
         refreshFolder()
@@ -112,7 +112,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         folderLabel.toolTip = chosen.isEmpty ? nil : chosen
     }
 
-    @objc private func requestPermission() { ScreenGrabber.requestPermission() }
+    @objc private func requestPermission() { ScreenRecording.requestAccess() }
 
     @objc private func chooseFolder() {
         guard let window = view.window else { return }
