@@ -50,7 +50,7 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `settings.set` | `{key, value}` | `{}`; type must match the default |
 | `settings.reset` | `{key}` | `{}` |
 | `settings.list` | `{prefix?}` | `{key: value}` including defaults |
-| `records.list` | `{collection, before?, limit?=100, search?}` | `{records: [Record], next?}` newest first |
+| `records.list` | `{collection, before?, limit?=100, search?}` | `{records: [Record], next?}` newest first; `search` is a literal substring that ignores case in any script (Привет finds ПРИВЕТ, café finds CAFÉ) |
 | `records.get` | `{id}` | `Record` |
 | `records.delete` | `{id}` | `{deleted: bool}` (tombstone; deleting nothing changes nothing, including the revision) |
 | `records.clear` | `{collection}` | `{deleted: count}` (an empty collection leaves the revision and emits no event) |
@@ -80,14 +80,14 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `mouse.pointer` | `{system_acceleration?}` | `{enabled, resolution, acceleration, linear}` for every mouse: `resolution` (counts per inch, 10–1995) is 400 divided by `mouse.speed`, whatever resolution a mouse claims; `acceleration` is `mouse.acceleration`, or the system's while following it. At 0, `linear` is `true`, `resolution` is 400, and `acceleration` is `mouse.speed`: macOS then moves the pointer exactly that many points per count (measured on macOS 14), where a resolution would only drop counts. A missing `system_acceleration` defaults to 0.6875 |
 
 | `capture.palette` | — | `["#RRGGBB"]` annotation colors |
-| `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system |
+| `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system. `{n}` is `capture.next_number`, which then counts up by one; a pattern without `{n}` leaves it alone. Unique names are still the client's job |
 | `capture.record` | `{region, display?, width, height, path?}` | `{record}` in `capture.history` |
 | `capture.recent_regions` | `{limit?=20}` | distinct `[{x, y, w, h}]`, newest first |
 | `clipboard.add` | `{text, app?, bundle_id?}` or `{image, digest, width, height, app?, bundle_id?}` | `{record}` in `clipboard.items` — an earlier entry with the same text (or an image with the same `digest`) is removed, so it moves to the top — then the retention settings are applied; or `{record: null, skipped}` with `skipped` one of `off`, `ignored_app`, `empty`, `too_large` (over 256 KiB), `pinned` (already pinned). `image` is a client-kept file named `<uuid>.png` |
 | `clipboard.pin` | `{id}` | `{record}` moved to `clipboard.pinned` (at most 100), which is never pruned |
 | `clipboard.unpin` | `{id}` | `{record}` moved back to the top of `clipboard.items` |
 | `clipboard.prune` | — | `{deleted}`: entries beyond `clipboard.max_items` or older than `clipboard.keep_days` are tombstoned |
-| `inbox.add` | `{text?, image?, app?, title?, url?, source?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png`; `app`, `title` (the window's), and `url` (page or document) record where it came from, each one line; `source` is `typed` (default), `selection`, or `screenshot` |
+| `inbox.add` | `{text?, image?, app?, title?, url?, source?, created?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png` (or `.gif`); `created` (Unix ms, positive and not in the future) keeps an earlier date as the record's `created_at`, as `inbox.undone` does, for putting a deleted note back; `app`, `title` (the window's), and `url` (page or document) record where it came from, each one line; `source` is `typed` (default), `selection`, or `screenshot` |
 | `inbox.update` | `{id, text}` | `{record}`: a waiting or done note's text replaced, everything else kept |
 | `inbox.done` | `{id}` | `{record}` moved to `inbox.done` with `created` (its original date) and `done_at`; done notes are tombstoned after 30 days |
 | `inbox.undone` | `{id}` | `{record}` moved back to `inbox.notes` with its original date |
@@ -111,7 +111,7 @@ target language; `settings.reset` restores the built-in text), `windows.gap` (sy
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and
 `windows.drag_snap` (synced, `true`), `capture.save_folder` (device, `""` = Pictures/NyCopilot),
 `capture.format` (synced, `"png"` or `"jpg"`), `capture.file_name` (synced, pattern with `{date}`,
-`{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
+`{time}`, `{n}`), `capture.next_number` (device, `1`, a positive integer: the next `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
 object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the system font, `text_size` 6–144, `bold`,
 `italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), `capture.hide_own_windows` (synced, `false`), `clipboard.enabled` (device, `true`), `clipboard.keep_days`
 (synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), `clipboard.ignored_apps` (synced,

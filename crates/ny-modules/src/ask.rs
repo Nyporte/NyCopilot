@@ -94,12 +94,13 @@ impl Module for AskModule {
                         // At most every 40 ms: enough to look live, few enough not to flood the client.
                         let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
                         ny_llm::stream_messages(&messages, &config, &p.api_key, |so_far| {
+                            // Cancelled: send nothing more, and stop reading now rather than when the answer is done.
+                            if request.is_cancelled() { return false; }
                             if last.elapsed() >= std::time::Duration::from_millis(40) {
                                 last = std::time::Instant::now();
                                 core.emit(json!({ "type": "ask.delta", "request_id": id, "text": so_far }));
                             }
-                            // Cancelled: stop reading now rather than when the answer is done.
-                            !request.is_cancelled()
+                            true
                         })?
                     }
                     _ => ny_llm::complete_messages(&messages, &config, &p.api_key)?,
@@ -111,8 +112,6 @@ impl Module for AskModule {
             _ => Err(NyError::unknown_method(&format!("ask.{command}"))),
         }
     }
-
-    fn validate_setting(&self, _key: &str, _value: &Value) -> Result<()> { Ok(()) }
 }
 
 fn system(language: &str) -> String {

@@ -11,7 +11,7 @@
 //! Entries you pin move to `clipboard.pinned`: kept until you unpin them, never pruned, listed above
 //! the history.
 
-use ny_core::{now_millis, parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
+use ny_core::{now_millis, parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec, DAY_MILLIS};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -21,7 +21,6 @@ pub const PINNED: &str = "clipboard.pinned";
 pub const MAX_PINNED: usize = 100;
 /// Larger copies (a whole file's text) are left out of the history.
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
-const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
 
 /// Password managers, by bundle identifier: never recorded unless the user takes them off the list.
 pub const DEFAULT_IGNORED_APPS: &[&str] = &[
@@ -94,9 +93,9 @@ impl Module for ClipboardModule {
                 // Something pinned is already at hand; the same thing copied again moves to the top
                 // rather than appearing twice.
                 if !same_as(core, PINNED, &data)?.is_empty() { return skipped("pinned"); }
-                for id in same_as(core, ITEMS, &data)? { core.call("records.delete", json!({ "id": id }))?; }
+                for id in same_as(core, ITEMS, &data)? { core.delete_record(ITEMS, &id)?; }
                 let key = lookup(&data);
-                let record = core.insert_keyed_record(ITEMS, data, &search, &key)?;
+                let record = core.insert_record(ITEMS, data, &search, None, Some(&key))?;
                 prune(core)?;
                 Ok(json!({ "record": record }))
             }
@@ -106,15 +105,13 @@ impl Module for ClipboardModule {
                 if core.count_records(PINNED)? >= MAX_PINNED {
                     return Err(NyError::invalid_params("Up to 100 entries can be pinned; unpin one first."));
                 }
-                let record = core.insert_keyed_record(PINNED, data.clone(), data["text"].as_str().unwrap_or_default(), &lookup(&data))?;
-                core.call("records.delete", json!({ "id": p.id }))?;
+                let record = core.move_record(&p.id, ITEMS, PINNED, data.clone(), data["text"].as_str().unwrap_or_default(), None, Some(&lookup(&data)))?;
                 Ok(json!({ "record": record }))
             }
             "unpin" => {
                 let p: Id = parse(params)?;
                 let data = entry(core, &p.id, PINNED)?;
-                let record = core.insert_keyed_record(ITEMS, data.clone(), data["text"].as_str().unwrap_or_default(), &lookup(&data))?;
-                core.call("records.delete", json!({ "id": p.id }))?;
+                let record = core.move_record(&p.id, PINNED, ITEMS, data.clone(), data["text"].as_str().unwrap_or_default(), None, Some(&lookup(&data)))?;
                 prune(core)?;
                 Ok(json!({ "record": record }))
             }
@@ -139,11 +136,11 @@ impl Module for ClipboardModule {
 
 /// Ids in `collection` holding the same text, or an image with the same pixels — found through
 /// an indexed content hash, then compared exactly.
-fn same_as(core: &Core, collection: &str, data: &Value) -> Result<Vec<Value>> {
+fn same_as(core: &Core, collection: &str, data: &Value) -> Result<Vec<String>> {
     let key = if data["text"].is_string() { "text" } else { "digest" };
     Ok(core.find_records(collection, &lookup(data))?.into_iter()
         .filter(|record| record.data[key] == data[key])
-        .map(|record| json!(record.id)).collect())
+        .map(|record| record.id).collect())
 }
 
 /// The content hash an entry is filed under: FNV-1a of the text, or the image's own digest.
@@ -159,16 +156,14 @@ fn lookup(data: &Value) -> String {
 
 /// An entry's data, if `id` is in `collection`.
 fn entry(core: &Core, id: &str, collection: &str) -> Result<Value> {
-    let record = core.call("records.get", json!({ "id": id }))?;
-    if record["collection"] != collection { return Err(NyError::not_found("That entry is no longer there.")); }
-    Ok(record["data"].clone())
+    Ok(core.get_record(&[collection], id)?.ok_or_else(|| NyError::not_found("That entry is no longer there."))?.data)
 }
 
-/// Keep only the newest `max_items`, and nothing older than `keep_days`.
+/// Keep only the newest `max_items`, and nothing older than `keep_days` (both validated when set).
 fn prune(core: &Core) -> Result<usize> {
-    let keep = core.setting::<i64>("clipboard.max_items")?.clamp(10, 5000) as usize;
-    let days = core.setting::<i64>("clipboard.keep_days")?.clamp(1, 365);
-    core.prune_records(ITEMS, keep, now_millis() - days * DAY_MILLIS)
+    let keep = core.setting::<u64>("clipboard.max_items")? as usize;
+    let days = core.setting::<i64>("clipboard.keep_days")?;
+    core.prune_records(ITEMS, Some(keep), now_millis() - days * DAY_MILLIS)
 }
 
 #[cfg(test)]

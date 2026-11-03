@@ -304,7 +304,7 @@ impl Module for TranslateModule {
                 // Saved before the client attempts to paste, so a failed paste never loses the result.
                 let record = if p.save {
                     json!(core.insert_record(HISTORY, json!({ "text": text, "target_language": language, "engine": result.engine }),
-                                             &format!("{text}\n{language}"), None)?)
+                                             &format!("{text}\n{language}"), None, None)?)
                 } else { Value::Null };
                 Ok(json!({ "text": text, "target_language": language, "engine": result.engine, "notice": result.notice, "record": record }))
             }
@@ -377,7 +377,7 @@ fn import_legacy(core: &Core, path: &PathBuf) -> Result<usize> {
     for row in rows {
         let (created, language, text) = row?;
         core.insert_record(HISTORY, json!({ "text": text, "target_language": language }),
-                           &format!("{text}\n{language}"), Some((created * 1000.0) as i64))?;
+                           &format!("{text}\n{language}"), Some((created * 1000.0) as i64), None)?;
         count += 1;
     }
     Ok(count)
