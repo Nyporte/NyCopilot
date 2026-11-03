@@ -64,7 +64,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     /// until its undo can no longer happen.
     var undoStack: [(String, () -> String?)] = []
     var keptImages: [String] = []
-    var observer: NSObjectProtocol?
+    var changes: CoreObservation?
     let clock: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -93,11 +93,10 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             window.setContentSize(NSSize(width: 860, height: 560))
             window.center()
         }
-        observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "records.changed",
-                  let collection = event["collection"] as? String, collection.hasPrefix("inbox.") else { return }
+        changes = core.observe { [weak self] event in
+            guard event.changedCollection?.hasPrefix("inbox.") == true else { return }
             // Hidden, it reloads when it's shown again (`present`).
-            MainActor.assumeIsolated { if self?.window?.isVisible == true { self?.reload() } }
+            if self?.window?.isVisible == true { self?.reload() }
         }
     }
 

@@ -46,19 +46,17 @@ final class InboxShell: ModuleShell {
         }
         // Snoozed notes come back on time, or at launch (or wake) when they fell due meanwhile.
         wakeDueNotes()
-        snoozeObservers = [
-            NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-                guard let event = note.userInfo?["event"] as? [String: Any],
-                      event["collection"] as? String == CoreCollection.inboxSnoozed.rawValue else { return }
-                MainActor.assumeIsolated { self?.scheduleAlarm() }
-            },
-            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.wakeDueNotes() }
-            }
-        ]
+        snoozeChanges = services.core.observe { [weak self] event in
+            if event.changedCollection == CoreCollection.inboxSnoozed.rawValue { self?.scheduleAlarm() }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wakeDueNotes() }
+        }
     }
 
-    private var snoozeObservers: [NSObjectProtocol] = []
+    /// Kept until shutdown: they set the alarm for the next snoozed note.
+    private var snoozeChanges: CoreObservation?
+    private var wakeObserver: NSObjectProtocol?
 
     /// One timer, for the next snoozed note that's due — none while nothing is snoozed.
     private func scheduleAlarm() {
@@ -96,7 +94,8 @@ final class InboxShell: ModuleShell {
 
     func shutdown() {
         alarm?.invalidate()
-        snoozeObservers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        snoozeChanges?.cancel()
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         bar.close(returningFocus: false)
         window?.forgetUndo()
     }

@@ -18,7 +18,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
     private var search = ""
     private var items: [Item] = []
     private var next: String?
-    private var observer: NSObjectProtocol?
+    private var changes: CoreObservation?
     private let searchItem = NSToolbarItem.Identifier("search")
     private lazy var searchField = NSSearchField()
 
@@ -55,12 +55,9 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         window.toolbarStyle = .unified
         if !window.setFrameUsingName("NyCopilotHistory") { window.center() }
 
-        observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any],
-                  event["type"] as? String == "records.changed", event["collection"] as? String == CoreCollection.translateHistory.rawValue else { return }
-            MainActor.assumeIsolated {
-                if self?.window?.isVisible == true { self?.reload() }
-            }
+        changes = core.observe { [weak self] event in
+            guard event.changedCollection == CoreCollection.translateHistory.rawValue else { return }
+            if self?.window?.isVisible == true { self?.reload() }
         }
     }
 

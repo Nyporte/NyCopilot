@@ -97,14 +97,13 @@ final class AskShell: ModuleShell {
         params["request_id"] = id
         params["stream"] = true
         // The answer so far, as the core streams it.
-        let progress = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "ask.delta",
-                  event["request_id"] as? String == id, let text = event["text"] as? String else { return }
+        let progress = services.core.observe { [weak self] event in
             // Only while it's still the current request: a cancelled one may send one more piece.
-            MainActor.assumeIsolated { if self?.requestID == id { self?.panel.streamed(text) } }
+            guard case .askDelta(id, let text) = event, self?.requestID == id else { return }
+            self?.panel.streamed(text)
         }
         defer {
-            NotificationCenter.default.removeObserver(progress)
+            progress.cancel()
             if requestID == id { requestID = nil }
         }
         do {

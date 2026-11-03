@@ -14,22 +14,22 @@ final class MouseShell: ModuleShell {
     private let services: CopilotServices
     private let devices = PointerDevices()
     private var wheel: MouseWheel?
-    private var observers: [NSObjectProtocol] = []
+    private var settingChanges: CoreObservation?
+    private var wakeObserver: NSObjectProtocol?
     /// What was last applied, so Diagnostics notes a change of state, not every slider step.
     private var applied: String?
 
     init(services: CopilotServices) {
         self.services = services
         devices?.onChange = { [weak self] in self?.apply() }
-        observers.append(NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let key = (note.userInfo?["event"] as? [String: Any])?["key"] as? String,
-                  key.hasPrefix("mouse.") || key == SettingKey.modulesOff.rawValue else { return }
-            MainActor.assumeIsolated { self?.apply() }
-        })
+        settingChanges = services.core.observe { [weak self] event in
+            guard let key = event.changedSetting, key.hasPrefix("mouse.") || key == SettingKey.modulesOff.rawValue else { return }
+            self?.apply()
+        }
         // A mouse that sleeps with the Mac can come back with the system's settings.
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.apply() }
-        })
+        }
         apply()
     }
 

@@ -25,7 +25,7 @@ final class WindowsShell: ModuleShell {
     private var originals: [(window: AXUIElement, frame: WindowRect)] = []
     /// The last action applied, so repeating a shortcut on an untouched window counts as a repeat.
     private var last: (window: AXUIElement, action: String, frame: WindowRect, repeat: UInt32)?
-    private var observer: NSObjectProtocol?
+    private var snapChanges: CoreObservation?
 
     /// ⌃⌥ plus a key that suggests the layout; ⌃⌥⌘ moves between displays.
     private static let defaults: [String: (key: UInt32, modifiers: UInt32)] = {
@@ -49,12 +49,9 @@ final class WindowsShell: ModuleShell {
         snapper = SnapController(core: services.core)
         snapper.onSnap = { [weak self] window, frame, display in self?.apply(frame, to: window, on: display, action: nil) }
         snapper.isEnabled = services.core.setting(.dragSnap, default: true)
-        observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any], event["key"] as? String == SettingKey.dragSnap.rawValue else { return }
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.snapper.isEnabled = self.services.core.setting(.dragSnap, default: true)
-            }
+        snapChanges = services.core.observe { [weak self] event in
+            guard let self, event.changedSetting == SettingKey.dragSnap.rawValue else { return }
+            snapper.isEnabled = services.core.setting(.dragSnap, default: true)
         }
     }
 
