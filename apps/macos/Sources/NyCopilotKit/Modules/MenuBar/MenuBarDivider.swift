@@ -65,6 +65,9 @@ final class MenuBarDivider: NSObject {
         placeChevronBesideDivider()
         whenPlaced = placed
         placement += 1
+        // While macOS places the chevron (about 0.1 s) both items are in the menu bar; only ◂ should
+        // show. If hiding is refused, `show(collapsed: false)` puts ▸ back.
+        divider.button?.image = nil
         chevron.isVisible = isOn
         // macOS places it about 0.1 s later (measured), and says so by moving its window; just after
         // launch, the divider is placed the same way.
