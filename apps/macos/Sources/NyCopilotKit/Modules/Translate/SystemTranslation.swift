@@ -56,6 +56,6 @@ private struct Presenter: View {
         Color.clear
             .translationPresentation(isPresented: $shown, text: text, arrowEdge: .bottom, replacementAction: replace)
             .onAppear { shown = true }
-            .onChange(of: shown) { isShown in if !isShown { closed() } }
+            .onChange(of: shown) { _, isShown in if !isShown { closed() } }
     }
 }
