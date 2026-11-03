@@ -64,7 +64,9 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
 
     override func paneWillAppear() {
         let core = services.core
-        favorites.load(core.setting(.favoriteLanguages, default: [String]()), suggestions: core.languages(), describe: core.language)
+        favorites.load(core.setting(.favoriteLanguages, default: [String]()),
+                       maximum: core.settingRange(.favoriteLanguages).map { Int($0.upperBound) },
+                       suggestions: core.languages(), describe: core.language)
         trimSwitch.state = services.core.setting(.trimWhitespace, default: true) ? .on : .off
         loadInstructions()
         shortcuts.refresh()

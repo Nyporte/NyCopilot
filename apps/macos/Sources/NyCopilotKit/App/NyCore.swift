@@ -8,6 +8,8 @@ final class NyCore: @unchecked Sendable {
     /// Settings as last read: reading one is a JSON round trip into SQLite, and menus, captures,
     /// and panels read them all the time. Dropped on every change the core reports and every write.
     private let settingsCache = SettingsCache()
+    /// Settings' bounds from the module manifests, read once (see `settingRange`).
+    let settingRanges = SettingRanges()
     private let events: CoreEvents
 
     /// The error envelope from the core: a stable `code` plus an English message, shown in the

@@ -14,6 +14,21 @@ extension NyCore {
         return Set((try? call(.coreInfo, as: Info.self))?.modules ?? [])
     }
 
+    /// A setting's bounds from its module's manifest — a number's, or a list's length — or nil for a
+    /// setting that has none. Controls are sized from these rather than from copies.
+    func settingRange(_ key: SettingKey) -> ClosedRange<Double>? {
+        settingRanges.range(key.rawValue) { [self] in
+            struct Setting: Decodable { let key: String; let min: Double?; let max: Double? }
+            struct Manifest: Decodable { let settings: [Setting]? }
+            guard let manifests = try? call(.coreModules, as: [Manifest].self) else { return nil }
+            var ranges: [String: ClosedRange<Double>] = [:]
+            for setting in manifests.flatMap({ $0.settings ?? [] }) {
+                if let min = setting.min, let max = setting.max, min <= max { ranges[setting.key] = min...max }
+            }
+            return ranges
+        }
+    }
+
     /// Fire-and-forget: tells the core to discard a request's result if it is still running.
     func cancel(requestID: String) { _ = try? call(.coreCancel, ["request_id": requestID]) }
 
@@ -59,6 +74,20 @@ extension NyCore {
         try call(unpin ? .clipboardUnpin : .clipboardPin, ["id": id], as: Recorded.self).record?.id
     }
 
+    /// A note as a Markdown file: `stem` names it (`<stamp> <title>`, made safe for file systems and
+    /// note apps) and `markdown` is its text, front matter first, with `image` linked at the end.
+    struct MarkdownNote: Decodable { let stem: String; let markdown: String }
+
+    func inboxMarkdown(title: String, text: String, source: String, url: URL?, created: Date, stamp: String,
+                       image: String? = nil) throws -> MarkdownNote {
+        struct Note: Encodable {
+            let title: String, text: String, source: String, url: String?, created: Int64, stamp: String, image: String?
+        }
+        let note = Note(title: title, text: text, source: source, url: url?.absoluteString,
+                        created: Int64((created.timeIntervalSince1970 * 1000).rounded()), stamp: stamp, image: image)
+        return try call(.inboxMarkdown, encoding: note, as: MarkdownNote.self)
+    }
+
     func clipboardPrune() { _ = try? call(.clipboardPrune) }
 
     // MARK: Translate
@@ -70,20 +99,21 @@ extension NyCore {
         let notice: String?
     }
 
-    /// A language as the core knows it: its English name, its own name (日本語), and the short code
-    /// its badge shows (EN, 中, 日).
+    /// A language as the core knows it: its English name, its own name (日本語), the short code its
+    /// badge shows (EN, 中, 日), and its BCP-47 code (`zh-Hans`) when the core knows one.
     struct LanguageInfo: Decodable, Sendable, Equatable {
         let name: String
         let native: String
         let code: String
+        var locale: String? = nil
     }
 
     /// Any language name, described by the core; one it doesn't know keeps its name and gets the
     /// core's two-letter code.
     func language(_ name: String) -> LanguageInfo {
-        struct Described: Decodable { let native: String; let code: String }
+        struct Described: Decodable { let native: String; let code: String; let locale: String? }
         let described = try? call(.translateNativeName, ["language": name], as: Described.self)
-        return LanguageInfo(name: name, native: described?.native ?? name, code: described?.code ?? "")
+        return LanguageInfo(name: name, native: described?.native ?? name, code: described?.code ?? "", locale: described?.locale)
     }
 
     /// The languages the core suggests, in its order.
@@ -96,11 +126,37 @@ extension NyCore {
         return LanguageInfo(name: next.targetLanguage, native: next.native, code: next.code)
     }
 
+    /// The Mac's own language, as one of the core's language names (English for one it doesn't know).
+    var deviceLanguage: String {
+        struct Named: Decodable { let language: String }
+        let locale = Locale.preferredLanguages.first ?? "en"
+        return (try? call(.translateLanguageForLocale, ["locale": locale], as: Named.self))?.language ?? "English"
+    }
+
     /// The language you read in: screen translation's choice, or else the Mac's own language.
     /// Screen translation, translated selections, and Ask AI's answers use it.
     var readingLanguage: String {
         let chosen: String = setting(.screenLanguage, default: "")
-        return chosen.isEmpty ? ScreenText.deviceLanguage : chosen
+        return chosen.isEmpty ? deviceLanguage : chosen
+    }
+
+    /// A translation service, as the core tries them; `ready` is on and set up.
+    struct TranslationEngine: Decodable, Sendable {
+        let id: String
+        /// A name ("Google Translate"), or "Model", which is shown in the interface language.
+        let title: String
+        let enabled: Bool
+        let configured: Bool
+        let ready: Bool
+
+        /// The setting that turns it on and off.
+        var enabledSetting: SettingKey? { SettingKey(rawValue: "translate.\(id)_enabled") }
+    }
+
+    /// The translation services in the order they're tried. The Volcengine key is in the Keychain,
+    /// which the core never reads, so it's told whether there is one.
+    func translationEngines() -> [TranslationEngine] {
+        (try? call(.translateEngines, ["has_volcengine_key": KeychainStore.hasKey(.volcengine)], as: [TranslationEngine].self)) ?? []
     }
 
     /// Translates with the first engine that succeeds; `keys` are the engines' secrets.
@@ -108,5 +164,18 @@ extension NyCore {
     func translate(_ text: String, into language: String, keys: [String: String], extra: [String: Any] = [:]) async throws -> Translation {
         let params = extra.merging(["text": text, "target_language": language]) { _, new in new }.merging(keys) { _, key in key }
         return try await perform(.translateRun, params, as: Translation.self)
+    }
+}
+
+/// Settings' bounds from the manifests, kept once read; from any thread.
+final class SettingRanges: @unchecked Sendable {
+    private let lock = NSLock()
+    /// Guarded by `lock`; nil until a read succeeds.
+    private var ranges: [String: ClosedRange<Double>]?
+
+    func range(_ key: String, reading: () -> [String: ClosedRange<Double>]?) -> ClosedRange<Double>? {
+        lock.lock(); defer { lock.unlock() }
+        if ranges == nil { ranges = reading() }
+        return ranges?[key]
     }
 }

@@ -61,8 +61,8 @@ enum ScreenText {
         return (0x3000...0x9FFF).contains(scalar) || (0xAC00...0xD7AF).contains(scalar) || (0xFF00...0xFFEF).contains(scalar)
     }
 
-    /// Whether a line is worth translating into the language with this code: it has letters, more than
-    /// one, and isn't clearly in that language already.
+    /// Whether a line is worth translating into the language with this BCP-47 code (the core's
+    /// `locale` for it): it has letters, more than one, and isn't clearly in that language already.
     static func needsTranslation(_ text: String, into code: String?) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.unicodeScalars.filter({ CharacterSet.letters.contains($0) }).count >= 2 else { return false }
@@ -83,27 +83,4 @@ enum ScreenText {
         guard let (language, confidence) = recognizer.languageHypotheses(withMaximum: 1).first else { return true }
         return !(confidence >= 0.8 && language.rawValue == code)
     }
-
-    /// The language code NaturalLanguage uses for one of NyCopilot's language names, when known.
-    static func code(for language: String) -> String? {
-        names[language.trimmingCharacters(in: .whitespaces).lowercased()]
-    }
-
-    /// The Mac's own language, as one of NyCopilot's language names (English if it isn't one of them).
-    static var deviceLanguage: String {
-        let preferred = Locale.preferredLanguages.first?.lowercased() ?? "en"
-        if preferred.hasPrefix("zh") { return preferred.contains("hant") || preferred.hasSuffix("tw") || preferred.hasSuffix("hk") ? "Traditional Chinese" : "Simplified Chinese" }
-        let base = String(preferred.prefix { $0 != "-" })
-        // The plainest name for the code ("Portuguese" over "Brazilian Portuguese").
-        return names.filter { $0.value == base }.min { $0.key.count < $1.key.count }.map { $0.key.capitalized } ?? "English"
-    }
-
-    private static let names: [String: String] = {
-        ["english": "en", "simplified chinese": "zh-Hans", "chinese": "zh-Hans", "traditional chinese": "zh-Hant",
-                     "japanese": "ja", "korean": "ko", "spanish": "es", "french": "fr", "german": "de", "italian": "it",
-                     "portuguese": "pt", "brazilian portuguese": "pt", "russian": "ru", "arabic": "ar", "dutch": "nl",
-                     "swedish": "sv", "danish": "da", "norwegian": "nb", "finnish": "fi", "polish": "pl", "turkish": "tr",
-                     "ukrainian": "uk", "vietnamese": "vi", "thai": "th", "indonesian": "id", "hindi": "hi", "greek": "el",
-                     "hebrew": "he", "czech": "cs", "hungarian": "hu", "romanian": "ro"]
-    }()
 }

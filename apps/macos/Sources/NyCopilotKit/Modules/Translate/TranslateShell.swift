@@ -192,7 +192,9 @@ final class TranslateShell: ModuleShell {
             guard let self, !Task.isCancelled, operationID == id else { return }
             await deliver(result.text, id: id)
             if let notice = result.notice {
-                let engine = ["google": "Google Translate", "volcengine": "Volcengine"][result.engine] ?? L("the model")
+                // A service by its name, as the core gives it; the model is "the model" mid-sentence.
+                let named = services.core.translationEngines().first { $0.id == result.engine }?.title ?? result.engine
+                let engine = result.engine == "model" ? L("the model") : named
                 services.toast.show(L("Translated by %@", engine), detail: CoreText.localized(notice), style: .warning)
             }
         }
@@ -300,13 +302,10 @@ final class TranslateShell: ModuleShell {
 }
 
 extension NyCore {
-    /// The core's favorites, which Tab steps through in the composer, until someone changes them.
-    static let coreFavorites = ["English", "Simplified Chinese", "Japanese"]
-
     /// On a Mac in another language, the favorites start as English and that language instead of
-    /// the core's English, Chinese, and Japanese. Once per Mac, and only if they're still the core's.
-    /// The once-mark moved from UserDefaults (`defaults`) to the core.
-    func seedFavoriteLanguages(device: String = ScreenText.deviceLanguage, defaults: UserDefaults = .standard) {
+    /// the core's defaults (the core decides, and only while they're still its defaults). Once per
+    /// Mac; the once-mark moved from UserDefaults (`defaults`) to the core.
+    func seedFavoriteLanguages(device: String? = nil, defaults: UserDefaults = .standard) {
         let legacy = "NyCopilotSeededFavorites"
         if defaults.bool(forKey: legacy) {
             try? setSetting(.favoritesSeeded, true)
@@ -314,8 +313,6 @@ extension NyCore {
         }
         guard !setting(.favoritesSeeded, default: false) else { return }
         try? setSetting(.favoritesSeeded, true)
-        let favorites: [String] = setting(.favoriteLanguages, default: [])
-        guard favorites == Self.coreFavorites, !favorites.contains(device) else { return }
-        try? setSetting(.favoriteLanguages, ["English", device])
+        _ = try? call(.translateSeedFavorites, ["device_language": device ?? deviceLanguage])
     }
 }

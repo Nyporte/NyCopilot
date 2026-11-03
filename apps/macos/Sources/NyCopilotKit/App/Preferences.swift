@@ -21,11 +21,7 @@ final class Preferences {
     }
 
     /// Some translation engine is on and set up.
-    var canTranslate: Bool {
-        (core.setting(.modelEnabled, default: true) && provider.isComplete)
-            || (core.setting(.googleEnabled, default: true) && !core.setting(.googleURL, default: "").isEmpty)
-            || (core.setting(.volcengineEnabled, default: true) && KeychainStore.hasKey(.volcengine))
-    }
+    var canTranslate: Bool { core.translationEngines().contains(where: \.ready) }
 
     /// Validated by the core. The model is checked first so an invalid pair never half-saves.
     func setProvider(_ provider: Provider) throws {
