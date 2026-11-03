@@ -26,6 +26,8 @@ final class GifWriter {
     private var pending: (image: Data, time: Double, transparent: Bool)?
     private var lzw = LZW()
     private(set) var frameCount = 0
+    /// A write failed (the disk is full): the file is unusable, and `finish` says so.
+    private var failed = false
 
     init?(url: URL, width: Int, height: Int) {
         guard width > 0, height > 0, width < 65536, height < 65536,
@@ -46,7 +48,7 @@ final class GifWriter {
         header.append(contentsOf: [0x70, 0, 0]) // no global color table, 8-bit color resolution
         // Loop forever (NETSCAPE2.0 extension).
         header.append(contentsOf: [0x21, 0xFF, 0x0B] + Array("NETSCAPE2.0".utf8) + [0x03, 0x01, 0x00, 0x00, 0x00])
-        handle.write(header)
+        write(header)
     }
 
     /// Adds a frame shown from `time` (seconds); a frame with nothing changed only extends the last.
@@ -68,9 +70,16 @@ final class GifWriter {
     @discardableResult
     func finish(at time: Double) -> Bool {
         flushPending(until: time)
-        handle.write(Data([0x3B]))
+        write(Data([0x3B]))
         try? handle.close()
-        return frameCount > 0
+        return frameCount > 0 && !failed
+    }
+
+    /// `FileHandle.write(_: Data)` raises an exception Swift can't catch when the disk is full; this
+    /// throwing form doesn't, and after one failure the rest is skipped.
+    private func write(_ data: Data) {
+        guard !failed else { return }
+        do { try handle.write(contentsOf: data) } catch { failed = true }
     }
 
     // MARK: Frames
@@ -104,8 +113,8 @@ final class GifWriter {
         var control = Data([0x21, 0xF9, 0x04, pending.transparent ? 0x05 : 0x04])
         control.append(le16(delay))
         control.append(contentsOf: [pending.transparent ? Palette.transparent : 0, 0])
-        handle.write(control)
-        handle.write(pending.image)
+        write(control)
+        write(pending.image)
         self.pending = nil
     }
 

@@ -1,6 +1,6 @@
 import AppKit
 
-/// Images a module keeps beside the database, each `<uuid>.png`; records hold only the file name.
+/// Images a module keeps beside the database, each `<uuid>.png` (or `.gif`); records hold only the file name.
 struct ImageFolder: Sendable {
     let url: URL
 
@@ -28,9 +28,10 @@ struct ImageFolder: Sendable {
         return keep(png: data)
     }
 
-    /// Removes files no record in `collections` names any more (entries pruned or deleted).
+    /// Removes files no record in `collections` names any more (entries pruned or deleted). Files
+    /// younger than `graceSeconds` stay: one may be kept but not yet recorded.
     @MainActor
-    func removeUnused(core: NyCore, collections: [CoreCollection]) {
+    func removeUnused(core: NyCore, collections: [CoreCollection], graceSeconds: TimeInterval = 60) {
         struct Entry: Decodable { let image: String? }
         var used: Set<String> = []
         for collection in collections {
@@ -44,8 +45,10 @@ struct ImageFolder: Sendable {
                 before = page.next
             } while before != nil
         }
+        let settled = Date().addingTimeInterval(-graceSeconds)
         for name in (try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? [] where !used.contains(name) {
-            try? FileManager.default.removeItem(at: file(name))
+            let modified = (try? file(name).resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if modified < settled { try? FileManager.default.removeItem(at: file(name)) }
         }
     }
 

@@ -100,7 +100,8 @@ final class AskShell: ModuleShell {
         let progress = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
             guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "ask.delta",
                   event["request_id"] as? String == id, let text = event["text"] as? String else { return }
-            MainActor.assumeIsolated { self?.panel.streamed(text) }
+            // Only while it's still the current request: a cancelled one may send one more piece.
+            MainActor.assumeIsolated { if self?.requestID == id { self?.panel.streamed(text) } }
         }
         defer {
             NotificationCenter.default.removeObserver(progress)

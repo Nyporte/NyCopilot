@@ -73,8 +73,7 @@ extension InboxWindow {
         Task {
             do {
                 let done = try await NoteExport.send(content, to: destination, core: self.core)
-                if selectedItem?.id == item.id { toggleDoneSelected() }
-                else if (try? self.core.inboxMove(.inboxDone, item.id)) != nil { reload() }
+                if selectedItem?.id == item.id { toggleDoneSelected() } else { markDone(item) }
                 toast.show(done, detail: L("Marked done · ⌘Z in the inbox brings it back"), style: .success)
             } catch {
                 let alert = NSAlert()
@@ -100,13 +99,19 @@ extension InboxWindow {
         let row = table.selectedRow
         _ = try? core.deleteRecord(item.id)
         if let image = item.data.image { keptImages.append(image) }
-        let note = item.data, done = showsDone
-        remember(L("Delete")) { [core] in
+        let note = item.data, list = tab, created = item.data.created ?? item.createdAt
+        // Undo puts the note back where it was — waiting, later, or done — with its own date.
+        remember(L("Delete")) { [weak self, core] in
             var params: [String: Any] = ["text": note.text, "app": note.app ?? "", "title": note.title ?? "", "url": note.url ?? "",
-                                         "source": note.source ?? "typed"]
+                                         "source": note.source ?? "typed", "created": created]
             if let image = note.image { params["image"] = image }
             guard let id = try? core.inboxAdd(params) ?? nil else { return nil }
-            return done ? try? core.inboxMove(.inboxDone, id) ?? nil : id
+            if let image = note.image { self?.keptImages.removeAll { $0 == image } }
+            switch list {
+            case .inbox: return id
+            case .done: return try? core.inboxMove(.inboxDone, id) ?? nil
+            case .later: return (note.until.flatMap { try? core.inboxSnooze(id, until: $0) ?? nil }) ?? id
+            }
         }
         reload()
         selectNear(row)

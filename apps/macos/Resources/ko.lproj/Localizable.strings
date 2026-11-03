@@ -781,3 +781,8 @@
 "Hours must be 12, 24, or system." = "시간 표기는 12, 24 또는 system이어야 합니다.";
 "The label must be city, abbreviation, offset, custom, or none." = "레이블은 city, abbreviation, offset, custom 또는 none이어야 합니다.";
 "The clock’s name must be one line of at most 40 characters." = "시계 이름은 한 줄, 최대 40자여야 합니다.";
+"Explain" = "설명";
+"Summarize" = "요약";
+"Rewrite" = "다시 쓰기";
+"Note" = "메모";
+"From %@" = "출처: %@";

@@ -96,7 +96,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
             guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "records.changed",
                   let collection = event["collection"] as? String, collection.hasPrefix("inbox.") else { return }
-            MainActor.assumeIsolated { self?.reload() }
+            // Hidden, it reloads when it's shown again (`present`).
+            MainActor.assumeIsolated { if self?.window?.isVisible == true { self?.reload() } }
         }
     }
 
@@ -446,6 +447,13 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         selectNear(row)
     }
 
+    /// Marks a waiting note done that may no longer be selected, with the same undo as ⌘D.
+    func markDone(_ item: Item) {
+        guard let movedID = try? core.inboxMove(.inboxDone, item.id) ?? nil else { return }
+        remember(CoreMethod.inboxDone.rawValue) { [core] in try? core.inboxMove(.inboxUndone, movedID) ?? nil }
+        reload()
+    }
+
     func verb(_ verb: Verb) {
         guard let item = selectedItem else { return }
         saveNow()
@@ -507,7 +515,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             let cell = tableView.makeView(withIdentifier: .init("note"), owner: nil) as? InboxRow ?? InboxRow()
             cell.identifier = .init("note")
             let firstLine = item.data.text.split(whereSeparator: \.isNewline).first.map(String.init)?.trimmingCharacters(in: .whitespaces)
-            let picture = item.data.image?.hasSuffix(".gif") == true ? "Recording" : "Screenshot"
+            let picture = item.data.image?.hasSuffix(".gif") == true ? L("Recording") : L("Screenshot")
             cell.title.stringValue = firstLine.flatMap { $0.isEmpty ? nil : $0 } ?? (item.data.image == nil ? L("Empty note") : picture)
             cell.icon.image = NSImage(systemSymbolName: item.data.image != nil ? "photo" : item.data.source == "selection" ? "text.quote" : "pencil",
                                       accessibilityDescription: nil)

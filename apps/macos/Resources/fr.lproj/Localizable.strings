@@ -781,3 +781,8 @@
 "Hours must be 12, 24, or system." = "Les heures doivent être 12, 24 ou system.";
 "The label must be city, abbreviation, offset, custom, or none." = "L’étiquette doit être city, abbreviation, offset, custom ou none.";
 "The clock’s name must be one line of at most 40 characters." = "Le nom de l’horloge doit tenir sur une ligne de 40 caractères au plus.";
+"Explain" = "Expliquer";
+"Summarize" = "Résumer";
+"Rewrite" = "Réécrire";
+"Note" = "Note";
+"From %@" = "Depuis %@";

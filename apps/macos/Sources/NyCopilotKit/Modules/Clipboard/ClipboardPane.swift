@@ -85,7 +85,8 @@ final class ClipboardPane: SettingsPane {
             guard response == .alertFirstButtonReturn else { return }
             guard let services = self?.services else { return }
             _ = try? services.core.clearRecords(.clipboardItems)
-            ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
+            // Cleared means gone, however recent.
+            ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned], graceSeconds: 0)
         }
     }
 }
