@@ -85,7 +85,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
 
         let done = Design.button(L("Get Started"), target: self, action: #selector(finish), primary: true)
         done.controlSize = .large
-        let root = Design.vstack([header, goals, keyboard, setup, done], spacing: 16, alignment: .centerX)
+        let root = Design.vstack([header, goals, keyboard, setup, done], spacing: 12, alignment: .centerX)
         root.translatesAutoresizingMaskIntoConstraints = false
         let content = NSVisualEffectView()
         content.material = .windowBackground
@@ -250,8 +250,8 @@ private final class StepRow: NSView {
             badge.heightAnchor.constraint(equalToConstant: 22),
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            row.topAnchor.constraint(equalTo: topAnchor, constant: 12),
-            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
+            row.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7)
         ])
     }
 
