@@ -23,7 +23,8 @@ final class TranslationCard: FloatingPanel {
         self.interactive = interactive
         column = Design.vstack([], spacing: 7, alignment: .leading)
         super.init(size: NSSize(width: 300, height: 60), level: .screenOverlayControls, behavior: [.stationary, .ignoresCycle])
-        // Only the selection card takes clicks and keys; the screen-translation card is see-through.
+        // Only the selection card takes clicks and keys (selecting text needs keystrokes and a field
+        // editor); the screen-translation card is see-through.
         ignoresMouseEvents = !interactive
         takesKeys = interactive
         let material = NSVisualEffectView.roundedMaterial(.popover, radius: 12)
@@ -50,15 +51,13 @@ final class TranslationCard: FloatingPanel {
         contentView = material
     }
 
-    /// Where the card belongs: `source` is the block, in AppKit screen coordinates.
-    /// Selecting text needs keystrokes and a field editor; only an interactive card takes them.
-
     /// The part of the translation selected on the card, if any.
     var selectedText: String? {
         guard let editor = text.currentEditor(), editor.selectedRange.length > 0 else { return nil }
         return (editor.string as NSString).substring(with: editor.selectedRange)
     }
 
+    /// Where the card belongs: `source` is the block, in AppKit screen coordinates.
     func present(language: String, beside source: NSRect, on screen: NSScreen, hint: String? = nil) {
         self.source = source
         placedOn = screen
@@ -88,8 +87,8 @@ final class TranslationCard: FloatingPanel {
         place()
     }
 
-    /// A bit wider than the block, and wider still for a long translation (within limits), sized to the text, below the block or else above it, and
-    /// always on its screen.
+    /// A bit wider than the block, and wider still for a long translation (within limits), sized to
+    /// the text, below the block or else above it, and always on its screen.
     private func place() {
         guard let screen = placedOn else { return }
         let visible = screen.visibleFrame

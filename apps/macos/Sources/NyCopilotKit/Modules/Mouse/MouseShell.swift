@@ -2,7 +2,8 @@ import AppKit
 
 /// macOS half of Mouse: sets each connected mouse's pointer speed and acceleration to what the
 /// core's `mouse` module computes, whenever a setting changes or a mouse connects, and puts them
-/// back when the feature is turned off or NyCopilot quits. It also reverses the wheel, if asked.
+/// back when the feature is turned off or NyCopilot quits. It also reverses or smooths the scroll
+/// wheel, if asked (`MouseWheel`).
 @MainActor
 final class MouseShell: ModuleShell {
     let id = "mouse"

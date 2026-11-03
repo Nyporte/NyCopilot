@@ -43,10 +43,6 @@ extension ScreenTranslator {
         let needsTranslation: Bool
     }
 
-    /// Lines into paragraphs: directly below one another at line spacing, in the same column, the
-    /// same size, on the same background. Only a line long enough to have wrapped carries on to the
-    /// next — short labels stacked in a sidebar or a menu stay apart, and a paragraph's short last line
-    /// ends it — and a bullet or number starts a new one.
     /// The text in an image, paragraph by paragraph, read the way the screen is: for translating a
     /// screenshot. `scale` is the image's pixels per point.
     static func paragraphs(in image: CGImage, scale: CGFloat) async throws -> [String] {
@@ -59,6 +55,10 @@ extension ScreenTranslator {
         lines.map { Entry(line: $0, background: pixels.background(around: $0.rect), fontSize: ScreenText.fontSize(of: $0)) }
     }
 
+    /// Lines into paragraphs: directly below one another at line spacing, in the same column, the
+    /// same size, on the same background. Only a line long enough to have wrapped carries on to the
+    /// next — short labels stacked in a sidebar or a menu stay apart, and a paragraph's short last line
+    /// ends it — and a bullet or number starts a new one. `code` is the language read into.
     static func paragraphs(_ entries: [Entry], language code: String?) -> [Paragraph] {
         var groups: [[Entry]] = []
         for entry in entries.sorted(by: { $0.line.rect.minY < $1.line.rect.minY }) {
