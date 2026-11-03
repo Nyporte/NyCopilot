@@ -78,6 +78,9 @@ prepare() {
   ' $changelog > $changelog.new
   mv $changelog.new $changelog
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" $plist
+  # The core reports its version too (core.info), so the workspace and its lock file follow.
+  sed -i '' -E "/^\[workspace.package\]/,/^\[/ s/^version = \".*\"/version = \"$version\"/" Cargo.toml
+  cargo update --workspace --offline --quiet
 
   git switch --quiet -c $branch
   git commit --quiet -am "chore(release): v$version"
