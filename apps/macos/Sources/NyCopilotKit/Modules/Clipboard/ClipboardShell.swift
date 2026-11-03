@@ -128,9 +128,9 @@ final class ClipboardShell: ModuleShell {
         scheduleImageCleanup()
     }
 
-    /// The record kept, or nil when the core left the copy out.
+    /// The id of the record kept, or nil when the core left the copy out.
     @discardableResult
-    private func add(_ params: [String: Any]) -> [String: Any]? {
+    private func add(_ params: [String: Any]) -> String? {
         do {
             return try services.core.clipboardAdd(params)
         } catch {

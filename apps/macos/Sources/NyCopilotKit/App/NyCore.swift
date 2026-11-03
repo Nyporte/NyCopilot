@@ -44,45 +44,79 @@ final class NyCore: @unchecked Sendable {
 
     /// Synchronous call; fine for settings and records. Use `perform` for model-backed methods.
     @discardableResult
-    func call(_ method: CoreMethod, _ params: [String: Any] = [:]) throws -> Any { try call(name: method.rawValue, params) }
-
-    private func call(name method: String, _ params: [String: Any]) throws -> Any {
-        let body = try JSONSerialization.data(withJSONObject: params)
-        guard let raw = method.withCString({ name in
-            String(decoding: body, as: UTF8.self).withCString { ny_call(handle, name, $0) }
-        }) else { throw Failure(code: "internal", message: "The core returned no result.", status: nil) }
-        defer { ny_string_free(raw) }
-        let envelope = try JSONSerialization.jsonObject(with: Data(bytes: raw, count: strlen(raw)), options: [.fragmentsAllowed]) as? [String: Any]
-        if let error = envelope?["error"] {
-            let data = try JSONSerialization.data(withJSONObject: error)
-            let failure = try JSONDecoder().decode(Failure.self, from: data)
-            // Many callers can only shrug (`try?`); the failure is still on record for a bug report.
-            // Cancellations are expected, not failures.
-            if failure.code != "cancelled" { Diagnostics.note("core", "\(method) failed: \(failure.code)") }
-            throw failure
-        }
+    func call(_ method: CoreMethod, _ params: [String: Any] = [:]) throws -> Any {
+        let reply = try send(method, JSONSerialization.data(withJSONObject: params))
+        let envelope = try JSONSerialization.jsonObject(with: reply, options: [.fragmentsAllowed]) as? [String: Any]
+        if envelope?["error"] != nil { throw noted(try JSONDecoder().decode(FailureReply.self, from: reply).error, method) }
         return envelope?["ok"] ?? NSNull()
     }
 
     /// Decode a result into a Codable type (snake_case keys become camelCase).
     func call<T: Decodable>(_ method: CoreMethod, _ params: [String: Any] = [:], as type: T.Type) throws -> T {
-        let value = try call(method, params)
-        let data = try JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed])
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return try decoder.decode(T.self, from: data)
+        try decode(send(method, JSONSerialization.data(withJSONObject: params)), method, as: type)
+    }
+
+    /// The same, with parameters as an Encodable value.
+    func call<P: Encodable, T: Decodable>(_ method: CoreMethod, encoding params: P, as type: T.Type) throws -> T {
+        try decode(send(method, JSONEncoder().encode(params)), method, as: type)
     }
 
     /// Run a blocking call (such as a model request) off the main thread. The parameters are
     /// encoded here, so nothing mutable crosses to the other thread.
     @MainActor
     func perform<T: Decodable & Sendable>(_ method: CoreMethod, _ params: [String: Any] = [:], as type: T.Type) async throws -> T {
-        let body = try JSONSerialization.data(withJSONObject: params)
-        return try await Task.detached(priority: .userInitiated) { [self] in
-            let decoded = try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
-            return try call(method, decoded, as: type)
-        }.value
+        try await perform(method, body: JSONSerialization.data(withJSONObject: params), as: type)
     }
+
+    /// The same, with parameters as an Encodable value.
+    @MainActor
+    func perform<P: Encodable, T: Decodable & Sendable>(_ method: CoreMethod, encoding params: P, as type: T.Type) async throws -> T {
+        try await perform(method, body: JSONEncoder().encode(params), as: type)
+    }
+
+    private func perform<T: Decodable & Sendable>(_ method: CoreMethod, body: Data, as type: T.Type) async throws -> T {
+        try await Task.detached(priority: .userInitiated) { [self] in try decode(send(method, body), method, as: type) }.value
+    }
+
+    /// Every call ends here: the encoded parameters in, the encoded `{ok}` or `{error}` reply out.
+    private func send(_ method: CoreMethod, _ body: Data) throws -> Data {
+        guard let raw = method.rawValue.withCString({ name in
+            String(decoding: body, as: UTF8.self).withCString { ny_call(handle, name, $0) }
+        }) else { throw Failure(code: "internal", message: "The core returned no result.", status: nil) }
+        defer { ny_string_free(raw) }
+        return Data(bytes: raw, count: strlen(raw))
+    }
+
+    private func decode<T: Decodable>(_ reply: Data, _ method: CoreMethod, as type: T.Type) throws -> T {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        switch try decoder.decode(Reply<T>.self, from: reply) {
+        case .ok(let value): return value
+        case .failure(let failure): throw noted(failure, method)
+        }
+    }
+
+    /// Many callers can only shrug (`try?`); the failure is still on record for a bug report.
+    /// Cancellations are expected, not failures.
+    private func noted(_ failure: Failure, _ method: CoreMethod) -> Failure {
+        if failure.code != "cancelled" { Diagnostics.note("core", "\(method.rawValue) failed: \(failure.code)") }
+        return failure
+    }
+
+    /// Every reply: `{ok}` or `{error}`.
+    private enum Reply<T: Decodable>: Decodable {
+        case ok(T), failure(Failure)
+
+        private enum Key: String, CodingKey { case ok, error }
+
+        init(from decoder: Decoder) throws {
+            let reply = try decoder.container(keyedBy: Key.self)
+            if let failure = try reply.decodeIfPresent(Failure.self, forKey: .error) { self = .failure(failure) }
+            else { self = .ok(try reply.decode(T.self, forKey: .ok)) }
+        }
+    }
+
+    private struct FailureReply: Decodable { let error: Failure }
 
     func setting<T>(_ key: String, default fallback: T) -> T {
         if let cached = settingsCache[key] { return cached as? T ?? fallback }
@@ -97,10 +131,8 @@ final class NyCore: @unchecked Sendable {
     }
 
     private static func decodeFailure(_ text: String?) -> Failure? {
-        guard let text, let data = text.data(using: .utf8),
-              let envelope = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = envelope["error"], let errorData = try? JSONSerialization.data(withJSONObject: error) else { return nil }
-        return try? JSONDecoder().decode(Failure.self, from: errorData)
+        guard let data = text?.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(FailureReply.self, from: data).error
     }
 }
 

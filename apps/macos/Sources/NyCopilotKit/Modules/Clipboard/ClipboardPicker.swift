@@ -187,12 +187,10 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
             return true
         case "p":
             guard items.indices.contains(row) else { return true }
-            let pinned = row < pinnedCount
             do {
-                let moved = try core.call(pinned ? .clipboardUnpin : .clipboardPin, ["id": items[row].id]) as? [String: Any]
+                let id = try core.clipboardPin(items[row].id, unpin: row < pinnedCount)
                 reload()
                 // Keep the same entry selected in its new place.
-                let id = (moved?["record"] as? [String: Any])?["id"] as? String
                 if let index = items.firstIndex(where: { $0.id == id }) {
                     table.selectRowIndexes([index], byExtendingSelection: false)
                     table.scrollRowToVisible(index)

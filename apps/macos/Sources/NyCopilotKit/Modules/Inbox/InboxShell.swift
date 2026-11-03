@@ -63,8 +63,7 @@ final class InboxShell: ModuleShell {
         alarm?.invalidate()
         alarm = nil
         struct Snoozed: Decodable { let until: Int64? }
-        let page = try? services.core.call(.recordsList, ["collection": CoreCollection.inboxSnoozed.rawValue, "limit": 500],
-                                           as: CorePage<Snoozed>.self)
+        let page = try? services.core.records(.inboxSnoozed, as: Snoozed.self, limit: 500)
         guard let next = page?.records.compactMap(\.data.until).min() else { return }
         let due = Date(timeIntervalSince1970: Double(next) / 1000)
         let timer = Timer(fire: max(due, Date().addingTimeInterval(1)), interval: 0, repeats: false) { [weak self] _ in

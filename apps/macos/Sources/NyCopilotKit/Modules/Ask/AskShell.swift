@@ -84,18 +84,34 @@ final class AskShell: ModuleShell {
         panel.present(material)
     }
 
-    private func ask(action: String, question: String, turns: [[String: String]]) async throws -> String {
+    /// `ask.run`'s parameters, streamed.
+    private struct Request: Encodable {
+        let action: String
+        var text: String
+        let question: String
+        let turns: [AskTurn]
+        let language: String
+        let apiKey: String
+        var image: String?
+        var requestID = ""
+        let stream = true
+
+        enum CodingKeys: String, CodingKey {
+            case action, text, question, turns, language, image, stream, apiKey = "api_key", requestID = "request_id"
+        }
+    }
+
+    private func ask(action: String, question: String, turns: [AskTurn]) async throws -> String {
         struct Answer: Decodable { let text: String }
-        var params: [String: Any] = ["action": action, "text": material.text, "question": question, "turns": turns,
-                                     "language": services.core.readingLanguage, "api_key": try KeychainStore.read()]
+        var request = Request(action: action, text: material.text, question: question, turns: turns,
+                              language: services.core.readingLanguage, apiKey: try KeychainStore.read())
         if let screenshot = await prepared?.value {
-            if let image = screenshot.image { params["image"] = image }
-            params["text"] = screenshot.text
+            request.image = screenshot.image
+            request.text = screenshot.text
         }
         let id = UUID().uuidString
         requestID = id
-        params["request_id"] = id
-        params["stream"] = true
+        request.requestID = id
         // The answer so far, as the core streams it.
         let progress = services.core.observe { [weak self] event in
             // Only while it's still the current request: a cancelled one may send one more piece.
@@ -107,7 +123,7 @@ final class AskShell: ModuleShell {
             if requestID == id { requestID = nil }
         }
         do {
-            return try await services.core.perform(.askRun, params, as: Answer.self).text
+            return try await services.core.perform(.askRun, encoding: request, as: Answer.self).text
         } catch {
             Diagnostics.note("ask", "\(action) failed: \(error.localizedDescription)")
             throw error

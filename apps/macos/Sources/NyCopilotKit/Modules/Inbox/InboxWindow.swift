@@ -429,14 +429,13 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         guard let item = selectedItem else { return }
         saveNow()
         let row = table.selectedRow
-        let (command, params, back): (CoreMethod, [String: Any], CoreMethod?) = switch tab {
-        case .inbox: (.inboxDone, ["id": item.id], .inboxUndone)
-        case .later: (.inboxWake, ["id": item.id], nil)
-        case .done: (.inboxUndone, ["id": item.id], .inboxDone)
+        let (command, back): (CoreMethod, CoreMethod?) = switch tab {
+        case .inbox: (.inboxDone, .inboxUndone)
+        case .later: (.inboxWake, nil)
+        case .done: (.inboxUndone, .inboxDone)
         }
-        guard let reply = try? core.call(command, params) as? [String: Any],
-              let moved = (reply["record"] ?? (reply["woken"] as? [Any])?.first) as? [String: Any],
-              let movedID = moved["id"] as? String else { return }
+        let moved = command == .inboxWake ? (try? core.inboxWake(item.id))?.first?.id : (try? core.inboxMove(command, item.id)) ?? nil
+        guard let movedID = moved else { return }
         let until = item.data.until
         remember(command.rawValue) { [core] in
             if let back { return try? core.inboxMove(back, movedID) ?? nil }

@@ -15,6 +15,13 @@ struct AskMaterial {
     var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && image == nil }
 }
 
+/// One earlier exchange in a conversation, as `ask.run` takes `turns`.
+struct AskTurn: Codable, Sendable, Equatable {
+    enum Role: String, Codable, Sendable { case user, assistant }
+    let role: Role
+    let content: String
+}
+
 /// The Ask AI panel: what it's about at the top, three actions (Explain, Summarize, Rewrite), the
 /// answers, and a box for a question or a follow-up. ↩ asks (or, empty, explains), ⌘1–3 run an action
 /// afresh, ⌘C copies the answer (or what's selected in it), ⌘I keeps it in the inbox, ⌘P pins it, ⌘↩ puts a
@@ -34,7 +41,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     }
 
     /// Asks the core: the action, the question (empty for an action alone), and the turns so far.
-    var onAsk: ((_ action: String, _ question: String, _ turns: [[String: String]]) async throws -> String)?
+    var onAsk: ((_ action: String, _ question: String, _ turns: [AskTurn]) async throws -> String)?
     var onCancel: (() -> Void)?
     var onKeep: ((String) -> Void)?
     var onPin: ((String) -> Void)?
@@ -51,7 +58,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     private let spinner = NSProgressIndicator()
     private let input = NSTextField()
     private let hint = Design.label("", size: 10.5, color: .tertiaryLabelColor)
-    private var turns: [[String: String]] = []
+    private var turns: [AskTurn] = []
     /// What the conversation began with (an action, or "ask" for a question); follow-ups keep it, so
     /// the model still sees the material framed the same way.
     private var conversationAction = "ask"
@@ -235,7 +242,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
                 let answer = try await onAsk?(action, question, previous) ?? ""
                 guard !Task.isCancelled else { return }
                 // An action alone asks nothing: its user turn is empty, and the action frames the material.
-                turns = previous + [["role": "user", "content": question], ["role": "assistant", "content": answer]]
+                turns = previous + [AskTurn(role: .user, content: question), AskTurn(role: .assistant, content: answer)]
                 lastAnswer = answer
                 finishStreaming(answer, style: .answer)
             } catch {

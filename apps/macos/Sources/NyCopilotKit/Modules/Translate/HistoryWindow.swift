@@ -161,12 +161,9 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
 
     private func load(reset: Bool) {
         if !reset && next == nil { return }
-        var params: [String: Any] = ["collection": CoreCollection.translateHistory.rawValue, "limit": 100]
-        if !reset, let next { params["before"] = next }
-        if !search.isEmpty { params["search"] = search }
         let selectedID = selectedItem?.id
         do {
-            let page = try core.call(.recordsList, params, as: CorePage<Entry>.self)
+            let page = try core.records(.translateHistory, as: Entry.self, search: search, limit: 100, before: reset ? nil : next)
             items = reset ? page.records : items + page.records
             next = page.next
             table.reloadData()

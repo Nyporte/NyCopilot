@@ -52,7 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         services.moduleList = { [weak self] in self?.modules.map { ($0.id, $0.title, $0.symbolName) } ?? [] }
 
         // Only load shells whose platform-neutral half exists in this core build.
-        let available = Set((try? core.call(.coreInfo) as? [String: Any])?["modules"] as? [String] ?? [])
+        let available = core.moduleIDs
         // Old deletion markers go and the log is folded in, off the launch path.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [core] in _ = try? core?.call(.coreCompact) }
         modules = makeModules(available: available)
