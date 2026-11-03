@@ -5,6 +5,7 @@ import AppKit
 @MainActor
 final class CapturePane: SettingsPane, NSTextFieldDelegate {
     private let services: CopilotServices
+    private var settings: CaptureSettings { CaptureSettings(core: services.core) }
     private let permissionBadge = StatusBadge()
     private let permissionButton = Design.button(L("Open System Settings…"), target: nil, action: nil)
     private let folderLabel = Design.label("", size: 12, color: .secondaryLabelColor)
@@ -41,7 +42,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         format.addItems(withTitles: Self.formats.map(\.1))
         format.target = self
         format.action = #selector(changeFormat)
-        pattern.placeholderString = "NyCopilot {date} at {time}"
+        pattern.placeholderString = settings.defaultFileNamePattern
         pattern.delegate = self
         pattern.widthAnchor.constraint(equalToConstant: 220).isActive = true
         shadowSwitch.target = self
@@ -93,21 +94,21 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         permissionBadge.set(granted ? L("Allowed") : L("Not allowed"), color: granted ? .systemGreen : .systemOrange)
         permissionButton.isHidden = granted
         refreshFolder()
-        let current: String = services.core.setting(.captureFormat, default: "png")
+        let current = settings.format
         format.selectItem(at: Self.formats.firstIndex { $0.0 == current } ?? 0)
-        pattern.stringValue = services.core.setting(.captureFileName, default: "")
-        shadowSwitch.state = services.core.setting(.pinShadow, default: true) ? .on : .off
-        hideSwitch.state = services.core.setting(.hideOwnWindows, default: false) ? .on : .off
-        let rate = services.core.setting(.gifFPS, default: 15)
+        pattern.stringValue = settings.fileNamePattern
+        shadowSwitch.state = settings.pinShadow ? .on : .off
+        hideSwitch.state = settings.hidesOwnWindows ? .on : .off
+        let rate = settings.gifFPS
         gifRate.selectItem(at: Self.rates.firstIndex { $0 >= rate } ?? 1)
-        gifRetinaSwitch.state = services.core.setting(.gifRetina, default: false) ? .on : .off
-        gifCursorSwitch.state = services.core.setting(.gifCursor, default: true) ? .on : .off
+        gifRetinaSwitch.state = settings.gifRetina ? .on : .off
+        gifCursorSwitch.state = settings.gifCursor ? .on : .off
         message.isHidden = true
         shortcuts.refresh()
     }
 
     private func refreshFolder() {
-        let chosen: String = services.core.setting(.captureSaveFolder, default: "")
+        let chosen = settings.saveFolder
         folderLabel.stringValue = chosen.isEmpty ? Self.defaultFolderName : (chosen as NSString).abbreviatingWithTildeInPath
         folderLabel.toolTip = chosen.isEmpty ? nil : chosen
     }
@@ -139,7 +140,7 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
         } catch {
             message.stringValue = error.localizedDescription
             message.isHidden = false
-            pattern.stringValue = services.core.setting(.captureFileName, default: "")
+            pattern.stringValue = settings.fileNamePattern
         }
     }
 

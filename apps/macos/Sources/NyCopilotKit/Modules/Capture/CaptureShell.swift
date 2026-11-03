@@ -16,6 +16,7 @@ final class CaptureShell: ModuleShell {
     }
 
     private let services: CopilotServices
+    private var settings: CaptureSettings { CaptureSettings(core: services.core) }
     private let board = PinBoard()
     private var session: CaptureSession?
     /// Between the shortcut and the overlay appearing, while the screens freeze.
@@ -114,18 +115,13 @@ final class CaptureShell: ModuleShell {
             guard let self else { return }
             defer { isStarting = false }
             do {
-                let frozen = try await ScreenGrabber.freezeAll(hidingOwnWindows: services.core.setting(.hideOwnWindows, default: false))
+                let frozen = try await ScreenGrabber.freezeAll(hidingOwnWindows: settings.hidesOwnWindows)
                 let froze = Date()
                 let recent = ((try? services.core.call(.captureRecentRegions, ["limit": 20], as: [Region].self)) ?? [])
                     .map { CGRect(x: $0.x, y: $0.y, width: $0.w, height: $0.h) }
                 let palette = ((try? services.core.call(.capturePalette) as? [String]) ?? []).compactMap(NSColor.init(hex:))
-                let color = NSColor(hex: services.core.setting(.captureColor, default: "#FF3B30")) ?? .systemRed
-                let stroke = CGFloat(services.core.setting(.captureStroke, default: 3.0))
-                let storedStyle = services.core.setting(.captureStyle, default: [String: Any]())
-                let style = (try? JSONSerialization.data(withJSONObject: storedStyle))
-                    .flatMap { try? JSONDecoder().decode(CaptureStyle.self, from: $0) } ?? CaptureStyle()
-                let session = CaptureSession(frozen: frozen, recent: recent, palette: palette, color: color, stroke: stroke,
-                                             style: style) { [weak self] color, stroke, style in
+                let session = CaptureSession(frozen: frozen, recent: recent, palette: palette, color: settings.color, stroke: settings.stroke,
+                                             style: settings.style) { [weak self] color, stroke, style in
                     try? self?.services.core.setSetting(.captureColor, color.hexString)
                     try? self?.services.core.setSetting(.captureStroke, Double(stroke))
                     try? self?.services.core.setSetting(.captureStyle, style.json)
@@ -196,7 +192,7 @@ final class CaptureShell: ModuleShell {
         case .pin:
             // A scrolling capture is taller than its region: it starts there and fits the screen.
             let frame = ScreenGeometry.appKit(CGRect(origin: region.origin, size: image.size))
-            let pin = board.pin(image, at: frame, shadow: services.core.setting(.pinShadow, default: true))
+            let pin = board.pin(image, at: frame, shadow: settings.pinShadow)
             let visible = screen.visibleFrame
             if frame.height > visible.height * 0.9 {
                 pin.setZoom(visible.height * 0.9 / frame.height, around: NSPoint(x: frame.minX, y: frame.maxY))
@@ -222,9 +218,7 @@ final class CaptureShell: ModuleShell {
     private var copiedClip: URL?
 
     private func startRecording(_ region: CGRect, on screen: NSScreen) {
-        let core = services.core
-        let recording = GifRecording(region: region, screen: screen, fps: core.setting(.gifFPS, default: 15),
-                                     retina: core.setting(.gifRetina, default: false), showsCursor: core.setting(.gifCursor, default: true),
+        let recording = GifRecording(region: region, screen: screen, fps: settings.gifFPS, retina: settings.gifRetina, showsCursor: settings.gifCursor,
                                      shortcut: services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? "F1")
         recording.onFinish = { [weak self] clip in
             self?.recording = nil
@@ -316,7 +310,7 @@ final class CaptureShell: ModuleShell {
         let screen = frozen.screen
         // The frozen pixels are exactly what was on screen, so they start the image at once — unless
         // a pin was on them, since the live stream leaves pins out.
-        let hidesPins = services.core.setting(.hideOwnWindows, default: false)
+        let hidesPins = settings.hidesOwnWindows
         let capture = ScrollCapture(region: region, frozen: frozen) { [weak self] rect in
             hidesPins || !(self?.board.covers(ScreenGeometry.appKit(rect)) ?? false)
         }
@@ -348,11 +342,11 @@ final class CaptureShell: ModuleShell {
 
     // MARK: Files
 
-    private var format: String { services.core.setting(.captureFormat, default: "png") }
+    private var format: String { settings.format }
 
     /// The chosen folder, or Pictures/NyCopilot, created on first use.
     private var saveFolder: URL {
-        let chosen: String = services.core.setting(.captureSaveFolder, default: "")
+        let chosen = settings.saveFolder
         let folder = chosen.isEmpty
             ? FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask)[0].appendingPathComponent("NyCopilot")
             : URL(fileURLWithPath: (chosen as NSString).expandingTildeInPath)
@@ -442,7 +436,7 @@ final class CaptureShell: ModuleShell {
         let mouse = NSEvent.mouseLocation
         let frame = NSRect(x: mouse.x - picture.size.width / 2, y: mouse.y - picture.size.height / 2,
                            width: picture.size.width, height: picture.size.height)
-        self.board.pin(picture, at: frame, shadow: services.core.setting(.pinShadow, default: true))
+        self.board.pin(picture, at: frame, shadow: settings.pinShadow)
         tipAboutPins(near: frame)
     }
 
@@ -471,5 +465,36 @@ final class CaptureShell: ModuleShell {
             ])
             return true
         }
+    }
+}
+
+/// The capture settings, each read with its fallback in this one place. The core answers with
+/// its manifest default for any setting not yet set, so a fallback only shows if it can't answer.
+struct CaptureSettings {
+    let core: NyCore
+
+    var hidesOwnWindows: Bool { core.setting(.hideOwnWindows, default: false) }
+    var pinShadow: Bool { core.setting(.pinShadow, default: true) }
+    var color: NSColor { NSColor(hex: core.setting(.captureColor, default: "#FF3B30")) ?? .systemRed }
+    var stroke: CGFloat { CGFloat(core.setting(.captureStroke, default: 3.0)) }
+    var style: CaptureStyle {
+        let stored = core.setting(.captureStyle, default: [String: Any]())
+        return (try? JSONSerialization.data(withJSONObject: stored)).flatMap { try? JSONDecoder().decode(CaptureStyle.self, from: $0) } ?? CaptureStyle()
+    }
+    var format: String { core.setting(.captureFormat, default: "png") }
+    /// Empty for Pictures/NyCopilot.
+    var saveFolder: String { core.setting(.captureSaveFolder, default: "") }
+    var fileNamePattern: String { core.setting(.captureFileName, default: "") }
+    var gifFPS: Int { core.setting(.gifFPS, default: 15) }
+    var gifRetina: Bool { core.setting(.gifRetina, default: false) }
+    var gifCursor: Bool { core.setting(.gifCursor, default: true) }
+
+    /// The file name pattern the core starts with, from its manifest.
+    var defaultFileNamePattern: String {
+        guard let modules = try? core.call(.coreModules) as? [[String: Any]],
+              let capture = modules.first(where: { $0["id"] as? String == "capture" }),
+              let settings = capture["settings"] as? [[String: Any]],
+              let spec = settings.first(where: { $0["key"] as? String == SettingKey.captureFileName.rawValue }) else { return "" }
+        return spec["default"] as? String ?? ""
     }
 }
