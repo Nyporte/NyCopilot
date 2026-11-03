@@ -122,7 +122,9 @@ notes are sent to as Markdown), `ask.send_images` (synced, `true`), `capture.gif
 `mouse.reverse_scroll` (device, `false`: a wheel scrolls opposite to the system's direction; trackpads don't change),
 `mouse.smooth_scroll` (device, `false`), `mouse.scroll_lines` (device, `3`, 1–10 lines of 33.6 points a click),
 `mouse.scroll_glide` (device, `200`, 0–600 ms), and `mouse.scroll_exceptions` (device, `[]`, at most 100 bundle
-identifiers of apps whose wheel doesn't glide). Inbox images may be
+identifiers of apps whose wheel doesn't glide), `menubar.enabled` (device, `false`), `menubar.collapsed` (device,
+`false`: the icons left of the arrow are hidden now), and `menubar.collapse_after` (device, `10`, 0–600 seconds
+before shown icons hide again; 0 = never). Inbox images may be
 `<uuid>.gif` as well as `<uuid>.png`.
 
 ## Events

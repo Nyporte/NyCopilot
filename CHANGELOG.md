@@ -5,9 +5,10 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 
 ## Unreleased
 
-- **Screen translation settles.** Holding F2 no longer takes every highlight down and reads the
-  screen again, over and over: NyCopilot could see its own overlay in the screen it watched, when
-  it had started before its menu bar icon was up. Pointing at a block shows its translation again.
+- **Tidy the menu bar.** Settings → Menu Bar puts an arrow in the menu bar: ⌘-drag the icons you
+  rarely need left of it, and a click on the arrow hides them (or shows them again). They can hide
+  again on their own after a few seconds, stay hidden across restarts, and can have a shortcut.
+  It's off until you turn it on.
 
 ## 0.5.0 — 2026-11-03
 

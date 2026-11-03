@@ -5,7 +5,8 @@ import XCTest
 @testable import NyCopilotKit
 
 /// The parts with no screen in them: timing curves, snooze times, key schemes, exports, the GIF
-/// encoder, stuck capture streams, the core bridge's settings cache, and reversing and gliding a wheel.
+/// encoder, stuck capture streams, the core bridge's settings cache, reversing and gliding a wheel, and
+/// the menu bar divider.
 final class LogicTests: XCTestCase {
     func testBezierCurvesEaseOutAndOvershootThenSettle() {
         XCTAssertEqual(BezierCurve.easeOut.value(at: 0), 0, accuracy: 0.001)
@@ -413,6 +414,77 @@ final class LogicTests: XCTestCase {
                                            hidingOwnWindows: true, own: 30817))
         XCTAssertFalse(ScreenGrabber.serves(displays: atLaunch.displays, applications: atLaunch.applications + [30817], for: [3, 4],
                                             hidingOwnWindows: true, own: 30817), "a display plugged in since")
+    }
+
+    /// Hidden, the divider grows wide enough to carry the icons left of it off every screen; shown,
+    /// it's the arrow itself, and shown icons hide again only when asked to.
+    func testMenuBarDividerHidesByGrowingAndShowsAsTheArrow() {
+        var state = MenuBarState(isOn: true, collapsed: true, collapseAfter: 10)
+        XCTAssertEqual(state.dividerLength, 10_000)
+        XCTAssertGreaterThan(state.dividerLength, 7680, "wider than an 8K display at 1×")
+        XCTAssertNil(state.hideAgainIn, "already hidden")
+        state.collapsed = false
+        XCTAssertEqual(state.dividerLength, NSStatusItem.variableLength, "the arrow, as wide as its image")
+        XCTAssertEqual(state.hideAgainIn, 10)
+        state.collapseAfter = 0
+        XCTAssertNil(state.hideAgainIn, "never")
+        state.collapseAfter = 5
+        state.isOn = false
+        XCTAssertNil(state.hideAgainIn, "off: no divider to hide behind")
+        XCTAssertTrue(MenuBarState.collapseAfterChoices.contains(0) && MenuBarState.collapseAfterChoices.contains(10))
+    }
+
+    /// Off until asked for and shown at first; whether icons are hidden survives a relaunch; the
+    /// feature switched off in General takes the divider away whatever its own switch says.
+    @MainActor
+    func testMenuBarHidingIsKeptAcrossLaunches() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("menubar-\(UUID())", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        var core: NyCore? = try NyCore(dataDirectory: folder)
+        XCTAssertEqual(MenuBarState.read(core!, moduleOn: true), MenuBarState(isOn: false, collapsed: false, collapseAfter: 10))
+
+        try core!.setSetting(.menuBarEnabled, true)
+        try core!.setSetting(.menuBarCollapsed, true)
+        try core!.setSetting(.menuBarCollapseAfter, 30.0)
+        XCTAssertThrowsError(try core!.setSetting(.menuBarCollapseAfter, 601.0))
+        core = nil
+
+        let relaunched = try NyCore(dataDirectory: folder)
+        let state = MenuBarState.read(relaunched, moduleOn: true)
+        XCTAssertEqual(state, MenuBarState(isOn: true, collapsed: true, collapseAfter: 30))
+        XCTAssertEqual(state.dividerLength, MenuBarState.hidingLength)
+        XCTAssertFalse(MenuBarState.read(relaunched, moduleOn: false).isOn)
+
+        try relaunched.setSetting(.menuBarCollapsed, false)
+        XCTAssertEqual(MenuBarState.read(relaunched, moduleOn: true).dividerLength, MenuBarState.shownLength)
+    }
+
+    /// The chevron comes back right beside the divider, and hiding with it anywhere left of the
+    /// divider would hide it too; a pointer on the
+    /// menu bar (taller beside a notch, or hidden in full screen) keeps shown icons shown.
+    func testMenuBarHidesOnlyWithTheChevronInSightAndNotUnderThePointer() {
+        // Measured on macOS 14: the chevron came back at 1563, where the divider (saved at 331) ended.
+        XCTAssertEqual(MenuBarState.chevronPosition(dividerSaved: 331, dividerMaxX: 1589, screenMaxX: 1920), 330)
+        XCTAssertEqual(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: 1589, screenMaxX: 1920), 330, "never dragged: where it is")
+        XCTAssertEqual(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: 3029, screenMaxX: 3360), 330, "a second display to the right")
+        XCTAssertNil(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: 0, screenMaxX: 1920), "not placed yet")
+        XCTAssertNil(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: nil, screenMaxX: nil))
+
+        XCTAssertTrue(MenuBarState.canHide(divider: 1563, chevron: 1563))
+        XCTAssertFalse(MenuBarState.canHide(divider: 1563, chevron: 1349), "came back at the far left")
+        XCTAssertTrue(MenuBarState.canHide(divider: 1370, chevron: 1370))
+        XCTAssertTrue(MenuBarState.canHide(divider: 1342, chevron: 1370))
+        XCTAssertFalse(MenuBarState.canHide(divider: 1396, chevron: 1342), "dragged right of the chevron")
+
+        let screen = CGRect(x: 0, y: 0, width: 1512, height: 982)
+        let notched = CGRect(x: 0, y: 0, width: 1512, height: 945)
+        XCTAssertTrue(MenuBarState.isOnMenuBar(CGPoint(x: 900, y: 950), frame: screen, visibleFrame: notched, thickness: 24))
+        XCTAssertFalse(MenuBarState.isOnMenuBar(CGPoint(x: 900, y: 940), frame: screen, visibleFrame: notched, thickness: 24))
+        XCTAssertTrue(MenuBarState.isOnMenuBar(CGPoint(x: 900, y: 970), frame: screen, visibleFrame: screen, thickness: 24), "menu bar hidden")
+        XCTAssertFalse(MenuBarState.isOnMenuBar(CGPoint(x: 900, y: 950), frame: screen, visibleFrame: screen, thickness: 24))
+        let left = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        XCTAssertFalse(MenuBarState.isOnMenuBar(CGPoint(x: 900, y: 1075), frame: left, visibleFrame: left.insetBy(dx: 0, dy: 12), thickness: 24),
+                       "another display")
     }
 
     private final class Counter: @unchecked Sendable { var count = 0 }
