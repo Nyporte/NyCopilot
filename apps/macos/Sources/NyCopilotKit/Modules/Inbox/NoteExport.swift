@@ -103,10 +103,7 @@ enum NoteExport {
             html += "<div><br></div><div><i>\(L("From %@", link))</i></div>"
         }
         let script = "tell application \"Notes\" to make new note with properties {body:\"\(appleScriptString(html))\"}"
-        // NSAppleScript belongs on the main thread; Notes answers within a moment.
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error { throw Failure.notesFailed((error[NSAppleScript.errorMessage] as? String) ?? "error \(error[NSAppleScript.errorNumber] ?? "")") }
+        if let problem = await AppleScriptThread.shared.run(script) { throw Failure.notesFailed(problem) }
     }
 
     private static func escape(_ text: String) -> String {
@@ -172,6 +169,46 @@ enum NoteExport {
             n += 1
         }
         return candidate
+    }
+}
+
+/// AppleScript's own thread. NSAppleScript isn't thread-safe, so every script runs here, one after
+/// another; and Notes can take a moment to answer, which the main thread shouldn't wait out.
+private final class AppleScriptThread: @unchecked Sendable {
+    static let shared = AppleScriptThread()
+
+    private let jobs = NSCondition()
+    /// Guarded by `jobs`.
+    private var waiting: [@Sendable () -> Void] = []
+
+    private init() {
+        let thread = Thread { [self] in work() }
+        thread.name = "NyCopilot AppleScript"
+        thread.start()
+    }
+
+    /// Runs `source`; what went wrong, as AppleScript tells it, or nil.
+    func run(_ source: String) async -> String? {
+        await withCheckedContinuation { continuation in
+            jobs.lock()
+            waiting.append {
+                var error: NSDictionary?
+                NSAppleScript(source: source)?.executeAndReturnError(&error)
+                continuation.resume(returning: error.map { ($0[NSAppleScript.errorMessage] as? String) ?? "error \($0[NSAppleScript.errorNumber] ?? "")" })
+            }
+            jobs.signal()
+            jobs.unlock()
+        }
+    }
+
+    private func work() {
+        while true {
+            jobs.lock()
+            while waiting.isEmpty { jobs.wait() }
+            let job = waiting.removeFirst()
+            jobs.unlock()
+            autoreleasepool { job() }
+        }
     }
 }
 

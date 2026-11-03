@@ -48,11 +48,10 @@ extension InboxWindow {
             if let snoozedID = try core.inboxSnooze(item.id, until: Int64(date.timeIntervalSince1970 * 1000)) {
                 remember(L("Snooze")) { [core] in (try? core.inboxWake(snoozedID))?.first?.id }
             }
+            selectAfterChange = .near(row)
         } catch {
             NSSound.beep()
         }
-        reload()
-        selectNear(row)
     }
 
     /// What a destination gets from the selected note.
@@ -96,8 +95,7 @@ extension InboxWindow {
 
     @objc func deleteSelected() {
         guard let item = selectedItem else { return }
-        let row = table.selectedRow
-        _ = try? core.deleteRecord(item.id)
+        if (try? core.deleteRecord(item.id)) != nil { selectAfterChange = .near(table.selectedRow) }
         if let image = item.data.image { keptImages.append(image) }
         let note = item.data, list = tab, created = item.data.created ?? item.createdAt
         // Undo puts the note back where it was — waiting, later, or done — with its own date.
@@ -113,8 +111,6 @@ extension InboxWindow {
             case .later: return (note.until.flatMap { try? core.inboxSnooze(id, until: $0) ?? nil }) ?? id
             }
         }
-        reload()
-        selectNear(row)
     }
 
     @objc func copySelected() {

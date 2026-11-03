@@ -65,6 +65,11 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     var undoStack: [(String, () -> String?)] = []
     var keptImages: [String] = []
     var changes: CoreObservation?
+    /// Actions change the core, and the change reloads the list; then this is selected: the note
+    /// that took a row's place, or a note by id.
+    enum Selection { case near(Int), note(String) }
+    var selectAfterChange: Selection?
+    private var reloadScheduled = false
     let clock: DateFormatter = {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
@@ -94,15 +99,33 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             window.center()
         }
         changes = core.observe { [weak self] event in
-            guard event.changedCollection?.hasPrefix("inbox.") == true else { return }
-            // Hidden, it reloads when it's shown again (`present`).
-            if self?.window?.isVisible == true { self?.reload() }
+            if event.changedCollection?.hasPrefix("inbox.") == true { self?.coreChanged() }
         }
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(core:images:toast:)") }
 
+    /// One reload for all the changes an action makes (moving a note is two), and only while the
+    /// window is up: hidden, it reloads when it's shown again (`present`).
+    private func coreChanged() {
+        guard window?.isVisible == true else { selectAfterChange = nil; return }
+        guard !reloadScheduled else { return }
+        reloadScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            reloadScheduled = false
+            reload()
+            switch selectAfterChange {
+            case .near(let row): selectNear(row)
+            case .note(let id): select(id)
+            case nil: break
+            }
+            selectAfterChange = nil
+        }
+    }
+
     func present() {
+        selectAfterChange = nil
         reload()
         NSApp.bringForward()
         window?.makeKeyAndOrderFront(nil)
@@ -310,6 +333,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     @objc func switchTab() {
         saveNow()
+        selectAfterChange = nil
         table.deselectAll(nil)
         reload()
         selectFirstNote()
@@ -439,15 +463,13 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
             if let back { return try? core.inboxMove(back, movedID) ?? nil }
             return try? core.inboxSnooze(movedID, until: until ?? 0) ?? nil
         }
-        reload()
-        selectNear(row)
+        selectAfterChange = .near(row)
     }
 
     /// Marks a waiting note done that may no longer be selected, with the same undo as ⌘D.
     func markDone(_ item: Item) {
         guard let movedID = try? core.inboxMove(.inboxDone, item.id) ?? nil else { return }
         remember(CoreMethod.inboxDone.rawValue) { [core] in try? core.inboxMove(.inboxUndone, movedID) ?? nil }
-        reload()
     }
 
     func verb(_ verb: Verb) {
@@ -465,12 +487,14 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     func undo() {
         guard let (_, action) = undoStack.popLast() else { NSSound.beep(); return }
-        let restored = action()
-        reload()
-        if let restored, let row = rows.firstIndex(where: { if case .note(let item) = $0 { item.id == restored } else { false } }) {
-            table.selectRowIndexes([row], byExtendingSelection: false)
-            table.scrollRowToVisible(row)
-        }
+        selectAfterChange = action().map(Selection.note)
+    }
+
+    /// A note by id, if it's in the list.
+    func select(_ id: String) {
+        guard let row = rows.firstIndex(where: { if case .note(let item) = $0 { item.id == id } else { false } }) else { return }
+        table.selectRowIndexes([row], byExtendingSelection: false)
+        table.scrollRowToVisible(row)
     }
 
     /// After a note leaves the list, the one that took its place (or the one above).

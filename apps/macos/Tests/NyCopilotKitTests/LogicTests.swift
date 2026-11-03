@@ -267,6 +267,38 @@ final class LogicTests: XCTestCase {
         }
     }
 
+    /// Events arrive decoded, on the main thread, until the observation is cancelled.
+    @MainActor
+    func testCoreEventsReachObserversUntilCancelled() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("core-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let core = try NyCore(dataDirectory: folder)
+        var seen: [CoreEvent] = []
+        let observation = core.observe { seen.append($0) }
+        try core.setSetting(.clipboardKeepDays, 7)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(seen, [.settingsChanged(key: SettingKey.clipboardKeepDays.rawValue)])
+        observation.cancel()
+        try core.setSetting(.clipboardKeepDays, 8)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertEqual(seen.count, 1, "nothing after cancelling")
+        let delta = #"{"type": "ask.delta", "request_id": "r1", "text": "Two"}"#
+        XCTAssertEqual(try JSONDecoder().decode(CoreEvent.self, from: Data(delta.utf8)), .askDelta(requestID: "r1", text: "Two"))
+        XCTAssertEqual(try JSONDecoder().decode(CoreEvent.self, from: Data(#"{"type": "later.kind"}"#.utf8)), .unknown(type: "later.kind"))
+    }
+
+    /// A finished recording moves into the folder under a new name, keeping its type.
+    func testImageFolderTakesOverAFile() throws {
+        let images = ImageFolder("logic-images-\(UUID())")
+        defer { images.removeAll() }
+        let recording = FileManager.default.temporaryDirectory.appendingPathComponent("clip-\(UUID()).GIF")
+        try Data("GIF89a".utf8).write(to: recording)
+        let name = try images.keep(moving: recording)
+        XCTAssertTrue(name.hasSuffix(".gif"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: recording.path), "moved, not copied")
+        XCTAssertEqual(try Data(contentsOf: images.file(name)), Data("GIF89a".utf8))
+    }
+
     func testSettingsCacheFollowsWrites() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("core-\(UUID())", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }

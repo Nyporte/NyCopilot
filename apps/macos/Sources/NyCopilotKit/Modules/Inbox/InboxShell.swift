@@ -159,13 +159,12 @@ final class InboxShell: ModuleShell {
         services.toast.show(L("Added to Inbox"), detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
-    /// A GIF recording, copied in beside the screenshots.
-    /// The file moves into the inbox's folder: it's a temporary recording no one else keeps.
+    /// A GIF recording, beside the screenshots. The file moves into the inbox's folder: it's a
+    /// temporary recording no one else keeps.
     private func send(file url: URL, context: SourceContext) {
-        let name = "\(UUID().uuidString).\(url.pathExtension.lowercased())"
+        let name: String
         do {
-            try FileManager.default.createDirectory(at: Self.images.url, withIntermediateDirectories: true)
-            try FileManager.default.moveItem(at: url, to: Self.images.file(name))
+            name = try Self.images.keep(moving: url)
         } catch {
             services.toast.show(L("Couldn’t add the recording to the inbox"), detail: error.localizedDescription, style: .warning)
             return
