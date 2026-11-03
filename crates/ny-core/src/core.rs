@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{now_millis, ListQuery, Manifest, Module, NyError, Result, Scope, SettingSpec, Store};
+use crate::{now_millis, ListQuery, Manifest, Module, NyError, Page, Record, Result, Scope, SettingSpec, Store, DAY_MILLIS};
 
 /// Receives JSON events such as `{"type":"records.changed",...}`. Called on the calling thread;
 /// clients hop to their UI thread themselves.
@@ -107,7 +107,7 @@ impl Core {
             "modules" => Ok(serde_json::to_value(&self.manifests)?),
             // Deletion markers older than 30 days go, and the log is folded in; at launch and quit.
             "compact" => {
-                let removed = self.store()?.compact(now_millis() - 30 * 24 * 60 * 60 * 1000)?;
+                let removed = self.store()?.compact(now_millis() - 30 * DAY_MILLIS)?;
                 Ok(json!({ "removed": removed }))
             }
             _ => Err(NyError::unknown_method(&format!("core.{command}"))),
@@ -157,9 +157,7 @@ impl Core {
         match command {
             "list" => {
                 let p: List = parse(params)?;
-                self.owned_collection(&p.collection)?;
-                let page = self.store()?.list(&p.collection, &ListQuery { before: p.before, limit: p.limit, search: p.search })?;
-                Ok(serde_json::to_value(page)?)
+                Ok(serde_json::to_value(self.list_records(&p.collection, &ListQuery { before: p.before, limit: p.limit, search: p.search })?)?)
             }
             "get" => {
                 let p: Id = parse(params)?;
@@ -176,7 +174,7 @@ impl Core {
             }
             "clear" => {
                 let p: Collection = parse(params)?;
-                self.owned_collection(&p.collection)?;
+                self.declared_collection(&p.collection)?;
                 let count = self.store()?.clear(&p.collection)?;
                 if count > 0 { self.emit(json!({ "type": "records.changed", "collection": p.collection, "change": "cleared" })); }
                 Ok(json!({ "deleted": count }))
@@ -235,31 +233,64 @@ impl Core {
         }
     }
 
-    /// Insert a record into a collection the calling module owns and notify listeners.
-    pub fn insert_record(&self, collection: &str, data: Value, search: &str, created_at: Option<i64>) -> Result<crate::Record> {
-        self.owned_collection(collection)?;
-        let record = self.store()?.insert(collection, data, search, created_at)?;
+    // Record services check only that some module declares the collection: the core doesn't know
+    // which module is calling, so each module keeps to its own collections.
+
+    /// Insert a record into a declared collection and notify listeners. `created_at` keeps an older
+    /// date (an import, a note brought back); `lookup` files it under a key for `find_records`.
+    pub fn insert_record(&self, collection: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Record> {
+        self.declared_collection(collection)?;
+        let record = self.store()?.insert(collection, data, search, created_at, lookup)?;
         self.emit(json!({ "type": "records.changed", "collection": collection, "id": record.id, "change": "inserted" }));
         Ok(record)
     }
 
-    /// `insert_record` with a lookup key, so the module can find the record again without a scan.
-    pub fn insert_keyed_record(&self, collection: &str, data: Value, search: &str, lookup: &str) -> Result<crate::Record> {
-        self.owned_collection(collection)?;
-        let record = self.store()?.insert_keyed(collection, data, search, None, Some(lookup))?;
-        self.emit(json!({ "type": "records.changed", "collection": collection, "id": record.id, "change": "inserted" }));
+    /// A live record, if it is in one of `collections` (each declared).
+    pub fn get_record(&self, collections: &[&str], id: &str) -> Result<Option<Record>> {
+        for collection in collections { self.declared_collection(collection)?; }
+        Ok(self.store()?.get(id)?.filter(|record| collections.contains(&record.collection.as_str())))
+    }
+
+    /// A page of a declared collection, newest first (see `Store::list`).
+    pub fn list_records(&self, collection: &str, query: &ListQuery) -> Result<Page> {
+        self.declared_collection(collection)?;
+        self.store()?.list(collection, query)
+    }
+
+    /// Tombstone a record if it is in `collection` (declared) and notify listeners → whether it was.
+    pub fn delete_record(&self, collection: &str, id: &str) -> Result<bool> {
+        self.declared_collection(collection)?;
+        let mut store = self.store()?;
+        if store.get(id)?.is_none_or(|record| record.collection != collection) { return Ok(false); }
+        let deleted = store.delete(id)?.is_some();
+        drop(store);
+        if deleted { self.emit(json!({ "type": "records.changed", "collection": collection, "id": id, "change": "deleted" })); }
+        Ok(deleted)
+    }
+
+    /// Move a record from one declared collection to another as new data, in one transaction (see
+    /// `Store::move_record`), and notify listeners as an insert and a delete. `not_found` if `id`
+    /// isn't live in `from`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn move_record(&self, id: &str, from: &str, to: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Record> {
+        self.declared_collection(from)?;
+        self.declared_collection(to)?;
+        let record = self.store()?.move_record(id, from, to, data, search, created_at, lookup)?
+            .ok_or_else(|| NyError::not_found("That item no longer exists."))?;
+        self.emit(json!({ "type": "records.changed", "collection": to, "id": record.id, "change": "inserted" }));
+        self.emit(json!({ "type": "records.changed", "collection": from, "id": id, "change": "deleted" }));
         Ok(record)
     }
 
-    /// Live records in `collection` (which the calling module owns) under a lookup key.
-    pub fn find_records(&self, collection: &str, lookup: &str) -> Result<Vec<crate::Record>> {
-        self.owned_collection(collection)?;
+    /// Live records in a declared collection under a lookup key.
+    pub fn find_records(&self, collection: &str, lookup: &str) -> Result<Vec<Record>> {
+        self.declared_collection(collection)?;
         self.store()?.find(collection, lookup)
     }
 
-    /// Replace the data of a record in `collection` (which the calling module owns) and notify listeners.
-    pub fn update_record(&self, collection: &str, id: &str, data: Value, search: &str) -> Result<crate::Record> {
-        self.owned_collection(collection)?;
+    /// Replace the data of a record in `collection` (declared) and notify listeners.
+    pub fn update_record(&self, collection: &str, id: &str, data: Value, search: &str) -> Result<Record> {
+        self.declared_collection(collection)?;
         let mut store = self.store()?;
         match store.get(id)? {
             Some(existing) if existing.collection == collection => {}
@@ -271,15 +302,15 @@ impl Core {
         Ok(record)
     }
 
-    /// How many live records a collection the calling module owns holds.
+    /// How many live records a declared collection holds.
     pub fn count_records(&self, collection: &str) -> Result<usize> {
-        self.owned_collection(collection)?;
+        self.declared_collection(collection)?;
         self.store()?.count(collection)
     }
 
     /// Apply a collection's retention policy (see `Store::prune`) and notify listeners.
-    pub fn prune_records(&self, collection: &str, keep: usize, before: i64) -> Result<usize> {
-        self.owned_collection(collection)?;
+    pub fn prune_records(&self, collection: &str, keep: Option<usize>, before: i64) -> Result<usize> {
+        self.declared_collection(collection)?;
         let count = self.store()?.prune(collection, keep, before)?;
         if count > 0 { self.emit(json!({ "type": "records.changed", "collection": collection, "change": "pruned" })); }
         Ok(count)
@@ -287,7 +318,8 @@ impl Core {
 
     pub fn emit(&self, event: Value) { (self.events)(event); }
 
-    fn owned_collection(&self, collection: &str) -> Result<()> {
+    /// Some module's manifest lists `collection`.
+    fn declared_collection(&self, collection: &str) -> Result<()> {
         if self.manifests.iter().any(|m| m.collections.iter().any(|c| c == collection)) { Ok(()) }
         else { Err(NyError::invalid_params(format!("Unknown collection “{collection}”."))) }
     }
@@ -312,14 +344,14 @@ mod tests {
         fn manifest(&self) -> Manifest {
             Manifest {
                 id: "notes".into(), name: "Notes".into(), summary: "Test module".into(), capabilities: vec![],
-                collections: vec!["notes.items".into()],
-                settings: vec![SettingSpec::new("notes.font_size", json!(13), Scope::Synced, "Size")],
+                collections: vec!["notes.items".into(), "notes.archive".into()],
+                settings: vec![SettingSpec::new("notes.font_size", json!(13), Scope::Synced, "Size").range((1.0, 72.0))],
                 commands: vec![CommandSpec::new("add", "Add a note")],
             }
         }
         fn call(&self, core: &Core, command: &str, params: Value) -> Result<Value> {
             match command {
-                "add" => Ok(serde_json::to_value(core.insert_record("notes.items", params.clone(), params["text"].as_str().unwrap_or(""), None)?)?),
+                "add" => Ok(serde_json::to_value(core.insert_record("notes.items", params.clone(), params["text"].as_str().unwrap_or(""), None, None)?)?),
                 _ => Err(NyError::unknown_method(command)),
             }
         }
@@ -354,6 +386,8 @@ mod tests {
         assert_eq!(core.call("records.delete", json!({ "id": note["id"] })).unwrap(), json!({ "deleted": true }));
         assert_eq!(events.load(Ordering::SeqCst), 4);
         assert_eq!(core.call("core.modules", Value::Null).unwrap()[0]["id"], "notes");
+        let setting = &core.call("core.modules", Value::Null).unwrap()[0]["settings"][0];
+        assert_eq!((setting["min"].clone(), setting["max"].clone()), (json!(1.0), json!(72.0)));
     }
 
     #[test]
@@ -366,5 +400,26 @@ mod tests {
         assert_eq!(guard.check().unwrap_err().code, "cancelled");
         drop(guard);
         assert_eq!(core.call("core.cancel", json!({ "request_id": "a" })).unwrap(), json!({ "cancelled": false }));
+    }
+
+    #[test]
+    fn moves_are_announced_as_an_insert_and_a_delete() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = events.clone();
+        let core = Core::new(Store::open_in_memory().unwrap(), vec![Arc::new(Notes)], "test", Box::new(move |e| sink.lock().unwrap().push(e))).unwrap();
+        let note = core.insert_record("notes.items", json!({ "text": "x" }), "x", None, None).unwrap();
+        assert!(core.get_record(&["notes.archive"], &note.id).unwrap().is_none());
+        assert_eq!(core.get_record(&["notes.items", "notes.archive"], &note.id).unwrap().unwrap().id, note.id);
+        assert_eq!(core.get_record(&["secrets.items"], &note.id).unwrap_err().code, "invalid_params");
+        assert!(!core.delete_record("notes.archive", &note.id).unwrap());
+        events.lock().unwrap().clear();
+        let moved = core.move_record(&note.id, "notes.items", "notes.archive", json!({ "text": "x" }), "x", Some(5), None).unwrap();
+        assert_eq!((moved.collection.as_str(), moved.created_at), ("notes.archive", 5));
+        let changes: Vec<(Value, Value, Value)> = events.lock().unwrap().iter().map(|e| (e["collection"].clone(), e["id"].clone(), e["change"].clone())).collect();
+        assert_eq!(changes, vec![(json!("notes.archive"), json!(moved.id), json!("inserted")), (json!("notes.items"), json!(note.id), json!("deleted"))]);
+        // The old record is gone, so moving it again finds nothing.
+        assert_eq!(core.move_record(&note.id, "notes.items", "notes.archive", json!({}), "", None, None).unwrap_err().code, "not_found");
+        assert_eq!(core.list_records("notes.archive", &ListQuery { limit: 10, ..Default::default() }).unwrap().records.len(), 1);
+        assert!(core.delete_record("notes.archive", &moved.id).unwrap());
     }
 }

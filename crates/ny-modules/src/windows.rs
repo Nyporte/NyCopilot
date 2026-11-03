@@ -57,6 +57,9 @@ pub const ACTIONS: &[(&str, &str, &str)] = &[
     ("previous_display", "Previous Display", "Displays"),
 ];
 
+/// Space around and between snapped windows, in points.
+pub const GAP_RANGE: (f64, f64) = (0.0, 60.0);
+
 /// Halves cycle through these widths when their shortcut is repeated.
 const CYCLE: [f64; 3] = [1.0 / 2.0, 2.0 / 3.0, 1.0 / 3.0];
 
@@ -190,7 +193,7 @@ impl Module for WindowsModule {
             capabilities: vec!["window.control".into(), "hotkey".into(), "pointer.watch".into()],
             collections: vec![],
             settings: vec![
-                SettingSpec::new("windows.gap", json!(0), Scope::Synced, "Space in points around and between snapped windows."),
+                SettingSpec::new("windows.gap", json!(0), Scope::Synced, "Space in points around and between snapped windows.").range(GAP_RANGE),
                 SettingSpec::new("windows.repeat", json!("cycle_sizes"), Scope::Synced,
                                  "Repeating a layout shortcut: cycle_sizes (½ → ⅔ → ⅓), move_across_displays, or nothing."),
                 SettingSpec::new("windows.drag_snap", json!(true), Scope::Synced, "Snap windows dragged to screen edges and corners."),
@@ -247,7 +250,7 @@ impl Module for WindowsModule {
 
     fn validate_setting(&self, key: &str, value: &Value) -> Result<()> {
         match key {
-            "windows.gap" if !value.as_f64().is_some_and(|gap| (0.0..=60.0).contains(&gap)) =>
+            "windows.gap" if !value.as_f64().is_some_and(|gap| SettingSpec::within(GAP_RANGE, gap)) =>
                 Err(NyError::invalid_setting("The gap must be between 0 and 60 points.")),
             "windows.repeat" if !REPEAT_MODES.contains(&value.as_str().unwrap_or_default()) =>
                 Err(NyError::invalid_setting("Choose cycle_sizes, move_across_displays, or nothing.")),

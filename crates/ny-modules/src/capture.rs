@@ -4,12 +4,17 @@
 //! work. The core keeps what every platform shares: output settings, file names, and a history of
 //! captured regions that the capture UI can step back through.
 
-use ny_core::{now_millis, parse, CommandSpec, Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
+use ny_core::{parse, CommandSpec, Core, ListQuery, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 pub const HISTORY: &str = "capture.history";
+/// Captures remembered for `recent_regions`; older ones go.
+pub const MAX_HISTORY: usize = 200;
 pub const FORMATS: &[&str] = &["png", "jpg"];
+/// Annotation line width, in points, and GIF frames a second.
+pub const STROKE_RANGE: (f64, f64) = (1.0, 24.0);
+pub const GIF_FPS_RANGE: (f64, f64) = (5.0, 30.0);
 pub const DEFAULT_PATTERN: &str = "NyCopilot {date} at {time}";
 /// Shape and text options, kept between captures. Missing keys fall back to these defaults.
 pub fn default_style() -> Value {
@@ -47,7 +52,7 @@ pub struct Region {
     pub h: f64,
 }
 
-/// `{date}` (YYYY-MM-DD), `{time}` (HH.MM.SS), and `{n}` (a counter) in `pattern`, plus the extension.
+/// `{date}` (YYYY-MM-DD), `{time}` (HH.MM.SS), and `{n}` (`counter`) in `pattern`, plus the extension.
 /// Characters that are unsafe in file names on any platform are replaced.
 pub fn file_name(pattern: &str, format: &str, local: (i32, u32, u32, u32, u32, u32), counter: u64) -> String {
     let (year, month, day, hour, minute, second) = local;
@@ -55,10 +60,13 @@ pub fn file_name(pattern: &str, format: &str, local: (i32, u32, u32, u32, u32, u
         .replace("{date}", &format!("{year:04}-{month:02}-{day:02}"))
         .replace("{time}", &format!("{hour:02}.{minute:02}.{second:02}"))
         .replace("{n}", &counter.to_string());
-    let safe: String = name.chars().map(|c| if "/\\:*?\"<>|".contains(c) || c.is_control() { '-' } else { c }).collect();
+    let safe: String = name.chars().map(|c| if crate::is_unsafe_in_file_name(c) { '-' } else { c }).collect();
     let trimmed = safe.trim().trim_matches('.');
     format!("{}.{format}", if trimmed.is_empty() { "Capture" } else { trimmed })
 }
+
+/// Taking a number and counting it up is one step, even when two captures are saved at once.
+static NUMBERING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub fn validate_color(value: &str) -> Result<()> {
     let hex = value.strip_prefix('#').unwrap_or("");
@@ -81,12 +89,14 @@ impl Module for CaptureModule {
                 SettingSpec::new("capture.save_folder", json!(""), Scope::Device, "Folder for saved captures; empty means Pictures/NyCopilot."),
                 SettingSpec::new("capture.format", json!("png"), Scope::Synced, "File format for saved captures: png or jpg."),
                 SettingSpec::new("capture.file_name", json!(DEFAULT_PATTERN), Scope::Synced, "File name pattern: {date}, {time}, {n}."),
+                // Numbers count the files saved on this machine, so they stay here too.
+                SettingSpec::new("capture.next_number", json!(1), Scope::Device, "The number {n} gives the next file name; it counts up from 1."),
                 SettingSpec::new("capture.color", json!(PALETTE[0]), Scope::Synced, "Annotation color last used."),
-                SettingSpec::new("capture.stroke", json!(3), Scope::Synced, "Annotation line width last used, in points."),
+                SettingSpec::new("capture.stroke", json!(3), Scope::Synced, "Annotation line width last used, in points.").range(STROKE_RANGE),
                 SettingSpec::new("capture.style", default_style(), Scope::Synced,
                                  "Corner radius, fill, and text font, size, and emphasis last used for annotations."),
                 SettingSpec::new("capture.pin_shadow", json!(true), Scope::Synced, "Draw a shadow around pinned images."),
-                SettingSpec::new("capture.gif_fps", json!(15), Scope::Synced, "Frames a second in GIF recordings (5–30)."),
+                SettingSpec::new("capture.gif_fps", json!(15), Scope::Synced, "Frames a second in GIF recordings (5–30).").range(GIF_FPS_RANGE),
                 SettingSpec::new("capture.gif_retina", json!(false), Scope::Synced,
                                  "Record GIFs at full Retina resolution rather than one pixel per point."),
                 SettingSpec::new("capture.gif_cursor", json!(true), Scope::Synced, "Show the pointer in GIF recordings."),
@@ -95,7 +105,7 @@ impl Module for CaptureModule {
             ],
             commands: vec![
                 CommandSpec::new("palette", "Annotation colors: [\"#RRGGBB\"]."),
-                CommandSpec::new("file_name", "{date: [y, m, d, H, M, S]} → {name} from the pattern and format."),
+                CommandSpec::new("file_name", "{date: [y, m, d, H, M, S]} → {name} from the pattern and format; a pattern with {n} uses capture.next_number and counts it up."),
                 CommandSpec::new("record", "Remember a capture: {region, display?, width, height, path?} → {record}."),
                 CommandSpec::new("recent_regions", "Distinct recent regions, newest first: {limit?} → [Region]."),
             ],
@@ -116,22 +126,30 @@ impl Module for CaptureModule {
                 let p: Name = parse(params)?;
                 let pattern = core.setting::<String>("capture.file_name")?;
                 let format = core.setting::<String>("capture.format")?;
-                // A per-millisecond counter keeps names unique even for patterns without {time}.
-                Ok(json!({ "name": file_name(&pattern, &format, p.date, (now_millis() % 100_000) as u64) }))
+                // {n} takes the next number and moves the counter on; other patterns leave it alone.
+                // Making names unique is still the client's job: the number restarts if it's reset.
+                let number = if pattern.contains("{n}") {
+                    let _numbering = NUMBERING.lock().unwrap_or_else(|e| e.into_inner());
+                    let number = core.setting::<u64>("capture.next_number")?;
+                    core.set_setting("capture.next_number", json!(number.saturating_add(1)))?;
+                    number
+                } else { 0 };
+                Ok(json!({ "name": file_name(&pattern, &format, p.date, number) }))
             }
             "record" => {
                 let p: Record = parse(params)?;
                 if p.region.w < 1.0 || p.region.h < 1.0 { return Err(NyError::invalid_params("A capture needs a non-empty region.")); }
                 let data = json!({ "region": p.region, "display": p.display, "width": p.width, "height": p.height, "path": p.path });
-                let record = core.insert_record(HISTORY, data, p.path.as_deref().unwrap_or(""), None)?;
+                let record = core.insert_record(HISTORY, data, p.path.as_deref().unwrap_or(""), None, None)?;
+                core.prune_records(HISTORY, Some(MAX_HISTORY), i64::MIN)?;
                 Ok(json!({ "record": record }))
             }
             "recent_regions" => {
                 let p: Recent = parse(params)?;
-                let page = core.call("records.list", json!({ "collection": HISTORY, "limit": 200 }))?;
+                let page = core.list_records(HISTORY, &ListQuery { limit: MAX_HISTORY, ..Default::default() })?;
                 let mut regions: Vec<Region> = Vec::new();
-                for record in page["records"].as_array().into_iter().flatten() {
-                    let Ok(region) = serde_json::from_value::<Region>(record["data"]["region"].clone()) else { continue };
+                for record in page.records {
+                    let Ok(region) = serde_json::from_value::<Region>(record.data["region"].clone()) else { continue };
                     if !regions.contains(&region) { regions.push(region); }
                     if regions.len() >= p.limit { break; }
                 }
@@ -149,10 +167,12 @@ impl Module for CaptureModule {
                 Err(NyError::invalid_setting("The file name pattern must be 1–120 characters.")),
             "capture.color" => validate_color(text),
             "capture.style" => validate_style(value),
-            "capture.stroke" if !value.as_f64().is_some_and(|w| (1.0..=24.0).contains(&w)) =>
+            "capture.stroke" if !value.as_f64().is_some_and(|w| SettingSpec::within(STROKE_RANGE, w)) =>
                 Err(NyError::invalid_setting("Line width must be between 1 and 24 points.")),
-            "capture.gif_fps" if !value.as_i64().is_some_and(|fps| (5..=30).contains(&fps)) =>
+            "capture.gif_fps" if !value.as_i64().is_some_and(|fps| SettingSpec::within(GIF_FPS_RANGE, fps as f64)) =>
                 Err(NyError::invalid_setting("Record 5 to 30 frames a second.")),
+            "capture.next_number" if value.as_u64().is_none_or(|n| n == 0) =>
+                Err(NyError::invalid_setting("File numbers start at 1.")),
             _ => Ok(()),
         }
     }
@@ -217,5 +237,33 @@ mod tests {
         let xs: Vec<f64> = regions.as_array().unwrap().iter().map(|r| r["x"].as_f64().unwrap()).collect();
         assert_eq!(xs, vec![1.0, 2.0]);
         assert!(core.call("capture.record", json!({ "region": { "x": 0, "y": 0, "w": 0, "h": 5 }, "width": 0, "height": 0 })).is_err());
+    }
+
+    #[test]
+    fn history_keeps_the_newest_captures() {
+        let core = core();
+        for x in 0..MAX_HISTORY + 5 {
+            core.call("capture.record", json!({ "region": { "x": x, "y": 0, "w": 10, "h": 10 }, "width": 10, "height": 10 })).unwrap();
+        }
+        assert_eq!(core.count_records(HISTORY).unwrap(), MAX_HISTORY);
+        let regions = core.call("capture.recent_regions", json!({ "limit": 1000 })).unwrap();
+        let xs: Vec<f64> = regions.as_array().unwrap().iter().map(|r| r["x"].as_f64().unwrap()).collect();
+        assert_eq!((xs.len(), xs[0], xs[MAX_HISTORY - 1]), (MAX_HISTORY, (MAX_HISTORY + 4) as f64, 5.0));
+    }
+
+    #[test]
+    fn n_counts_up_only_for_patterns_that_use_it() {
+        let core = core();
+        let name = || core.call("capture.file_name", json!({ "date": [2026, 1, 2, 3, 4, 5] })).unwrap()["name"].clone();
+        name();
+        assert_eq!(core.setting::<u64>("capture.next_number").unwrap(), 1);
+        core.call("settings.set", json!({ "key": "capture.file_name", "value": "Shot {n}" })).unwrap();
+        assert_eq!((name(), name()), (json!("Shot 1.png"), json!("Shot 2.png")));
+        assert_eq!(core.setting::<u64>("capture.next_number").unwrap(), 3);
+        core.call("settings.set", json!({ "key": "capture.next_number", "value": 40 })).unwrap();
+        assert_eq!(name(), "Shot 40.png");
+        for bad in [json!(0), json!(-1), json!(1.5)] {
+            assert!(core.call("settings.set", json!({ "key": "capture.next_number", "value": bad })).is_err(), "{bad}");
+        }
     }
 }

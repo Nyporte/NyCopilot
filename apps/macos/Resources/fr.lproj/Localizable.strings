@@ -786,3 +786,4 @@
 "Rewrite" = "Réécrire";
 "Note" = "Note";
 "From %@" = "Depuis %@";
+"File numbers start at 1." = "Les numéros de fichier commencent à 1.";
