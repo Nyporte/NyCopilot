@@ -14,3 +14,6 @@ serde.workspace = true
 serde_json.workspace = true
 ureq.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+ny-llm = { workspace = true, features = ["test-support"] }
