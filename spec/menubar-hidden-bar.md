@@ -70,11 +70,16 @@ closes on Esc, on a click elsewhere, or after the item's menu closes.
   PID plus order breaks when an app has several items or relaunches mid-session. Re-scan on
   `NSWorkspace.didLaunchApplicationNotification` / `didTerminateApplicationNotification`.
 - **Performance.** Window-list scans and captures only when the bar opens, never on a timer.
-- **Ordering across relaunches (also affects stage 1).** macOS saves an item's place only once it has
-  been ⌘-dragged (measured: no `NSStatusItem Preferred Position` key is written for an item that was
-  never dragged, and the saved value orders items rather than giving their exact distance from the
-  right edge). An app whose icon was dragged left of the divider, launched before NyCopilot, may land
-  right of a divider that was never dragged. Measure with real ⌘-drags before relying on order.
+- **Ordering across relaunches (stage 1, measured).** macOS saves an item's place
+  (`NSStatusItem Preferred Position <name>` in its app's defaults) once items have been ⌘-dragged;
+  before that there is none, and a new item lands leftmost. After the user's first drags, every item
+  had one, NyCopilot's divider (362) and chevron (336) included, and the icons dragged left of the
+  divider (538, 462, 390) stayed there through three NyCopilot relaunches. The saved value orders
+  items rather than giving an exact distance from the right edge.
+- **One item can't both hide and stay visible (measured).** Growing the chevron itself instead of a
+  separate divider was tried: macOS cut the item to 5,016 pt, ending where NyCopilot's icon began,
+  and drew none of it (`kCGWindowIsOnscreen` false), arrow included, so nothing was left to click.
+  A status item is shown only if all of it fits, which is why the divider is a separate item.
 
 ## How to check it when built
 
