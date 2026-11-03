@@ -110,7 +110,7 @@ extension DemoTests {
         director.type("s", keyCode: 1, to: overlay)
         let region = try XCTUnwrap(picked)
 
-        let frame = CaptureSession.appKitRect(region)
+        let frame = ScreenGeometry.appKit(region)
         let border = ScrollCapture.makeBorder(around: frame)
         border.orderFrontRegardless()
         let panel = ScrollCapturePanel(beside: frame, on: director.screen)
@@ -192,7 +192,7 @@ extension DemoTests {
         director.type("g", keyCode: 5, to: overlay)
         let region = try XCTUnwrap(picked)
 
-        let frame = CaptureSession.appKitRect(region)
+        let frame = ScreenGeometry.appKit(region)
         let border = GifRecording.makeBorder(around: frame)
         border.orderFrontRegardless()
         let bar = RecordingBar(beside: frame, on: director.screen, shortcut: "F1")
@@ -320,7 +320,7 @@ extension DemoTests {
         director.press("P")
         director.type("p", keyCode: 35, to: overlay)
         let capture = try XCTUnwrap(pinned)
-        let pin = PinWindow(image: capture.image, frame: CaptureSession.appKitRect(capture.region), shadow: true)
+        let pin = PinWindow(image: capture.image, frame: ScreenGeometry.appKit(capture.region), shadow: true)
         pin.orderFrontRegardless()
         director.wait(0.9)
 

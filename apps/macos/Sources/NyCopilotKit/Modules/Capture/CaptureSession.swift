@@ -26,7 +26,7 @@ final class CaptureSession {
         // Each capture starts by outlining windows; Tab switches to elements.
         CaptureView.detectsWindows = true
         for screen in frozen {
-            let origin = Self.globalOrigin(of: screen.screen)
+            let origin = ScreenGeometry.topLeftOrigin(of: screen.screen)
             let local = recent.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
                 .filter { CGRect(origin: .zero, size: screen.screen.frame.size).contains($0) }
             let view = CaptureView(frozen: screen, recent: local, palette: palette, color: color, stroke: stroke,
@@ -109,10 +109,4 @@ final class CaptureSession {
         }
         if returningFocus, let app = returnsFocusTo { app.activate(then: hide) } else { hide() }
     }
-
-    /// A screen's top-left corner in global top-left coordinates (see ScreenGeometry).
-    static func globalOrigin(of screen: NSScreen) -> CGPoint { ScreenGeometry.topLeftOrigin(of: screen) }
-
-    /// Global top-left coordinates → AppKit screen coordinates (see ScreenGeometry).
-    static func appKitRect(_ rect: CGRect) -> NSRect { ScreenGeometry.appKit(rect) }
 }

@@ -53,7 +53,7 @@ final class GifRecording {
         self.fps = fps
         pixelsPerPoint = retina ? screen.backingScaleFactor : 1
         self.showsCursor = showsCursor
-        let frame = CaptureSession.appKitRect(region)
+        let frame = ScreenGeometry.appKit(region)
         border = Self.makeBorder(around: frame)
         bar = RecordingBar(beside: frame, on: screen, shortcut: shortcut)
         frames = FrameSink(output: FrameSink.newRecordingURL())
@@ -106,7 +106,7 @@ final class GifRecording {
     private func startStream() async throws {
         // The outline, the bar, and pins stay out of the recording.
         let filter = try await ScreenGrabber.filter(for: screen, excludingOwnWindows: true)
-        let origin = CaptureSession.globalOrigin(of: screen)
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = region.offsetBy(dx: -origin.x, dy: -origin.y)
         configuration.width = max(2, Int((region.width * pixelsPerPoint).rounded()))

@@ -220,8 +220,7 @@ enum CaptureRenderer {
     /// saved, and pinned.
     static func render(_ frozen: FrozenScreen, selection: CGRect, annotations: [Annotation], pixelated: CGImage?) -> NSImage? {
         let scale = frozen.scale
-        let pixels = CGRect(x: selection.minX * scale, y: selection.minY * scale,
-                            width: selection.width * scale, height: selection.height * scale).integral
+        let pixels = frozen.pixelRect(local: selection)
         guard pixels.width >= 1, pixels.height >= 1,
               let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(data: nil, width: Int(pixels.width), height: Int(pixels.height), bitsPerComponent: 8,

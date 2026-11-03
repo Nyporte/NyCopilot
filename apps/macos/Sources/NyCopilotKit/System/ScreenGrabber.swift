@@ -31,10 +31,10 @@ enum ScreenGrabber {
         let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
         let frozen = zip(screens, images).compactMap { (screen: NSScreen, image: CGImage?) -> FrozenScreen? in
             guard let image else { return nil }
-            let scale = CGFloat(image.width) / screen.frame.width
+            let pixels = FrozenScreen(screen: screen, image: image, windows: [])
             // The Dock reports its bar a few points off from where it draws it; the pixels say where.
             let onScreen = windows.compactMap { local($0, on: screen) }.map { (window: FrozenScreen.Window) -> FrozenScreen.Window in
-                window.pid == dock ? FrozenScreen.Window(rect: snappedToEdges(window.rect, in: image, scale: scale), pid: window.pid) : window
+                window.pid == dock ? FrozenScreen.Window(rect: snappedToEdges(window.rect, in: pixels), pid: window.pid) : window
             }
             return FrozenScreen(screen: screen, image: image, windows: onScreen)
         }
@@ -168,9 +168,10 @@ enum ScreenGrabber {
     /// `rect` (view points) moved by up to 12 points so its edges sit on the strongest edges in the
     /// image: rows where brightness jumps along the top and bottom, columns along the sides. Kept as
     /// it is unless an offset fits clearly better.
-    static func snappedToEdges(_ rect: CGRect, in image: CGImage, scale: CGFloat) -> CGRect {
+    static func snappedToEdges(_ rect: CGRect, in frozen: FrozenScreen) -> CGRect {
+        let image = frozen.image, scale = frozen.scale
         let reach = 12 * scale
-        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+        let pixels = frozen.pixelRect(local: rect)
         let band = pixels.insetBy(dx: -reach - 1, dy: -reach - 1).integral
             .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
         guard band.width > 4, band.height > 4, let crop = image.cropping(to: band) else { return rect }

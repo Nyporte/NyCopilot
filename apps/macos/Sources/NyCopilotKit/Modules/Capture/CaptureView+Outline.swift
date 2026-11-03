@@ -95,8 +95,8 @@ extension CaptureView {
 
     /// The pixel size of `measuring` (by default `rect` itself), and where its plate goes next to `rect`.
     func sizeLabel(for rect: CGRect, measuring measured: CGRect? = nil) -> (text: String, plate: CGRect) {
-        let measured = measured ?? rect
-        let text = "\(Int(measured.width * frozen.scale)) × \(Int(measured.height * frozen.scale))"
+        let pixels = frozen.pixelRect(local: measured ?? rect)
+        let text = "\(Int(pixels.width)) × \(Int(pixels.height))"
         let size = (text as NSString).size(withAttributes: CaptureLabel.attributes)
         var origin = CGPoint(x: rect.minX, y: rect.minY - size.height - 10)
         if origin.y < 4 { origin.y = rect.minY + 6; origin.x += 6 }

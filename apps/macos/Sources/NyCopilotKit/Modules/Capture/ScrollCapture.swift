@@ -36,7 +36,7 @@ final class ScrollCapture {
         self.region = region
         self.frozen = frozen
         self.canSeed = canSeed
-        let frame = CaptureSession.appKitRect(region)
+        let frame = ScreenGeometry.appKit(region)
         border = Self.makeBorder(around: frame)
         panel = ScrollCapturePanel(beside: frame, on: frozen.screen)
         panel.onAction = { [weak self] action in self?.finish(action) }
@@ -66,12 +66,13 @@ final class ScrollCapture {
 
     /// Streams the selection's columns from the top to the bottom of the scroll area.
     private func watch(_ area: CGRect) async throws {
-        let display = CGRect(origin: CaptureSession.globalOrigin(of: screen), size: screen.frame.size)
+        let display = ScreenGeometry.topLeftFrame(of: screen)
         let top = max(min(region.minY, area.minY), display.minY), bottom = min(max(region.maxY, area.maxY), display.maxY)
         let watched = CGRect(x: region.minX, y: top, width: region.width, height: bottom - top)
-        let size = pixelSize(of: watched)
-        let first = Int(((region.minY - watched.minY) * frozen.scale).rounded())
-        let frames = FrameStitcher(selection: first..<min(size.height, first + pixelSize(of: region).height))
+        let pixels = frozen.pixelRect(global: watched), selection = frozen.pixelRect(global: region)
+        let size = (width: Int(pixels.width), height: Int(pixels.height))
+        let first = Int(selection.minY - pixels.minY)
+        let frames = FrameStitcher(selection: first..<min(size.height, first + Int(selection.height)))
         frames.onUpdate = { [weak self] outcome, height, thumbnail in self?.panel.show(outcome, height: height, thumbnail: thumbnail) }
         self.frames = frames
         if canSeed(watched), let seed = crop(watched) { frames.seed(seed, size: size) }
@@ -81,22 +82,17 @@ final class ScrollCapture {
         try await stream(watched, size: size, into: frames)
     }
 
-    private func pixelSize(of rect: CGRect) -> (width: Int, height: Int) {
-        (Int((rect.width * frozen.scale).rounded()), Int((rect.height * frozen.scale).rounded()))
-    }
-
     /// Part of the frozen screen, by global rectangle.
     private func crop(_ rect: CGRect) -> CGImage? {
-        let origin = CaptureSession.globalOrigin(of: screen), size = pixelSize(of: rect)
-        return frozen.image.cropping(to: CGRect(x: ((rect.minX - origin.x) * frozen.scale).rounded(),
-                                                y: ((rect.minY - origin.y) * frozen.scale).rounded(), width: CGFloat(size.width), height: CGFloat(size.height)))
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
+        return frozen.crop(rect.offsetBy(dx: -origin.x, dy: -origin.y))
     }
 
     private func stream(_ watched: CGRect, size: (width: Int, height: Int), into frames: FrameStitcher) async throws {
         // NyCopilot's own windows — the outline, the panel, pins — never appear in the image. F1 just
         // looked the display up, so this doesn't ask again.
         let filter = try await ScreenGrabber.filter(for: screen, excludingOwnWindows: true)
-        let origin = CaptureSession.globalOrigin(of: screen)
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = watched.offsetBy(dx: -origin.x, dy: -origin.y)
         configuration.width = size.width

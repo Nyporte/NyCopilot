@@ -144,7 +144,7 @@ final class CaptureShell: ModuleShell {
                 session.onTextCopied = { [weak self] lines, region, _ in
                     self?.end()
                     self?.services.toast.show(L("Copied %ld lines of text", lines), style: .success,
-                                              near: CaptureSession.appKitRect(region))
+                                              near: ScreenGeometry.appKit(region))
                 }
                 session.onCancel = { [weak self] in self?.end() }
                 session.returnsFocusTo = previousApp
@@ -175,11 +175,11 @@ final class CaptureShell: ModuleShell {
             services.sendToInbox(nil, image, previousApp)
         case .translate:
             end()
-            services.act(.translate, text: nil, image: image, near: CaptureSession.appKitRect(region))
+            services.act(.translate, text: nil, image: image, near: ScreenGeometry.appKit(region))
         case .ask:
             record(image, region: region, screen: screen, path: nil)
             end()
-            services.act(.ask, text: nil, image: image, from: previousApp, near: CaptureSession.appKitRect(region))
+            services.act(.ask, text: nil, image: image, from: previousApp, near: ScreenGeometry.appKit(region))
         case .copy:
             copy(image)
             record(image, region: region, screen: screen, path: nil)
@@ -195,7 +195,7 @@ final class CaptureShell: ModuleShell {
             }
         case .pin:
             // A scrolling capture is taller than its region: it starts there and fits the screen.
-            let frame = CaptureSession.appKitRect(CGRect(origin: region.origin, size: image.size))
+            let frame = ScreenGeometry.appKit(CGRect(origin: region.origin, size: image.size))
             let pin = board.pin(image, at: frame, shadow: services.core.setting(.pinShadow, default: true))
             let visible = screen.visibleFrame
             if frame.height > visible.height * 0.9 {
@@ -228,7 +228,7 @@ final class CaptureShell: ModuleShell {
                                      shortcut: services.hotKeys.combination(for: Action.capture).map(KeyNames.display) ?? "F1")
         recording.onFinish = { [weak self] clip in
             self?.recording = nil
-            self?.review(clip, region: CaptureSession.appKitRect(region), screen: screen)
+            self?.review(clip, region: ScreenGeometry.appKit(region), screen: screen)
         }
         recording.onCancel = { [weak self] in self?.recording = nil }
         recording.onFailure = { [weak self] error in
@@ -318,7 +318,7 @@ final class CaptureShell: ModuleShell {
         // a pin was on them, since the live stream leaves pins out.
         let hidesPins = services.core.setting(.hideOwnWindows, default: false)
         let capture = ScrollCapture(region: region, frozen: frozen) { [weak self] rect in
-            hidesPins || !(self?.board.covers(CaptureSession.appKitRect(rect)) ?? false)
+            hidesPins || !(self?.board.covers(ScreenGeometry.appKit(rect)) ?? false)
         }
         capture.onFinish = { [weak self] action, image in
             self?.scrolling = nil
