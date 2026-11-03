@@ -720,15 +720,8 @@
 "Show or hide menu bar icons" = "Mostrar u ocultar iconos de la barra de menús";
 "Show Hidden Icons" = "Mostrar iconos ocultos";
 "Hide Menu Bar Icons" = "Ocultar iconos de la barra de menús";
-"Move the divider left of the chevron" = "Coloca el divisor a la izquierda de la flecha";
-"⌘-drag it there; otherwise hiding would hide the chevron too." = "Arrástralo allí con ⌘; si no, al ocultar también se ocultaría la flecha.";
-"⌘-drag menu bar icons left of this line to hide them" = "Arrastra con ⌘ iconos de la barra de menús a la izquierda de esta línea para ocultarlos";
 "Menu Bar Settings…" = "Ajustes de la barra de menús…";
-"Menu bar divider" = "Divisor de la barra de menús";
 "Menu bar icons" = "Iconos de la barra de menús";
-"⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "Arrastra con ⌘ los iconos a la izquierda del divisor para ocultarlos, y a su derecha para mantenerlos a la vista. Haz clic en la flecha para mostrarlos u ocultarlos; con clic derecho abres los ajustes. En un Mac con muesca, los iconos que no caben junto a ella siguen sin verse aunque se muestren.";
-"Hide icons behind a divider" = "Ocultar iconos tras un divisor";
-"Puts a divider and a chevron in the menu bar." = "Pone un divisor y una flecha en la barra de menús.";
 "Hide again" = "Volver a ocultar";
 "After showing hidden icons. Not while the pointer is on the menu bar." = "Después de mostrar los iconos ocultos. No mientras el puntero esté en la barra de menús.";
 "Shortcut" = "Atajo de teclado";
@@ -738,3 +731,9 @@
 "Tidy the menu bar" = "Ordenar la barra de menús";
 "Hide the menu bar icons you rarely need; one click shows them." = "Oculta los iconos de la barra de menús que casi no usas; un clic los muestra.";
 "Icons must hide again after 0 to 600 seconds." = "Los iconos deben volver a ocultarse tras 0 a 600 segundos.";
+"⌘-drag menu bar icons left of this arrow to hide them" = "Arrastra con ⌘ iconos de la barra de menús a la izquierda de esta flecha para ocultarlos";
+"⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "Arrastra con ⌘ los iconos a la izquierda de la flecha para ocultarlos, y a su derecha para mantenerlos a la vista. Haz clic en la flecha para mostrarlos u ocultarlos; con clic derecho abres los ajustes. En un Mac con muesca, los iconos que no caben junto a ella siguen sin verse aunque se muestren.";
+"Hide icons behind an arrow" = "Ocultar iconos tras una flecha";
+"Puts an arrow in the menu bar." = "Pone una flecha en la barra de menús.";
+"Couldn’t hide the icons" = "No se pudieron ocultar los iconos";
+"⌘-drag the arrow a little, then try again." = "Arrastra un poco la flecha con ⌘ y vuelve a intentarlo.";

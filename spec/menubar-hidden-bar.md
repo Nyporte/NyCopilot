@@ -1,6 +1,6 @@
 # Menu Bar, stage 2: a bar that shows the hidden icons
 
-Status: **plan only**, not built. Stage 1 (the divider and chevron, `Modules/MenuBar`) ships first.
+Status: **plan only**, not built. Stage 1 (the arrow, `Modules/MenuBar`) ships first.
 
 ## Why
 

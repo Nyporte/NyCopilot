@@ -720,15 +720,8 @@
 "Show or hide menu bar icons" = "메뉴 막대 아이콘 보기/숨기기";
 "Show Hidden Icons" = "숨긴 아이콘 보기";
 "Hide Menu Bar Icons" = "메뉴 막대 아이콘 숨기기";
-"Move the divider left of the chevron" = "구분선을 화살표 왼쪽으로 옮기세요";
-"⌘-drag it there; otherwise hiding would hide the chevron too." = "⌘를 누른 채 그쪽으로 드래그하세요. 그렇지 않으면 숨길 때 화살표도 숨겨집니다.";
-"⌘-drag menu bar icons left of this line to hide them" = "⌘를 누른 채 메뉴 막대 아이콘을 이 선 왼쪽으로 드래그하면 숨겨집니다";
 "Menu Bar Settings…" = "메뉴 막대 설정…";
-"Menu bar divider" = "메뉴 막대 구분선";
 "Menu bar icons" = "메뉴 막대 아이콘";
-"⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "⌘를 누른 채 아이콘을 구분선 왼쪽으로 드래그하면 숨겨지고, 오른쪽으로 드래그하면 계속 보입니다. 화살표를 클릭하면 보이거나 숨겨지고, 오른쪽 클릭하면 설정이 열립니다. 노치가 있는 Mac에서는 노치 옆에 들어가지 않는 아이콘은 보이기로 해도 보이지 않습니다.";
-"Hide icons behind a divider" = "구분선 뒤로 아이콘 숨기기";
-"Puts a divider and a chevron in the menu bar." = "메뉴 막대에 구분선과 화살표를 둡니다.";
 "Hide again" = "다시 숨기기";
 "After showing hidden icons. Not while the pointer is on the menu bar." = "숨긴 아이콘을 보인 뒤. 포인터가 메뉴 막대 위에 있는 동안은 숨기지 않습니다.";
 "Shortcut" = "단축키";
@@ -738,3 +731,9 @@
 "Tidy the menu bar" = "메뉴 막대 정리";
 "Hide the menu bar icons you rarely need; one click shows them." = "자주 쓰지 않는 메뉴 막대 아이콘을 숨기고, 클릭 한 번으로 보여 줍니다.";
 "Icons must hide again after 0 to 600 seconds." = "아이콘을 다시 숨기는 시간은 0~600초여야 합니다.";
+"⌘-drag menu bar icons left of this arrow to hide them" = "⌘를 누른 채 메뉴 막대 아이콘을 이 화살표 왼쪽으로 드래그하면 숨겨집니다";
+"⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "⌘를 누른 채 아이콘을 화살표 왼쪽으로 드래그하면 숨겨지고, 오른쪽으로 드래그하면 계속 보입니다. 화살표를 클릭하면 보이거나 숨겨지고, 오른쪽 클릭하면 설정이 열립니다. 노치가 있는 Mac에서는 노치 옆에 들어가지 않는 아이콘은 보이기로 해도 보이지 않습니다.";
+"Hide icons behind an arrow" = "화살표 뒤로 아이콘 숨기기";
+"Puts an arrow in the menu bar." = "메뉴 막대에 화살표를 둡니다.";
+"Couldn’t hide the icons" = "아이콘을 숨길 수 없습니다";
+"⌘-drag the arrow a little, then try again." = "⌘를 누른 채 화살표를 조금 드래그한 뒤 다시 시도하세요.";

@@ -720,15 +720,8 @@
 "Show or hide menu bar icons" = "显示或隐藏菜单栏图标";
 "Show Hidden Icons" = "显示隐藏的图标";
 "Hide Menu Bar Icons" = "隐藏菜单栏图标";
-"Move the divider left of the chevron" = "请把分隔线移到箭头左边";
-"⌘-drag it there; otherwise hiding would hide the chevron too." = "按住 ⌘ 把它拖过去；否则隐藏时箭头也会被隐藏。";
-"⌘-drag menu bar icons left of this line to hide them" = "按住 ⌘ 把菜单栏图标拖到这条线左边即可隐藏";
 "Menu Bar Settings…" = "菜单栏设置…";
-"Menu bar divider" = "菜单栏分隔线";
 "Menu bar icons" = "菜单栏图标";
-"⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "按住 ⌘ 把图标拖到分隔线左边即可隐藏，拖到右边则始终可见。点按箭头显示或隐藏它们；右键点按可打开设置。在有刘海的 Mac 上，刘海旁放不下的图标即使显示也看不到。";
-"Hide icons behind a divider" = "把图标隐藏在分隔线后";
-"Puts a divider and a chevron in the menu bar." = "在菜单栏放一条分隔线和一个箭头。";
 "Hide again" = "再次隐藏";
 "After showing hidden icons. Not while the pointer is on the menu bar." = "显示隐藏的图标之后。指针在菜单栏上时不隐藏。";
 "Shortcut" = "快捷键";
@@ -738,3 +731,9 @@
 "Tidy the menu bar" = "整理菜单栏";
 "Hide the menu bar icons you rarely need; one click shows them." = "隐藏不常用的菜单栏图标，点一下就显示。";
 "Icons must hide again after 0 to 600 seconds." = "图标再次隐藏的时间必须在 0 到 600 秒之间。";
+"⌘-drag menu bar icons left of this arrow to hide them" = "按住 ⌘ 把菜单栏图标拖到这个箭头左边即可隐藏";
+"⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "按住 ⌘ 把图标拖到箭头左边即可隐藏，拖到右边则始终可见。点按箭头显示或隐藏它们；右键点按可打开设置。在有刘海的 Mac 上，刘海旁放不下的图标即使显示也看不到。";
+"Hide icons behind an arrow" = "把图标隐藏在箭头后";
+"Puts an arrow in the menu bar." = "在菜单栏放一个箭头。";
+"Couldn’t hide the icons" = "无法隐藏图标";
+"⌘-drag the arrow a little, then try again." = "按住 ⌘ 把箭头稍微拖动一下，然后再试一次。";

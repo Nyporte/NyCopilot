@@ -1,8 +1,8 @@
 import AppKit
 
-/// macOS half of Menu Bar: a divider and a chevron in the menu bar. Icons ⌘-dragged left of the
-/// divider hide when the chevron is clicked (or the shortcut pressed) and show on the next click;
-/// shown, they can hide again on their own. Whether they're hidden is kept across launches.
+/// macOS half of Menu Bar: an arrow in the menu bar. Icons ⌘-dragged left of it hide when it's
+/// clicked (or the shortcut pressed) and show on the next click; shown, they can hide again on
+/// their own. Whether they're hidden is kept across launches.
 @MainActor
 final class MenuBarShell: ModuleShell {
     let id = "menubar"
@@ -31,7 +31,7 @@ final class MenuBarShell: ModuleShell {
 
     private var state: MenuBarState { MenuBarState.read(services.core, moduleOn: services.isModuleOn(id)) }
 
-    // No default: any combination is taken somewhere, and the chevron is always a click away.
+    // No default: any combination is taken somewhere, and the arrow is always a click away.
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.toggle, title: L("Show or hide menu bar icons"), defaultCombination: nil,
                handler: { [weak self] in self?.toggle() })]
@@ -58,17 +58,28 @@ final class MenuBarShell: ModuleShell {
         setCollapsed(!state.collapsed)
     }
 
+    /// `apply` follows from the setting's change event. Hiding waits for the chevron to be back
+    /// in the menu bar, right of the divider, so there's always something to click to show again.
     private func setCollapsed(_ collapsed: Bool) {
-        let edges = divider?.edges
-        if collapsed, let edges, !MenuBarState.canHide(divider: edges.divider, chevron: edges.chevron) {
-            Diagnostics.note("menubar", "not hiding: the divider ends at x \(Int(edges.divider)), right of the chevron at \(Int(edges.chevron))")
-            services.toast.show(L("Move the divider left of the chevron"),
-                                detail: L("⌘-drag it there; otherwise hiding would hide the chevron too."), style: .warning)
+        guard collapsed, let divider else {
+            Diagnostics.note("menubar", "showing")
+            try? services.core.setSetting(.menuBarCollapsed, collapsed)
             return
         }
-        Diagnostics.note("menubar", "\(collapsed ? "hiding" : "showing")\(edges.map { ": the divider ends at x \(Int($0.divider)), the chevron starts at x \(Int($0.chevron))" } ?? "")")
-        // `apply` follows from the setting's change event.
-        try? services.core.setSetting(.menuBarCollapsed, collapsed)
+        divider.prepareToHide { [weak self] edges in
+            guard let self else { return }
+            let placed = edges.map { ": the divider ends at x \(Int($0.divider)), the chevron starts at x \(Int($0.chevron))" } ?? ""
+            guard let edges, MenuBarState.canHide(divider: edges.divider, chevron: edges.chevron) else {
+                Diagnostics.note("menubar", "not hiding\(placed)")
+                divider.show(collapsed: false)
+                if state.collapsed { try? services.core.setSetting(.menuBarCollapsed, false) }
+                services.toast.show(L("Couldn’t hide the icons"), detail: L("⌘-drag the arrow a little, then try again."), style: .warning)
+                return
+            }
+            Diagnostics.note("menubar", "hiding\(placed)")
+            divider.show(collapsed: true)
+            try? services.core.setSetting(.menuBarCollapsed, true)
+        }
     }
 
     /// The divider in the menu bar as the settings say, or out of it.
@@ -84,6 +95,8 @@ final class MenuBarShell: ModuleShell {
             made.onToggle = { [weak self] in self?.toggle() }
             made.onSettings = { [weak self] in guard let self else { return }; services.openSettings(id) }
             divider = made
+            // Hidden when NyCopilot last quit: hide again the usual way, chevron placed first.
+            if state.collapsed { setCollapsed(true); return }
         }
         divider?.isVisible = true
         divider?.show(collapsed: state.collapsed)

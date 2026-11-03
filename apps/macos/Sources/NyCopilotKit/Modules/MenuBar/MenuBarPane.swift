@@ -1,6 +1,6 @@
 import AppKit
 
-/// Menu Bar settings: whether the divider is in the menu bar, when shown icons hide again, and the
+/// Menu Bar settings: whether the arrow is in the menu bar, when shown icons hide again, and the
 /// shortcut that shows or hides them.
 @MainActor
 final class MenuBarPane: SettingsPane {
@@ -26,8 +26,8 @@ final class MenuBarPane: SettingsPane {
         collapseAfter.target = self
         collapseAfter.action = #selector(changeCollapseAfter)
         return [
-            FormSection(L("Menu bar icons"), footer: L("⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown."), rows: [
-                FormRow(L("Hide icons behind a divider"), subtitle: L("Puts a divider and a chevron in the menu bar."), accessory: enabledSwitch),
+            FormSection(L("Menu bar icons"), footer: L("⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown."), rows: [
+                FormRow(L("Hide icons behind an arrow"), subtitle: L("Puts an arrow in the menu bar."), accessory: enabledSwitch),
                 FormRow(L("Hide again"), subtitle: L("After showing hidden icons. Not while the pointer is on the menu bar."), accessory: collapseAfter)
             ]),
             shortcuts.section(L("Shortcut"), actions: [MenuBarShell.Action.toggle]),
@@ -60,7 +60,7 @@ final class MenuBarPane: SettingsPane {
     }
 
     @objc private func toggleEnabled() {
-        // The divider shows first, so there's somewhere to drag icons before anything hides.
+        // Icons show first, so there's time to drag some past the arrow before anything hides.
         if enabledSwitch.state == .on { try? services.core.setSetting(.menuBarCollapsed, false) }
         try? services.core.setSetting(.menuBarEnabled, enabledSwitch.state == .on)
         if enabledSwitch.state == .on, !services.isModuleOn("menubar") { services.setModule("menubar", true) }

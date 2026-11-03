@@ -720,15 +720,8 @@
 "Show or hide menu bar icons" = "Afficher ou masquer les icônes de la barre des menus";
 "Show Hidden Icons" = "Afficher les icônes masquées";
 "Hide Menu Bar Icons" = "Masquer les icônes de la barre des menus";
-"Move the divider left of the chevron" = "Placez le séparateur à gauche du chevron";
-"⌘-drag it there; otherwise hiding would hide the chevron too." = "Faites-le glisser là avec ⌘ ; sinon, masquer cacherait aussi le chevron.";
-"⌘-drag menu bar icons left of this line to hide them" = "Faites glisser avec ⌘ des icônes à gauche de cette ligne pour les masquer";
 "Menu Bar Settings…" = "Réglages de la barre des menus…";
-"Menu bar divider" = "Séparateur de la barre des menus";
 "Menu bar icons" = "Icônes de la barre des menus";
-"⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "Faites glisser avec ⌘ les icônes à gauche du séparateur pour les masquer, et à sa droite pour les garder visibles. Cliquez sur le chevron pour les afficher ou les masquer ; clic droit pour les réglages. Sur un Mac avec encoche, les icônes qui ne tiennent pas à côté restent invisibles même affichées.";
-"Hide icons behind a divider" = "Masquer des icônes derrière un séparateur";
-"Puts a divider and a chevron in the menu bar." = "Ajoute un séparateur et un chevron à la barre des menus.";
 "Hide again" = "Masquer à nouveau";
 "After showing hidden icons. Not while the pointer is on the menu bar." = "Après avoir affiché les icônes masquées. Pas tant que le pointeur est sur la barre des menus.";
 "Shortcut" = "Raccourci";
@@ -738,3 +731,9 @@
 "Tidy the menu bar" = "Ranger la barre des menus";
 "Hide the menu bar icons you rarely need; one click shows them." = "Masquez les icônes de la barre des menus dont vous vous servez peu ; un clic les affiche.";
 "Icons must hide again after 0 to 600 seconds." = "Les icônes doivent se masquer à nouveau après 0 à 600 secondes.";
+"⌘-drag menu bar icons left of this arrow to hide them" = "Faites glisser avec ⌘ des icônes à gauche de cette flèche pour les masquer";
+"⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "Faites glisser avec ⌘ les icônes à gauche de la flèche pour les masquer, et à sa droite pour les garder visibles. Cliquez sur la flèche pour les afficher ou les masquer ; clic droit pour les réglages. Sur un Mac avec encoche, les icônes qui ne tiennent pas à côté restent invisibles même affichées.";
+"Hide icons behind an arrow" = "Masquer des icônes derrière une flèche";
+"Puts an arrow in the menu bar." = "Ajoute une flèche à la barre des menus.";
+"Couldn’t hide the icons" = "Impossible de masquer les icônes";
+"⌘-drag the arrow a little, then try again." = "Déplacez un peu la flèche avec ⌘, puis réessayez.";

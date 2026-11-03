@@ -720,15 +720,8 @@
 "Show or hide menu bar icons" = "メニューバーのアイコンを表示/非表示";
 "Show Hidden Icons" = "隠したアイコンを表示";
 "Hide Menu Bar Icons" = "メニューバーのアイコンを隠す";
-"Move the divider left of the chevron" = "仕切りを矢印の左に置いてください";
-"⌘-drag it there; otherwise hiding would hide the chevron too." = "⌘を押しながらそこへドラッグしてください。そうしないと矢印まで隠れてしまいます。";
-"⌘-drag menu bar icons left of this line to hide them" = "⌘を押しながらこの線の左へドラッグしたメニューバーのアイコンは隠れます";
 "Menu Bar Settings…" = "メニューバー設定…";
-"Menu bar divider" = "メニューバーの仕切り";
 "Menu bar icons" = "メニューバーのアイコン";
-"⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "⌘を押しながらアイコンを仕切りの左へドラッグすると隠れ、右へドラッグすると常に表示されます。矢印をクリックすると表示/非表示が切り替わり、右クリックで設定が開きます。ノッチのあるMacでは、ノッチの横に収まらないアイコンは表示中でも見えません。";
-"Hide icons behind a divider" = "仕切りの向こうのアイコンを隠す";
-"Puts a divider and a chevron in the menu bar." = "メニューバーに仕切りと矢印を置きます。";
 "Hide again" = "もう一度隠す";
 "After showing hidden icons. Not while the pointer is on the menu bar." = "隠したアイコンを表示した後。ポインタがメニューバー上にある間は隠しません。";
 "Shortcut" = "ショートカット";
@@ -738,3 +731,9 @@
 "Tidy the menu bar" = "メニューバーを整理";
 "Hide the menu bar icons you rarely need; one click shows them." = "あまり使わないメニューバーのアイコンを隠し、クリックひとつで表示します。";
 "Icons must hide again after 0 to 600 seconds." = "アイコンを再び隠すまでの時間は0〜600秒にしてください。";
+"⌘-drag menu bar icons left of this arrow to hide them" = "⌘を押しながらこの矢印の左へドラッグしたメニューバーのアイコンは隠れます";
+"⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "⌘を押しながらアイコンを矢印の左へドラッグすると隠れ、右へドラッグすると常に表示されます。矢印をクリックすると表示/非表示が切り替わり、右クリックで設定が開きます。ノッチのあるMacでは、ノッチの横に収まらないアイコンは表示中でも見えません。";
+"Hide icons behind an arrow" = "矢印の向こうのアイコンを隠す";
+"Puts an arrow in the menu bar." = "メニューバーに矢印を置きます。";
+"Couldn’t hide the icons" = "アイコンを隠せませんでした";
+"⌘-drag the arrow a little, then try again." = "⌘を押しながら矢印を少しドラッグして、もう一度試してください。";

@@ -720,15 +720,8 @@
 "Show or hide menu bar icons" = "Menüleistensymbole ein- oder ausblenden";
 "Show Hidden Icons" = "Ausgeblendete Symbole zeigen";
 "Hide Menu Bar Icons" = "Menüleistensymbole ausblenden";
-"Move the divider left of the chevron" = "Trenner links vom Pfeil platzieren";
-"⌘-drag it there; otherwise hiding would hide the chevron too." = "Ziehe ihn mit ⌘ dorthin; sonst würde beim Ausblenden auch der Pfeil verschwinden.";
-"⌘-drag menu bar icons left of this line to hide them" = "Menüleistensymbole mit ⌘ links neben diese Linie ziehen, um sie auszublenden";
 "Menu Bar Settings…" = "Menüleisten-Einstellungen …";
-"Menu bar divider" = "Menüleisten-Trenner";
 "Menu bar icons" = "Menüleistensymbole";
-"⌘-drag icons left of the divider to hide them, and right of it to keep them in sight. Click the chevron to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "Ziehe Symbole mit ⌘ links neben den Trenner, um sie auszublenden, und rechts daneben, um sie sichtbar zu lassen. Klicke auf den Pfeil, um sie zu zeigen oder auszublenden; ein Rechtsklick öffnet die Einstellungen. Auf einem Mac mit Notch bleiben Symbole, die daneben keinen Platz haben, auch eingeblendet unsichtbar.";
-"Hide icons behind a divider" = "Symbole hinter einem Trenner ausblenden";
-"Puts a divider and a chevron in the menu bar." = "Setzt einen Trenner und einen Pfeil in die Menüleiste.";
 "Hide again" = "Wieder ausblenden";
 "After showing hidden icons. Not while the pointer is on the menu bar." = "Nachdem ausgeblendete Symbole gezeigt wurden. Nicht, solange der Zeiger auf der Menüleiste ist.";
 "Shortcut" = "Kurzbefehl";
@@ -738,3 +731,9 @@
 "Tidy the menu bar" = "Menüleiste aufräumen";
 "Hide the menu bar icons you rarely need; one click shows them." = "Selten gebrauchte Menüleistensymbole ausblenden; ein Klick zeigt sie.";
 "Icons must hide again after 0 to 600 seconds." = "Symbole müssen nach 0 bis 600 Sekunden wieder ausgeblendet werden.";
+"⌘-drag menu bar icons left of this arrow to hide them" = "Menüleistensymbole mit ⌘ links neben diesen Pfeil ziehen, um sie auszublenden";
+"⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown." = "Ziehe Symbole mit ⌘ links neben den Pfeil, um sie auszublenden, und rechts daneben, um sie sichtbar zu lassen. Klicke auf den Pfeil, um sie zu zeigen oder auszublenden; ein Rechtsklick öffnet die Einstellungen. Auf einem Mac mit Notch bleiben Symbole, die daneben keinen Platz haben, auch eingeblendet unsichtbar.";
+"Hide icons behind an arrow" = "Symbole hinter einem Pfeil ausblenden";
+"Puts an arrow in the menu bar." = "Setzt einen Pfeil in die Menüleiste.";
+"Couldn’t hide the icons" = "Symbole konnten nicht ausgeblendet werden";
+"⌘-drag the arrow a little, then try again." = "Ziehe den Pfeil mit ⌘ ein wenig und versuche es erneut.";

@@ -1,9 +1,9 @@
-//! Menu Bar: a divider in the system menu bar that hides the icons on one side of it.
+//! Menu Bar: an arrow in the system menu bar that hides the icons on one side of it.
 //!
-//! People drag the icons they don't need to see to one side of the divider; a click on the
-//! client's toggle hides them, another shows them. This module owns the settings: whether the
-//! divider is there, whether the icons are hidden now (so they stay that way across launches), and
-//! how long shown icons stay before they hide again. Clients own the menu bar itself.
+//! People drag the icons they don't need to see to one side of the arrow; a click on it hides
+//! them, another shows them. This module owns the settings: whether the arrow is there, whether
+//! the icons are hidden now (so they stay that way across launches), and how long shown icons stay
+//! before they hide again. Clients own the menu bar itself.
 
 use ny_core::{Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use serde_json::{json, Value};
@@ -18,13 +18,13 @@ impl Module for MenuBarModule {
         Manifest {
             id: "menubar".into(),
             name: "Menu Bar".into(),
-            summary: "Hide menu bar icons behind a divider, and show them with a click.".into(),
+            summary: "Hide menu bar icons behind an arrow, and show them with a click.".into(),
             capabilities: vec!["statusbar.control".into()],
             collections: vec![],
             // A menu bar belongs to one Mac, with that Mac's apps in it.
             settings: vec![
-                SettingSpec::new("menubar.enabled", json!(false), Scope::Device, "Put the divider in the menu bar and hide the icons on its far side."),
-                SettingSpec::new("menubar.collapsed", json!(false), Scope::Device, "The icons beyond the divider are hidden right now."),
+                SettingSpec::new("menubar.enabled", json!(false), Scope::Device, "Put the arrow in the menu bar and hide the icons on its far side."),
+                SettingSpec::new("menubar.collapsed", json!(false), Scope::Device, "The icons beyond the arrow are hidden right now."),
                 SettingSpec::new("menubar.collapse_after", json!(10.0), Scope::Device,
                                  "Seconds shown icons stay before they hide again, 0–600; 0 leaves them shown."),
             ],

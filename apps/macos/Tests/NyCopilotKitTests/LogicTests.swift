@@ -417,15 +417,14 @@ final class LogicTests: XCTestCase {
     }
 
     /// Hidden, the divider grows wide enough to carry the icons left of it off every screen; shown,
-    /// it's a narrow gap, and shown icons hide again only when asked to.
-    func testMenuBarDividerHidesByGrowingAndShowsAsANarrowGap() {
+    /// it's the arrow itself, and shown icons hide again only when asked to.
+    func testMenuBarDividerHidesByGrowingAndShowsAsTheArrow() {
         var state = MenuBarState(isOn: true, collapsed: true, collapseAfter: 10)
         XCTAssertEqual(state.dividerLength, 10_000)
         XCTAssertGreaterThan(state.dividerLength, 7680, "wider than an 8K display at 1×")
         XCTAssertNil(state.hideAgainIn, "already hidden")
         state.collapsed = false
-        XCTAssertEqual(state.dividerLength, MenuBarState.lineLength)
-        XCTAssertLessThanOrEqual(state.dividerLength, 2, "an 18 pt gap once macOS pads it")
+        XCTAssertEqual(state.dividerLength, NSStatusItem.variableLength, "the arrow, as wide as its image")
         XCTAssertEqual(state.hideAgainIn, 10)
         state.collapseAfter = 0
         XCTAssertNil(state.hideAgainIn, "never")
@@ -457,20 +456,22 @@ final class LogicTests: XCTestCase {
         XCTAssertFalse(MenuBarState.read(relaunched, moduleOn: false).isOn)
 
         try relaunched.setSetting(.menuBarCollapsed, false)
-        XCTAssertEqual(MenuBarState.read(relaunched, moduleOn: true).dividerLength, MenuBarState.lineLength)
+        XCTAssertEqual(MenuBarState.read(relaunched, moduleOn: true).dividerLength, MenuBarState.shownLength)
     }
 
-    /// Hiding with the chevron left of the divider would hide the chevron too; the line is there
-    /// only to ⌘-drag past; a pointer on the
+    /// The chevron comes back right beside the divider, and hiding with it anywhere left of the
+    /// divider would hide it too; a pointer on the
     /// menu bar (taller beside a notch, or hidden in full screen) keeps shown icons shown.
     func testMenuBarHidesOnlyWithTheChevronInSightAndNotUnderThePointer() {
-        // The line shows only while ⌘ is held (when icons are ⌘-dragged), or always when ⌘ can't be seen.
-        XCTAssertFalse(MenuBarState.showsLine(collapsed: false, commandHeld: false, canSeeCommand: true))
-        XCTAssertTrue(MenuBarState.showsLine(collapsed: false, commandHeld: true, canSeeCommand: true))
-        XCTAssertTrue(MenuBarState.showsLine(collapsed: false, commandHeld: false, canSeeCommand: false))
-        XCTAssertFalse(MenuBarState.showsLine(collapsed: true, commandHeld: true, canSeeCommand: true), "off screen")
+        // Measured on macOS 14: the chevron came back at 1563, where the divider (saved at 331) ended.
+        XCTAssertEqual(MenuBarState.chevronPosition(dividerSaved: 331, dividerMaxX: 1589, screenMaxX: 1920), 330)
+        XCTAssertEqual(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: 1589, screenMaxX: 1920), 330, "never dragged: where it is")
+        XCTAssertEqual(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: 3029, screenMaxX: 3360), 330, "a second display to the right")
+        XCTAssertNil(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: 0, screenMaxX: 1920), "not placed yet")
+        XCTAssertNil(MenuBarState.chevronPosition(dividerSaved: nil, dividerMaxX: nil, screenMaxX: nil))
 
-        // Measured on macOS 14: the divider's window ends where the chevron's begins.
+        XCTAssertTrue(MenuBarState.canHide(divider: 1563, chevron: 1563))
+        XCTAssertFalse(MenuBarState.canHide(divider: 1563, chevron: 1349), "came back at the far left")
         XCTAssertTrue(MenuBarState.canHide(divider: 1370, chevron: 1370))
         XCTAssertTrue(MenuBarState.canHide(divider: 1342, chevron: 1370))
         XCTAssertFalse(MenuBarState.canHide(divider: 1396, chevron: 1342), "dragged right of the chevron")
