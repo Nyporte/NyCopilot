@@ -23,7 +23,7 @@ protocol ModuleShell: AnyObject {
     func menuItems() -> [NSMenuItem]
     /// A tab in Settings, or nil when the module has nothing to configure.
     func makeSettingsPane() -> SettingsPane?
-    /// At launch, once every module's shortcuts are registered.
+    /// At launch, once every module's shortcuts are registered and NyCopilot's icon is in the menu bar.
     func didLaunch()
     /// Turned on or off in General or the setup guide; its shortcuts and menu items already follow.
     func setEnabled(_ on: Bool)

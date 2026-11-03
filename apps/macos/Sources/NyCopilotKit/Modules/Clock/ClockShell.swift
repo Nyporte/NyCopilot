@@ -12,14 +12,14 @@ final class ClockShell: ModuleShell {
     private let services: CopilotServices
     private var clock: ClockItem?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+    private var settingChanges: CoreObservation?
 
     init(services: CopilotServices) {
         self.services = services
         services.clockItem = { [weak self] in self?.clock?.item }
         let center = NotificationCenter.default
-        observe(center, NyCore.eventNotification) { [weak self] note in
-            guard let key = (note.userInfo?["event"] as? [String: Any])?["key"] as? String,
-                  key.hasPrefix("clock.") || key == SettingKey.modulesOff.rawValue else { return }
+        settingChanges = services.core.observe { [weak self] event in
+            guard let key = event.changedSetting, key.hasPrefix("clock.") || key == SettingKey.modulesOff.rawValue else { return }
             self?.apply()
         }
         // A wall-clock timer fires on time after these too, but the face would show the old time
@@ -31,9 +31,10 @@ final class ClockShell: ModuleShell {
             self?.reset("the Mac's time zone changed")
         }
         observe(center, NSLocale.currentLocaleDidChangeNotification) { [weak self] _ in self?.reset("the Mac's region changed") }
-        // After NyCopilot's own icon is in the menu bar, so the clock can go beside it.
-        DispatchQueue.main.async { [weak self] in self?.apply() }
     }
+
+    /// NyCopilot's own icon is in the menu bar now, so the clock can go beside it.
+    func didLaunch() { apply() }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handler: @escaping @MainActor @Sendable (Notification) -> Void) {
         let token = center.addObserver(forName: name, object: nil, queue: .main) { note in
@@ -51,6 +52,7 @@ final class ClockShell: ModuleShell {
     func makeSettingsPane() -> SettingsPane? { ClockPane(services: services) }
 
     func shutdown() {
+        settingChanges?.cancel()
         for (center, token) in observers { center.removeObserver(token) }
         observers = []
     }

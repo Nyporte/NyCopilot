@@ -51,9 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         services.hotKeys.add(.init(id: Self.showShortcutsAction, title: L("Show all keyboard shortcuts"),
                                    defaultCombination: .init(keyCode: UInt32(kVK_ANSI_Slash), modifiers: HotKeyCombination.option | HotKeyCombination.command),
                                    handler: { [weak self] in self?.showShortcuts() }))
-        modules.forEach { $0.didLaunch() }
 
         installMenus()
+        modules.forEach { $0.didLaunch() }
         if !preferences.hasCompletedWelcome { showWelcome() }
     }
 
