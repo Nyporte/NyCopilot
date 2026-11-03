@@ -97,9 +97,9 @@ public enum TemporaryPasteboard {
         case snapshotUnavailable, changed, writeFailed, restoreFailed
         public var errorDescription: String? {
             switch self {
-            case .snapshotUnavailable: return "The clipboard is too large to back up safely (8 MB), so NyCopilot didn’t paste. The result is saved in History."
-            case .changed: return "The clipboard changed while preparing to paste. The result is saved in History."
-            case .writeFailed: return "Couldn’t use the clipboard to paste. The result is saved in History."
+            case .snapshotUnavailable: return "The clipboard is too large to back up safely (8 MB), so NyCopilot didn’t paste."
+            case .changed: return "The clipboard changed while preparing to paste, so NyCopilot didn’t paste."
+            case .writeFailed: return "Couldn’t use the clipboard to paste."
             case .restoreFailed: return "Pasted, but your previous clipboard couldn’t be restored."
             }
         }

@@ -80,13 +80,18 @@ final class CapturePane: SettingsPane, NSTextFieldDelegate {
             FormSection(L("Pins"), rows: [
                 FormRow(L("Shadow"), subtitle: L("Draw a shadow around pinned images."), accessory: shadowSwitch)
             ]),
-            shortcuts.section(L("Shortcuts"), footer: """
-                In a capture: drag or click a window to select · arrows nudge, ⇧ arrows resize · 1–8 pick a tool · \
-                ⌘Z undo · T select text in place, T again copies it all · S scrolling capture · Return copy · ⌘T pin · ⌘S save · C copy the color under the pointer · , and . recall recent regions · Esc cancel.
-                On a pin: drag to move · scroll to zoom · ⌥ scroll for opacity · 1–4 rotate and flip · T select text · ⌘C copy · Esc or double-click to close.
-                """, actions: [CaptureShell.Action.capture, CaptureShell.Action.pinClipboard, CaptureShell.Action.togglePins]),
+            shortcuts.section(L("Shortcuts"), footer: Self.keys,
+                              actions: [CaptureShell.Action.capture, CaptureShell.Action.pinClipboard, CaptureShell.Action.togglePins]),
             shortcuts.errorLabel
         ]
+    }
+
+    /// The keys in a capture and on a pin, as their `?` sheets list them.
+    private static var keys: String {
+        func line(_ title: String, _ groups: [KeySheet.Group]) -> String {
+            title + ": " + groups.flatMap(\.keys).map { "\($0.0) \($0.1)" }.joined(separator: " · ")
+        }
+        return line(L("Screenshot keys"), KeyGuide.capture) + "\n" + line(L("Pin keys"), KeyGuide.pin)
     }
 
     override func paneWillAppear() {

@@ -65,9 +65,9 @@ public enum InputFocusHandoff {
         case applicationChanged, fieldChanged, restorationFailed
         public var errorDescription: String? {
             switch self {
-            case .applicationChanged: return "You switched apps, so NyCopilot didn’t paste. The result is saved in History."
-            case .fieldChanged: return "Another field has focus, so NyCopilot didn’t paste. The result is saved in History."
-            case .restorationFailed: return "Couldn’t return to the original field. The result is saved in History."
+            case .applicationChanged: return "You switched apps, so NyCopilot didn’t paste."
+            case .fieldChanged: return "Another field has focus, so NyCopilot didn’t paste."
+            case .restorationFailed: return "Couldn’t return to the original field, so NyCopilot didn’t paste."
             }
         }
     }

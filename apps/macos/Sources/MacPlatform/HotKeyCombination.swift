@@ -31,7 +31,8 @@ public struct HotKeyCombination: Equatable, Hashable, Sendable {
             .filter { modifiers & $0.0 != 0 }.map(\.1).joined()
     }
 
-    /// A compact text form for UserDefaults; an empty string means the shortcut is turned off.
+    /// A compact text form for saving (NyCopilot keeps it in its settings, under `client.hotkey.*`);
+    /// an empty string means the shortcut is turned off.
     public var storageValue: String { "\(keyCode):\(modifiers)" }
 
     public init?(storageValue: String) {
