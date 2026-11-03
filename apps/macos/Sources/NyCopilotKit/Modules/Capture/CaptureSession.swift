@@ -69,6 +69,7 @@ final class CaptureSession {
                 self?.close()
                 self?.onCancel?()
             }
+            view.onToggleDetection = { [weak self] in self?.toggleDetection() }
             view.onSelectionStarted = { [weak self, weak view] in
                 for other in self?.views ?? [] where other !== view { other.isPassive = true }
                 view?.isPassive = false
@@ -94,6 +95,12 @@ final class CaptureSession {
             window.makeFirstResponder(view)
         }
         NSCursor.crosshair.set()
+    }
+
+    /// Tab on any display: elements ⇄ windows, on every display at once.
+    private func toggleDetection() {
+        CaptureView.detectsWindows.toggle()
+        views.forEach { $0.detectionChanged() }
     }
 
     /// The overlay stays up until the app you were in has the focus back, so its window never

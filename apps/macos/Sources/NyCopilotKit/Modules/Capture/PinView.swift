@@ -55,6 +55,25 @@ final class PinView: NSView {
             badge.centerXAnchor.constraint(equalTo: centerXAnchor),
             badge.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
         ])
+        liveText.onRead = { [weak self] lines in
+            guard let self else { return }
+            if lines > 0 {
+                hint = L("Drag to select · ⌘C copy · T copy all · Esc done")
+            } else {
+                liveText.end()
+                flash(L("No text found"))
+            }
+        }
+        // T twice or Return: every line, then back to the plain pin.
+        liveText.onCopiedAll = { [weak self] _ in
+            self?.liveText.end()
+            self?.flash(L("Copied all text"))
+        }
+        liveText.onFlash = { [weak self] note in self?.flash(note) }
+        liveText.onEnd = { [weak self] in
+            self?.hint = nil
+            self?.window?.makeFirstResponder(self)
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
@@ -90,67 +109,18 @@ final class PinView: NSView {
 
     // MARK: Live Text
 
-    var textOverlay: ImageAnalysisOverlayView?
-    var copyWhenRead = false
-    var isReadingText: Bool { textOverlay != nil }
+    let liveText = LiveTextController(keyRule: .commandOnly)
+    var isReadingText: Bool { liveText.isActive }
 
     func toggleReadingText(_ image: CGImage?) {
         if isReadingText { endReadingText(); return }
         guard let image else { return }
-        let overlay = LiveText.overlay(frame: bounds)
+        let overlay = liveText.begin(in: self, frame: bounds, below: badge, reading: Task { try await LiveText.analyze(image) })
         overlay.autoresizingMask = [.width, .height]
-        addSubview(overlay, positioned: .below, relativeTo: badge)
-        textOverlay = overlay
         hint = L("Reading text…")
-        Task { [weak self] in
-            let analysis = try? await LiveText.analyze(image)
-            guard let self, textOverlay === overlay else { return }
-            LiveText.show(analysis, on: overlay)
-            if analysis.map(LiveText.lineCount) ?? 0 > 0 {
-                hint = L("Drag to select · ⌘C copy · T copy all · Esc done")
-                if copyWhenRead { copyAllText() }
-            } else {
-                endReadingText()
-                flash(L("No text found"))
-            }
-        }
     }
 
-    func endReadingText() {
-        guard let overlay = textOverlay else { return }
-        overlay.removeFromSuperview()
-        textOverlay = nil
-        copyWhenRead = false
-        hint = nil
-        window?.makeFirstResponder(self)
-    }
-
-    /// T twice or Return: every line, then back to the plain pin. A double tap faster than
-    /// recognition copies as soon as the text is read.
-    func copyAllText() {
-        guard let analysis = textOverlay?.analysis else { copyWhenRead = true; return }
-        guard !analysis.transcript.isEmpty else { return }
-        LiveText.copy(analysis.transcript)
-        endReadingText()
-        flash(L("Copied all text"))
-    }
-
-    /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
-    func readingTextKeyDown(_ event: NSEvent) -> Bool {
-        guard let overlay = textOverlay else { return false }
-        let command = event.modifierFlags.contains(.command)
-        switch (event.keyCode, event.charactersIgnoringModifiers?.lowercased() ?? "", command) {
-        case (53, _, _): endReadingText()
-        case (_, "t", false), (36, _, _), (76, _, _): copyAllText()
-        case (_, "c", true):
-            let text = LiveText.textToCopy(from: overlay)
-            guard !text.isEmpty else { break }
-            LiveText.copy(text)
-            flash(L("Copied"))
-        default: return false
-        }
-        return true
-    }
+    func endReadingText() { liveText.end() }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -199,7 +169,7 @@ final class PinView: NSView {
 
     override func keyDown(with event: NSEvent) {
         guard let pin else { return }
-        if readingTextKeyDown(event) { return }
+        if liveText.keyDown(event) { return }
         if event.characters == "?" { KeySheet.shared.toggle(L("Pin keys"), groups: KeyGuide.pin, over: pin); return }
         let command = event.modifierFlags.contains(.command)
         switch (event.charactersIgnoringModifiers?.lowercased() ?? "", command) {

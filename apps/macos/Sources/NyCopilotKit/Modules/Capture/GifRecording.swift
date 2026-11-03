@@ -35,7 +35,7 @@ final class GifRecording {
     private let fps: Int
     private let pixelsPerPoint: CGFloat
     private let showsCursor: Bool
-    private let border: NSWindow
+    private let border: RegionOutline
     private let bar: RecordingBar
     private let frames: FrameSink
     private var stream: SCStream?
@@ -54,7 +54,7 @@ final class GifRecording {
         pixelsPerPoint = retina ? screen.backingScaleFactor : 1
         self.showsCursor = showsCursor
         let frame = ScreenGeometry.appKit(region)
-        border = Self.makeBorder(around: frame)
+        border = RegionOutline(around: frame, look: .ready)
         bar = RecordingBar(beside: frame, on: screen, shortcut: shortcut)
         frames = FrameSink(output: FrameSink.newRecordingURL())
         bar.onRecord = { [weak self] in self?.record() }
@@ -87,7 +87,7 @@ final class GifRecording {
         guard phase == .ready else { return }
         phase = .recording
         keys = []
-        (border.contentView as? BorderView)?.state = .recording
+        border.look = .recording
         bar.showRecording()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -132,7 +132,7 @@ final class GifRecording {
 
     private func togglePause() {
         frames.setPaused(!frames.isPaused)
-        (border.contentView as? BorderView)?.state = frames.isPaused ? .paused : .recording
+        border.look = frames.isPaused ? .paused : .recording
         tick()
     }
 
@@ -169,35 +169,6 @@ final class GifRecording {
         ticker = nil
         border.orderOut(nil)
         if !keepingBar { bar.orderOut(nil) }
-    }
-
-    /// An outline just outside the region — white and dashed while ready, red while recording, red
-    /// and dashed while paused; clicks go through it.
-    static func makeBorder(around frame: NSRect) -> NSWindow {
-        let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
-        window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
-        window.contentView = BorderView()
-        return window
-    }
-
-    final class BorderView: NSView {
-        enum State { case ready, recording, paused }
-        var state = State.ready { didSet { needsDisplay = true } }
-
-        override func draw(_ dirtyRect: NSRect) {
-            let path = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
-            path.lineWidth = 2
-            if state != .recording { path.setLineDash([6, 4], count: 2, phase: 0) }
-            // White reads on any background once it has a dark edge under it.
-            if state == .ready {
-                let shadow = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
-                shadow.lineWidth = 3.5
-                NSColor.black.withAlphaComponent(0.45).setStroke()
-                shadow.stroke()
-            }
-            (state == .ready ? NSColor.white : NSColor.systemRed).setStroke()
-            path.stroke()
-        }
     }
 }
 

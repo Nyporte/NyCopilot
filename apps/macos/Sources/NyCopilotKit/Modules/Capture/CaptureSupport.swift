@@ -111,3 +111,48 @@ final class TextAnnotationEditor: NSTextView {
         superview?.needsDisplay = true
     }
 }
+
+/// A dashed outline just outside a region, over every app; clicks and scrolls go through it.
+/// Scrolling capture keeps it in the accent color. A GIF recording shows it white while ready, red
+/// while recording, and red and dashed while paused.
+final class RegionOutline: NSWindow {
+    enum Look { case accent, ready, recording, paused }
+
+    var look: Look {
+        get { outline.look }
+        set { outline.look = newValue }
+    }
+
+    private let outline = OutlineView()
+
+    init(around frame: NSRect, look: Look) {
+        super.init(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
+        float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
+        outline.look = look
+        contentView = outline
+    }
+
+    private final class OutlineView: NSView {
+        var look = Look.accent { didSet { needsDisplay = true } }
+
+        override func draw(_ dirtyRect: NSRect) {
+            let rect = bounds.insetBy(dx: 1.5, dy: 1.5)
+            // White reads on any background once it has a dark edge under it.
+            if look == .ready {
+                let shadow = NSBezierPath(rect: rect)
+                shadow.lineWidth = 3.5
+                NSColor.black.withAlphaComponent(0.45).setStroke()
+                shadow.stroke()
+            }
+            let path = NSBezierPath(rect: rect)
+            path.lineWidth = 2
+            if look != .recording { path.setLineDash([6, 4], count: 2, phase: 0) }
+            switch look {
+            case .accent: NSColor.controlAccentColor.setStroke()
+            case .ready: NSColor.white.setStroke()
+            case .recording, .paused: NSColor.systemRed.setStroke()
+            }
+            path.stroke()
+        }
+    }
+}

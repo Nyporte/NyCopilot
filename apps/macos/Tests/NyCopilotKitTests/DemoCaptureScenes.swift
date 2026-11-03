@@ -111,7 +111,7 @@ extension DemoTests {
         let region = try XCTUnwrap(picked)
 
         let frame = ScreenGeometry.appKit(region)
-        let border = ScrollCapture.makeBorder(around: frame)
+        let border = RegionOutline(around: frame, look: .accent)
         border.orderFrontRegardless()
         let panel = ScrollCapturePanel(beside: frame, on: director.screen)
         panel.present()
@@ -193,7 +193,7 @@ extension DemoTests {
         let region = try XCTUnwrap(picked)
 
         let frame = ScreenGeometry.appKit(region)
-        let border = GifRecording.makeBorder(around: frame)
+        let border = RegionOutline(around: frame, look: .ready)
         border.orderFrontRegardless()
         let bar = RecordingBar(beside: frame, on: director.screen, shortcut: "F1")
         bar.orderFrontRegardless()
@@ -207,7 +207,7 @@ extension DemoTests {
         director.click()
         record.performClick(nil)
         XCTAssertTrue(recording)
-        (border.contentView as? GifRecording.BorderView)?.state = .recording
+        border.look = .recording
         bar.showRecording()
 
         // The clip, from the screen, as the stream would record it.

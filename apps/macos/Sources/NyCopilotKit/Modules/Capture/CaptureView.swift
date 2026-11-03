@@ -15,6 +15,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var onSelectionStarted: (() -> Void)?
     /// Copy All in Live Text: the text is on the clipboard; the capture can close.
     var onTextCopied: ((Int) -> Void)?
+    /// Tab: elements ⇄ windows, which the session switches on every display at once.
+    var onToggleDetection: (() -> Void)?
 
     let frozen: FrozenScreen
     var selection: CGRect?
@@ -36,8 +38,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var recentIndex = -1
     var analysis: (rect: CGRect, task: Task<ImageAnalysis, Error>)?
     var pendingAnalysis: DispatchWorkItem?
-    var textOverlay: ImageAnalysisOverlayView?
-    var copyWhenRead = false
+    let liveText = LiveTextController()
     let textBar = CaptureTextBar()
     /// Which format C copies; Shift switches between HEX and RGB.
     var copiesHex = true
@@ -126,9 +127,23 @@ final class CaptureView: NSView, NSTextViewDelegate {
         for view in [chrome, sizeLabelView, magnifierView] as [NSView] { addSubview(view) }
         addSubview(toolbar)
         textBar.isHidden = true
-        textBar.onCopyAll = { [weak self] in self?.copyAllText() }
+        textBar.onCopyAll = { [weak self] in self?.liveText.copyAll() }
         textBar.onDone = { [weak self] in self?.endReadingText() }
         addSubview(textBar)
+        liveText.onRead = { [weak self] lines in
+            guard let self else { return }
+            textBar.show(lines: lines)
+            place(textBar)
+        }
+        liveText.onCopiedAll = { [weak self] lines in self?.onTextCopied?(lines) }
+        liveText.onFlash = { [weak self] note in self?.textBar.flash(note) }
+        liveText.onEnd = { [weak self] in
+            guard let self else { return }
+            textBar.isHidden = true
+            placeToolbar()
+            window?.makeFirstResponder(self)
+            needsDisplay = true
+        }
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(frozen:…)") }
@@ -150,9 +165,6 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var handleGrowth: [Handle: (from: CGFloat, to: CGFloat, start: CFTimeInterval)] = [:]
 
     // MARK: Drawing
-
-    /// The moving parts, refreshed: the outline's place, the handles, the label, the magnifier.
-    func refreshDynamic() { updateChrome() }
 
     /// Any redraw also refreshes the layers above it.
     override var needsDisplay: Bool {
@@ -182,7 +194,8 @@ final class CaptureView: NSView, NSTextViewDelegate {
         if let textEditor { drawEditorFrame(textEditor.frame) }
     }
 
-    /// The dimming, outline, handles, label, and magnifier, as the state says they are now.
+    /// The moving parts, as the state says they are now: the dimming, the outline's place, the
+    /// handles, the label, and the magnifier.
     func updateChrome() {
         guard chrome.superview === self else { return }
         let hovering = selection == nil && !isPassive
@@ -206,8 +219,9 @@ final class CaptureView: NSView, NSTextViewDelegate {
             sizeLabelView.isHidden = true
         }
         if showsMagnifier, let pointer {
-            magnifierView.pointer = pointer
-            magnifierView.frame = magnifierFrame(at: pointer)
+            let layout = magnifierLayout(at: pointer)
+            magnifierView.layout = layout
+            magnifierView.frame = layout.frame
             magnifierView.needsDisplay = true
             magnifierView.isHidden = false
         } else {
@@ -236,7 +250,7 @@ final class CaptureView: NSView, NSTextViewDelegate {
         if selection == nil, !isPassive { hover(at: point) }
         focusHandle(near: point)
         updateCursor(at: point)
-        refreshDynamic()
+        updateChrome()
     }
 
     /// Outlines what's under the pointer as soon as the capture opens, before it moves.
@@ -262,17 +276,14 @@ final class CaptureView: NSView, NSTextViewDelegate {
             guard let self, selection == nil, !isPassive, !Self.detectsWindows, let pointer, window.rect.contains(pointer) else { return }
             let local = element.offsetBy(dx: -origin.x, dy: -origin.y)
             hoverWindow = local.contains(pointer) ? local : window.rect
-            refreshDynamic()
+            updateChrome()
         }
     }
 
-    /// Tab: elements ⇄ windows, on every display at once.
-    func toggleDetection() {
-        Self.detectsWindows.toggle()
-        for view in NSApp.windows.compactMap({ $0.contentView?.subviews.first as? CaptureView }) {
-            if let pointer = view.pointer, view.selection == nil, !view.isPassive { view.hover(at: pointer) }
-            view.needsDisplay = true
-        }
+    /// Detection switched between windows and elements: outline afresh what's under the pointer.
+    func detectionChanged() {
+        if let pointer, selection == nil, !isPassive { hover(at: pointer) }
+        needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -582,72 +593,24 @@ final class CaptureView: NSView, NSTextViewDelegate {
         return task
     }
 
-    var isReadingText: Bool { textOverlay != nil }
+    var isReadingText: Bool { liveText.isActive }
+    var textOverlay: ImageAnalysisOverlayView? { liveText.overlay }
 
     /// T: the selection becomes Live Text — every word selectable right where it is on screen.
-    /// T again copies all of it.
+    /// T again — the left hand never moves — Return, or Copy All copies every line, and the
+    /// capture closes.
     func beginReadingText() {
         guard !isReadingText, let selection, let task = textAnalysis() else { return }
         if textEditor != nil { commitText() }
         tool = nil
-        let overlay = LiveText.overlay(frame: selection)
-        addSubview(overlay, positioned: .below, relativeTo: toolbar)
-        textOverlay = overlay
+        liveText.begin(in: self, frame: selection, below: toolbar, reading: task)
         toolbar.isHidden = true
         textBar.showReading()
         place(textBar)
-        Task { [weak self] in
-            let analysis = try? await task.value
-            guard let self, textOverlay === overlay else { return }
-            LiveText.show(analysis, on: overlay)
-            textBar.show(lines: analysis.map(LiveText.lineCount) ?? 0)
-            place(textBar)
-            if copyWhenRead { copyAllText() }
-        }
         needsDisplay = true
     }
 
-    func endReadingText() {
-        copyWhenRead = false
-        textOverlay?.removeFromSuperview()
-        textOverlay = nil
-        textBar.isHidden = true
-        placeToolbar()
-        window?.makeFirstResponder(self)
-        needsDisplay = true
-    }
-
-    /// ⌘C: the selected words, staying in Live Text.
-    func copySelectedText() {
-        guard let overlay = textOverlay, overlay.analysis != nil else { return }
-        let text = LiveText.textToCopy(from: overlay)
-        guard !text.isEmpty else { return }
-        LiveText.copy(text)
-        textBar.flash(L("Copied"))
-    }
-
-    /// T twice — the left hand never moves — or Return, or Copy All: every line, then the capture
-    /// closes. A double tap faster than recognition copies as soon as the text is read.
-    func copyAllText() {
-        guard let overlay = textOverlay else { return }
-        guard let analysis = overlay.analysis else { copyWhenRead = true; return }
-        let transcript = analysis.transcript
-        guard !transcript.isEmpty else { textBar.flash(L("No text to copy")); return }
-        LiveText.copy(transcript)
-        onTextCopied?(transcript.split(whereSeparator: \.isNewline).count)
-    }
-
-    /// Keys while reading text; the overlay passes along whatever it doesn't use itself.
-    func readingTextKeyDown(_ event: NSEvent) {
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
-        switch (event.keyCode, flags, key) {
-        case (53, _, _): endReadingText()
-        case (_, [], "t"), (36, _, _), (76, _, _): copyAllText()
-        case (_, [.command], "c"): copySelectedText()
-        default: break
-        }
-    }
+    func endReadingText() { liveText.end() }
 
     /// The finished image: selection plus annotations at full resolution.
     func renderedImage() -> NSImage? {

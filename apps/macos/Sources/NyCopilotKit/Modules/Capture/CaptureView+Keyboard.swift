@@ -5,13 +5,14 @@ extension CaptureView {
     // MARK: Keyboard
 
     override func keyDown(with event: NSEvent) {
-        if isReadingText { readingTextKeyDown(event); return }
+        // Reading text, every key is Live Text's.
+        if isReadingText { _ = liveText.keyDown(event); return }
         if event.characters == "?" { KeySheet.shared.toggle(L("Screenshot keys"), groups: KeyGuide.capture, over: window); return }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         switch (event.keyCode, flags) {
         case (53, _): onCancel?()
-        case (48, []) where selection == nil: toggleDetection()
+        case (48, []) where selection == nil: onToggleDetection?()
         case (36, _), (76, _): finish(.copy)
         case (123...126, _): nudge(event.keyCode, resize: flags.contains(.shift))
         default:

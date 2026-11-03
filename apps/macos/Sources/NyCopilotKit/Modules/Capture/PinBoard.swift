@@ -15,6 +15,8 @@ final class PinBoard {
     /// each looks and where it is.
     let folder = Preferences.dataDirectory.appendingPathComponent("Pins", isDirectory: true)
     var index: URL { folder.appendingPathComponent("pins.json") }
+    /// Writes and removes pin images in order, so a pin closed at once leaves no image behind.
+    private let files = DispatchQueue(label: "dev.nycopilot.pins.files", qos: .utility)
 
     @discardableResult
     func pin(_ image: NSImage, at frame: NSRect, shadow: Bool) -> PinWindow {
@@ -30,7 +32,7 @@ final class PinBoard {
         pin.onClose = { [weak self] closed in
             self?.pins.removeAll { $0 === closed }
             self?.updateMonitor()
-            if let folder = self?.folder { try? FileManager.default.removeItem(at: folder.appendingPathComponent("\(closed.id).png")) }
+            self?.discard(closed.id)
             self?.persist()
         }
         pin.onCloseAll = { [weak self] in self?.closeAll() }
@@ -82,11 +84,17 @@ final class PinBoard {
     func keep(_ image: NSImage, as id: UUID) {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
         let file = folder.appendingPathComponent("\(id).png"), folder = folder
-        DispatchQueue.global(qos: .utility).async {
+        files.async {
             guard let data = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:]) else { return }
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try? data.write(to: file, options: .atomic)
         }
+    }
+
+    /// A closed pin's image, removed after any write still under way.
+    func discard(_ id: UUID) {
+        let file = folder.appendingPathComponent("\(id).png")
+        files.async { try? FileManager.default.removeItem(at: file) }
     }
 
     func toggleVisibility() { areHidden ? showAll() : hideAll() }

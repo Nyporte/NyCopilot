@@ -20,7 +20,7 @@ final class ScrollCapture {
     private let frozen: FrozenScreen
     /// Whether the frozen pixels of a global rectangle can stand in for the live screen (no pin on it).
     private let canSeed: (CGRect) -> Bool
-    private let border: NSWindow
+    private let border: RegionOutline
     private let panel: ScrollCapturePanel
     private var frames: FrameStitcher?
     private var stream: SCStream?
@@ -37,7 +37,7 @@ final class ScrollCapture {
         self.frozen = frozen
         self.canSeed = canSeed
         let frame = ScreenGeometry.appKit(region)
-        border = Self.makeBorder(around: frame)
+        border = RegionOutline(around: frame, look: .accent)
         panel = ScrollCapturePanel(beside: frame, on: frozen.screen)
         panel.onAction = { [weak self] action in self?.finish(action) }
         panel.onCancel = { [weak self] in self?.cancel() }
@@ -156,25 +156,6 @@ final class ScrollCapture {
         keys = []
         border.orderOut(nil)
         panel.orderOut(nil)
-    }
-
-    /// A dashed accent outline just outside the region; clicks and scrolls go through it.
-    static func makeBorder(around frame: NSRect) -> NSWindow {
-        let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
-        window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
-        let view = BorderView()
-        window.contentView = view
-        return window
-    }
-
-    private final class BorderView: NSView {
-        override func draw(_ dirtyRect: NSRect) {
-            let path = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
-            path.lineWidth = 2
-            path.setLineDash([6, 4], count: 2, phase: 0)
-            NSColor.controlAccentColor.setStroke()
-            path.stroke()
-        }
     }
 }
 

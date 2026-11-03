@@ -72,15 +72,16 @@ final class CaptureLabel: NSView {
 /// The magnifier, drawn by the capture view into this small view, which moves with the pointer.
 final class MagnifierView: NSView {
     weak var owner: CaptureView?
-    var pointer: CGPoint?
+    /// What to draw, as the capture view last worked it out.
+    var layout: CaptureView.MagnifierLayout?
 
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let owner, let pointer, let context = NSGraphicsContext.current?.cgContext else { return }
+        guard let owner, let layout, let context = NSGraphicsContext.current?.cgContext else { return }
         // The capture view's coordinates, shifted to this view.
         context.translateBy(x: -frame.minX, y: -frame.minY)
-        owner.drawMagnifier(at: pointer)
+        owner.drawMagnifier(layout)
     }
 }
