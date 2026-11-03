@@ -345,7 +345,7 @@ mod tests {
             Manifest {
                 id: "notes".into(), name: "Notes".into(), summary: "Test module".into(), capabilities: vec![],
                 collections: vec!["notes.items".into(), "notes.archive".into()],
-                settings: vec![SettingSpec::new("notes.font_size", json!(13), Scope::Synced, "Size")],
+                settings: vec![SettingSpec::new("notes.font_size", json!(13), Scope::Synced, "Size").range((1.0, 72.0))],
                 commands: vec![CommandSpec::new("add", "Add a note")],
             }
         }
@@ -386,6 +386,8 @@ mod tests {
         assert_eq!(core.call("records.delete", json!({ "id": note["id"] })).unwrap(), json!({ "deleted": true }));
         assert_eq!(events.load(Ordering::SeqCst), 4);
         assert_eq!(core.call("core.modules", Value::Null).unwrap()[0]["id"], "notes");
+        let setting = &core.call("core.modules", Value::Null).unwrap()[0]["settings"][0];
+        assert_eq!((setting["min"].clone(), setting["max"].clone()), (json!(1.0), json!(72.0)));
     }
 
     #[test]

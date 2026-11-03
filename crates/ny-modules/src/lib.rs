@@ -29,6 +29,9 @@ pub fn is_image_file_name(name: &str) -> bool {
     stem.len() == 36 && uuid::Uuid::parse_str(stem).is_ok()
 }
 
+/// Characters no file name may hold on some platform; modules that name files replace them.
+pub fn is_unsafe_in_file_name(c: char) -> bool { "/\\:*?\"<>|".contains(c) || c.is_control() }
+
 /// Every module this build ships, in menu order. The `llm` module comes first because others use it.
 pub fn all() -> Vec<Arc<dyn Module>> {
     vec![Arc::new(ny_llm::LlmModule), Arc::new(translate::TranslateModule), Arc::new(windows::WindowsModule), Arc::new(capture::CaptureModule),

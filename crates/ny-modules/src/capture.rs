@@ -12,6 +12,9 @@ pub const HISTORY: &str = "capture.history";
 /// Captures remembered for `recent_regions`; older ones go.
 pub const MAX_HISTORY: usize = 200;
 pub const FORMATS: &[&str] = &["png", "jpg"];
+/// Annotation line width, in points, and GIF frames a second.
+pub const STROKE_RANGE: (f64, f64) = (1.0, 24.0);
+pub const GIF_FPS_RANGE: (f64, f64) = (5.0, 30.0);
 pub const DEFAULT_PATTERN: &str = "NyCopilot {date} at {time}";
 /// Shape and text options, kept between captures. Missing keys fall back to these defaults.
 pub fn default_style() -> Value {
@@ -57,7 +60,7 @@ pub fn file_name(pattern: &str, format: &str, local: (i32, u32, u32, u32, u32, u
         .replace("{date}", &format!("{year:04}-{month:02}-{day:02}"))
         .replace("{time}", &format!("{hour:02}.{minute:02}.{second:02}"))
         .replace("{n}", &counter.to_string());
-    let safe: String = name.chars().map(|c| if "/\\:*?\"<>|".contains(c) || c.is_control() { '-' } else { c }).collect();
+    let safe: String = name.chars().map(|c| if crate::is_unsafe_in_file_name(c) { '-' } else { c }).collect();
     let trimmed = safe.trim().trim_matches('.');
     format!("{}.{format}", if trimmed.is_empty() { "Capture" } else { trimmed })
 }
@@ -89,11 +92,11 @@ impl Module for CaptureModule {
                 // Numbers count the files saved on this machine, so they stay here too.
                 SettingSpec::new("capture.next_number", json!(1), Scope::Device, "The number {n} gives the next file name; it counts up from 1."),
                 SettingSpec::new("capture.color", json!(PALETTE[0]), Scope::Synced, "Annotation color last used."),
-                SettingSpec::new("capture.stroke", json!(3), Scope::Synced, "Annotation line width last used, in points."),
+                SettingSpec::new("capture.stroke", json!(3), Scope::Synced, "Annotation line width last used, in points.").range(STROKE_RANGE),
                 SettingSpec::new("capture.style", default_style(), Scope::Synced,
                                  "Corner radius, fill, and text font, size, and emphasis last used for annotations."),
                 SettingSpec::new("capture.pin_shadow", json!(true), Scope::Synced, "Draw a shadow around pinned images."),
-                SettingSpec::new("capture.gif_fps", json!(15), Scope::Synced, "Frames a second in GIF recordings (5–30)."),
+                SettingSpec::new("capture.gif_fps", json!(15), Scope::Synced, "Frames a second in GIF recordings (5–30).").range(GIF_FPS_RANGE),
                 SettingSpec::new("capture.gif_retina", json!(false), Scope::Synced,
                                  "Record GIFs at full Retina resolution rather than one pixel per point."),
                 SettingSpec::new("capture.gif_cursor", json!(true), Scope::Synced, "Show the pointer in GIF recordings."),
@@ -164,9 +167,9 @@ impl Module for CaptureModule {
                 Err(NyError::invalid_setting("The file name pattern must be 1–120 characters.")),
             "capture.color" => validate_color(text),
             "capture.style" => validate_style(value),
-            "capture.stroke" if !value.as_f64().is_some_and(|w| (1.0..=24.0).contains(&w)) =>
+            "capture.stroke" if !value.as_f64().is_some_and(|w| SettingSpec::within(STROKE_RANGE, w)) =>
                 Err(NyError::invalid_setting("Line width must be between 1 and 24 points.")),
-            "capture.gif_fps" if !value.as_i64().is_some_and(|fps| (5..=30).contains(&fps)) =>
+            "capture.gif_fps" if !value.as_i64().is_some_and(|fps| SettingSpec::within(GIF_FPS_RANGE, fps as f64)) =>
                 Err(NyError::invalid_setting("Record 5 to 30 frames a second.")),
             "capture.next_number" if value.as_u64().is_none_or(|n| n == 0) =>
                 Err(NyError::invalid_setting("File numbers start at 1.")),

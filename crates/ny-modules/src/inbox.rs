@@ -52,6 +52,7 @@ impl Module for InboxModule {
                 CommandSpec::new("snooze", "Put a waiting note away until a time: {id, until (ms)} → {record} in inbox.snoozed."),
                 CommandSpec::new("wake", "Bring snoozed notes back to the top of the inbox: {id?} → {woken: [record]}; without an id, every one that's due."),
                 CommandSpec::new("count", "Notes waiting → {count}."),
+                CommandSpec::new("markdown", "A note as a Markdown file: {title, text, source?, url?, created (ms), stamp (local time, as the file name starts), image?: file name} → {stem, markdown}. The client makes the stem unique, names any image after it, and writes the files."),
             ],
         }
     }
@@ -162,6 +163,21 @@ impl Module for InboxModule {
                 Ok(json!({ "woken": woken }))
             }
             "count" => Ok(json!({ "count": core.count_records(NOTES)? })),
+            "markdown" => {
+                #[derive(Deserialize)]
+                struct Markdown {
+                    title: String,
+                    text: String,
+                    #[serde(default)] source: String,
+                    #[serde(default)] url: String,
+                    created: i64,
+                    stamp: String,
+                    image: Option<String>,
+                }
+                let p: Markdown = parse(params)?;
+                Ok(json!({ "stem": markdown_stem(&p.stamp, &p.title),
+                           "markdown": markdown(&p.text, &p.source, &p.url, p.created, p.image.as_deref()) }))
+            }
             _ => Err(NyError::unknown_method(&format!("inbox.{command}"))),
         }
     }
@@ -191,6 +207,52 @@ fn prune(core: &Core) -> Result<usize> {
     core.prune_records(DONE, None, now_millis() - DONE_DAYS * DAY_MILLIS)
 }
 
+/// `<stamp> <title>`, with the characters file systems or note apps (Obsidian links: `#^[]`) treat
+/// specially turned into spaces, and the title cut to 60 characters.
+pub fn markdown_stem(stamp: &str, title: &str) -> String {
+    let words = title.split(|c: char| crate::is_unsafe_in_file_name(c) || "#^[]".contains(c))
+        .filter(|word| !word.trim().is_empty()).map(str::trim).collect::<Vec<_>>().join(" ");
+    let words: String = words.chars().take(60).collect();
+    format!("{} {}", line(stamp, 40), words.trim()).trim().to_string()
+}
+
+/// Front matter for where the note came from, then its text, then the image beside it if any.
+pub fn markdown(text: &str, source: &str, url: &str, created: i64, image: Option<&str>) -> String {
+    let mut lines = vec!["---".to_string(), format!("created: {}", iso8601(created))];
+    if !source.trim().is_empty() { lines.push(format!("source: \"{}\"", line(source, 300).replace('"', "'"))); }
+    if !url.trim().is_empty() { lines.push(format!("url: {}", line(url, 2048))); }
+    lines.extend(["tags: [inbox]", "---", ""].map(String::from));
+    lines.push(text.trim().to_string());
+    if let Some(image) = image { lines.extend([String::new(), format!("![]({})", path_encoded(image))]); }
+    lines.join("\n") + "\n"
+}
+
+/// Unix milliseconds as `2026-11-03T03:30:00Z`.
+fn iso8601(millis: i64) -> String {
+    let seconds = millis.div_euclid(1000);
+    let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
+    // Days to a civil date (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z", rest / 3600, rest / 60 % 60, rest % 60)
+}
+
+/// A file name as a Markdown link target: spaces and anything outside a URL path escaped.
+fn path_encoded(name: &str) -> String {
+    name.bytes().map(|byte| match byte {
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*'
+        | b'+' | b',' | b';' | b'=' | b':' | b'@' | b'/' => (byte as char).to_string(),
+        _ => format!("%{byte:02X}"),
+    }).collect()
+}
+
 /// Some text, unless there's an image; never more than 64 KB.
 fn validate_text(text: &str, has_image: bool) -> Result<()> {
     if text.trim().is_empty() && !has_image { return Err(NyError::new("empty_input", "Type something first.")); }
@@ -207,6 +269,15 @@ mod tests {
 
     fn list(core: &Core, collection: &str) -> Vec<Value> {
         core.call("records.list", json!({ "collection": collection })).unwrap()["records"].as_array().unwrap().clone()
+    }
+
+    #[test]
+    fn notes_become_markdown_files() {
+        assert_eq!(markdown_stem("2026-11-03 1130", "Read: the [design] doc #3 / v2\nand more"), "2026-11-03 1130 Read the design doc 3 v2 and more");
+        let text = markdown("  Body\n", "Safari — \"Docs\"", "https://example.com/a", 1_793_712_600_000, Some("2026 note.png"));
+        assert_eq!(text, "---\ncreated: 2026-11-03T13:30:00Z\nsource: \"Safari — 'Docs'\"\nurl: https://example.com/a\ntags: [inbox]\n---\n\nBody\n\n![](2026%20note.png)\n");
+        assert_eq!(iso8601(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso8601(951_782_400_000), "2000-02-29T00:00:00Z");
     }
 
     #[test]

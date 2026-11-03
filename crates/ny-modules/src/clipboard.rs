@@ -21,6 +21,8 @@ pub const PINNED: &str = "clipboard.pinned";
 pub const MAX_PINNED: usize = 100;
 /// Larger copies (a whole file's text) are left out of the history.
 pub const MAX_TEXT_BYTES: usize = 256 * 1024;
+pub const KEEP_DAYS_RANGE: (f64, f64) = (1.0, 365.0);
+pub const MAX_ITEMS_RANGE: (f64, f64) = (10.0, 5000.0);
 
 /// Password managers, by bundle identifier: never recorded unless the user takes them off the list.
 pub const DEFAULT_IGNORED_APPS: &[&str] = &[
@@ -41,8 +43,8 @@ impl Module for ClipboardModule {
             settings: vec![
                 // What you copy stays on the machine you copied it on.
                 SettingSpec::new("clipboard.enabled", json!(true), Scope::Device, "Keep a history of copied text."),
-                SettingSpec::new("clipboard.keep_days", json!(30), Scope::Synced, "Days an entry is kept (1–365)."),
-                SettingSpec::new("clipboard.max_items", json!(500), Scope::Synced, "Most entries kept (10–5000); the oldest go first."),
+                SettingSpec::new("clipboard.keep_days", json!(30), Scope::Synced, "Days an entry is kept (1–365).").range(KEEP_DAYS_RANGE),
+                SettingSpec::new("clipboard.max_items", json!(500), Scope::Synced, "Most entries kept (10–5000); the oldest go first.").range(MAX_ITEMS_RANGE),
                 SettingSpec::new("clipboard.ignored_apps", json!(DEFAULT_IGNORED_APPS), Scope::Synced,
                                  "Bundle identifiers of apps whose copies are never kept."),
             ],
@@ -122,9 +124,9 @@ impl Module for ClipboardModule {
 
     fn validate_setting(&self, key: &str, value: &Value) -> Result<()> {
         match key {
-            "clipboard.keep_days" if !value.as_i64().is_some_and(|days| (1..=365).contains(&days)) =>
+            "clipboard.keep_days" if !value.as_i64().is_some_and(|days| SettingSpec::within(KEEP_DAYS_RANGE, days as f64)) =>
                 Err(NyError::invalid_setting("Keep entries for 1 to 365 days.")),
-            "clipboard.max_items" if !value.as_i64().is_some_and(|count| (10..=5000).contains(&count)) =>
+            "clipboard.max_items" if !value.as_i64().is_some_and(|count| SettingSpec::within(MAX_ITEMS_RANGE, count as f64)) =>
                 Err(NyError::invalid_setting("Keep between 10 and 5000 entries.")),
             "clipboard.ignored_apps" if !value.as_array().is_some_and(|apps| apps.len() <= 200
                 && apps.iter().all(|app| app.as_str().is_some_and(|id| !id.trim().is_empty() && id.len() <= 200 && !id.contains(char::is_whitespace)))) =>

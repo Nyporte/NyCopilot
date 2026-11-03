@@ -44,7 +44,7 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | Method | Params | Result |
 | --- | --- | --- |
 | `core.info` | — | `{version, platform, device_id, revision, modules: [id]}` |
-| `core.modules` | — | `[Manifest]` |
+| `core.modules` | — | `[Manifest]`; a setting may carry `min`/`max`, the bounds of a number or of a list's length |
 | `core.cancel` | `{request_id}` | `{cancelled: bool}` |
 | `settings.get` | `{key}` | value (stored or manifest default; `null` for unset `client.*`) |
 | `settings.set` | `{key, value}` | `{}`; type must match the default |
@@ -69,9 +69,12 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `translate.run` | `{text, target_language?, api_key?, google_key?, volcengine_key?, request_id?, save?}` | `{text, target_language, engine, notice?, record}` — tries the engines in `translate.engine_order`, skipping any that are off, not set up, or don't offer the language; the next takes over when one fails. `engine` is `"google"`, `"volcengine"`, or `"model"`; `notice` names the engines that failed and why. Saved to `translate.history` before returning, unless `save` is `false` (then `record` is `null`; screen translation uses this) |
 | `translate.test_google` | `{url, key?}` | `{text, elapsed_ms}` — translates a short sample through the web app |
 | `translate.test_volcengine` | `{app_id?, key}` | `{text, elapsed_ms}` — translates a short sample with Volcengine credentials |
-| `translate.languages` | — | `[{name, native, code}]` — suggested languages with their own names and badge codes |
+| `translate.languages` | — | `[{name, native, code, locale?}]` — suggested languages with their own names, badge codes, and BCP-47 codes |
 | `translate.cycle` | `{step: 1 or -1}` | `{target_language, native, code}` — steps through the favorites and saves the result as the target |
-| `translate.native_name` | `{language}` | `{native, code}` — own name (as given when unknown) and badge code (EN, 中, 日; a mentioned language's code, else two letters) |
+| `translate.native_name` | `{language}` | `{native, code, locale?}` — own name (as given when unknown), badge code (EN, 中, 日; a mentioned language's code, else two letters), and BCP-47 code when known |
+| `translate.language_for_locale` | `{locale}` | `{language}` — the language name for a device locale (`pt-BR`, `zh-Hant-TW`); English when unknown |
+| `translate.seed_favorites` | `{device_language}` | `{favorites, changed}` — English and the device's language, if the favorites are still the defaults and lack it |
+| `translate.engines` | `{has_volcengine_key?}` | `[{id, title, enabled, configured, ready}]` in the order they're tried; `ready` is on and set up |
 | `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
 | `windows.actions` | — | `[{id, title, group}]` in menu order |
 | `windows.compute` | `{action, window, screen, repeat?}` | `{frame}` — `screen` is the usable area; `repeat` counts consecutive presses. With `windows.repeat = move_across_displays`, a repeated side layout returns `{frame: null, move: {direction, action}}`: apply `action` on the nearest display in `direction` |
@@ -94,6 +97,7 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `inbox.snooze` | `{id, until}` | `{record}`: a waiting note moved to `inbox.snoozed` with `until` (ms, in the future) and `created` |
 | `inbox.wake` | `{id?}` | `{woken: [record]}`: the snoozed note `id`, or every one whose `until` has passed, back on top of `inbox.notes` (`created` keeps its first date) |
 | `inbox.count` | — | `{count}` of notes waiting |
+| `inbox.markdown` | `{title, text, source?, url?, created, stamp, image?}` | `{stem, markdown}` — a file stem (`<stamp> <title>`, made safe) and the note as Markdown with front matter; the client makes the stem unique, names any image after it, and writes the files |
 | `ask.run` | `{action, text?, image?, question?, language?, turns?, api_key?, request_id?}` | `{text}`: the model's answer. `action` is `explain`, `summarize`, `rewrite`, or `ask` (needs a `question`); `image` is a base64 PNG (up to 12 MiB), sent as an image only while `ask.send_images` is on, else `text` (its recognized text) stands in; `language` is the reply language; `turns` are earlier `{role: user\|assistant, content}` follow-ups (the last 20 are kept), with `question` the new one. With `stream: true` and a `request_id`, the reply is streamed and `ask.delta` events `{request_id, text}` carry it so far (at most every 40 ms); cancelling stops reading at once. Cancellable |
 
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.

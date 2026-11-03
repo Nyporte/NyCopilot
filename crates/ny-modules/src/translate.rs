@@ -55,6 +55,40 @@ fn suggested(language: &str) -> Option<&'static (&'static str, &'static str, &'s
     SUGGESTED_LANGUAGES.iter().find(|(name, _, _)| name.eq_ignore_ascii_case(language.trim()))
 }
 
+/// Language names mapped to the BCP-47 codes platform text services (recognition, on-device
+/// translation) use. The first name listed for a code is its plainest.
+const LOCALES: &[(&str, &str)] = &[
+    ("English", "en"), ("Simplified Chinese", "zh-Hans"), ("Chinese", "zh-Hans"), ("Traditional Chinese", "zh-Hant"),
+    ("Japanese", "ja"), ("Korean", "ko"), ("Spanish", "es"), ("French", "fr"), ("German", "de"), ("Italian", "it"),
+    ("Portuguese", "pt"), ("Brazilian Portuguese", "pt"), ("Russian", "ru"), ("Arabic", "ar"), ("Dutch", "nl"),
+    ("Swedish", "sv"), ("Danish", "da"), ("Norwegian", "nb"), ("Finnish", "fi"), ("Polish", "pl"), ("Turkish", "tr"),
+    ("Ukrainian", "uk"), ("Vietnamese", "vi"), ("Thai", "th"), ("Indonesian", "id"), ("Hindi", "hi"), ("Greek", "el"),
+    ("Hebrew", "he"), ("Czech", "cs"), ("Hungarian", "hu"), ("Romanian", "ro"),
+];
+
+/// The BCP-47 code for a language name, when known.
+pub fn locale(language: &str) -> Option<&'static str> {
+    LOCALES.iter().find(|(name, _)| name.eq_ignore_ascii_case(language.trim())).map(|(_, code)| *code)
+}
+
+/// A language name for a device locale such as `pt-BR` or `zh-Hant-TW`; English when unknown.
+pub fn language_for_locale(locale: &str) -> &'static str {
+    let locale = locale.trim().to_lowercase().replace('_', "-");
+    if locale.starts_with("zh") {
+        let traditional = locale.contains("hant") || locale.ends_with("-tw") || locale.ends_with("-hk") || locale.ends_with("-mo");
+        return if traditional { "Traditional Chinese" } else { "Simplified Chinese" };
+    }
+    let base = locale.split('-').next().unwrap_or_default();
+    LOCALES.iter().find(|(_, code)| *code == base).map_or(DEFAULT_LANGUAGE, |(name, _)| name)
+}
+
+/// The favorites to start with on a device whose own language is `device`: English and that
+/// language rather than the defaults, when the defaults are still in place and don't include it.
+pub fn seeded_favorites(current: &[String], device: &str) -> Option<Vec<String>> {
+    let untouched = current.iter().map(String::as_str).eq(DEFAULT_FAVORITES.iter().copied());
+    (untouched && !current.iter().any(|name| name.eq_ignore_ascii_case(device))).then(|| vec![DEFAULT_LANGUAGE.to_string(), device.to_string()])
+}
+
 /// 1–8 distinct, valid language names.
 pub fn validate_favorites(value: &Value) -> Result<()> {
     let invalid = || NyError::invalid_setting(format!("Choose between 1 and {MAX_FAVORITES} different languages."));
@@ -126,6 +160,21 @@ impl Engine {
     fn enabled_setting(self) -> String { format!("translate.{}_enabled", self.id()) }
 
     fn from_id(id: &str) -> Option<Engine> { Engine::ALL.into_iter().find(|engine| engine.id() == id) }
+
+    /// As a heading in a list of services.
+    pub fn title(self) -> &'static str {
+        match self { Engine::Google => "Google Translate", Engine::Volcengine => "Volcengine", Engine::Model => "Model" }
+    }
+
+    /// Set up enough to try: Google has its web app URL, Volcengine a key (kept by the client, so it
+    /// says whether it has one), the model a provider.
+    pub fn is_configured(self, core: &Core, has_volcengine_key: bool) -> Result<bool> {
+        Ok(match self {
+            Engine::Google => !core.setting::<String>("translate.google_url")?.trim().is_empty(),
+            Engine::Volcengine => has_volcengine_key,
+            Engine::Model => ProviderConfig::from_core(core)?.is_complete(),
+        })
+    }
 }
 
 /// The saved order, with any engine it doesn't mention appended, so new engines always take part.
@@ -168,23 +217,20 @@ pub fn translate_text(core: &Core, text: &str, language: &str, keys: &Keys) -> R
     }
     let mut failures: Vec<(Engine, NyError)> = Vec::new();
     let mut lacks_language = false;
+    let has_volcengine_key = !keys.volcengine_key.trim().is_empty();
     for engine in engine_order(core)? {
-        if !core.setting::<bool>(&engine.enabled_setting())? { continue; }
+        if !core.setting::<bool>(&engine.enabled_setting())? || !engine.is_configured(core, has_volcengine_key)? { continue; }
         let result = match engine {
             Engine::Google => {
-                let url = core.setting::<String>("translate.google_url")?;
-                if url.trim().is_empty() { continue; }
                 let Some(code) = google::language_code(language) else { lacks_language = true; continue };
-                google::translate(&url, &keys.google_key, text, &code)
+                google::translate(&core.setting::<String>("translate.google_url")?, &keys.google_key, text, &code)
             }
             Engine::Volcengine => {
-                if keys.volcengine_key.trim().is_empty() { continue; }
                 let Some(code) = volcengine::language_code(language) else { lacks_language = true; continue };
                 volcengine::translate(&core.setting::<String>("translate.volcengine_app_id")?, &keys.volcengine_key, text, &code)
             }
             Engine::Model => {
                 let config = ProviderConfig::from_core(core)?;
-                if !config.is_complete() { continue; }
                 ny_llm::complete(&prompt(text, language, &core.setting::<String>("translate.instructions")?), &config, &keys.api_key)
             }
         };
@@ -252,7 +298,7 @@ impl Module for TranslateModule {
                 SettingSpec::new("translate.trim_whitespace", json!(true), Scope::Synced,
                                  "Remove spaces, tabs, and line breaks from the start and end of each translation."),
                 SettingSpec::new("translate.favorite_languages", json!(DEFAULT_FAVORITES), Scope::Synced,
-                                 "Languages that Tab steps through in the composer, in order."),
+                                 "Languages that Tab steps through in the composer, in order.").range((1.0, MAX_FAVORITES as f64)),
                 SettingSpec::new("translate.screen_language", json!(""), Scope::Synced,
                                  "Language screen translation reads into; empty means the device's own language."),
                 SettingSpec::new("translate.engine_order", json!(Engine::ALL.map(Engine::id)), Scope::Synced,
@@ -271,7 +317,10 @@ impl Module for TranslateModule {
                 CommandSpec::new("test_volcengine", "Check Volcengine credentials: {app_id?, key} → {text, elapsed_ms} for a short sample."),
                 CommandSpec::new("languages", "Suggested languages: [{name, native, code}]."),
                 CommandSpec::new("cycle", "Step the target through the favorites: {step: 1 or -1} → {target_language, native, code}."),
-                CommandSpec::new("native_name", "A language's own name and badge code: {language} → {native, code}."),
+                CommandSpec::new("native_name", "A language's own name, badge code, and BCP-47 code when known: {language} → {native, code, locale?}."),
+                CommandSpec::new("language_for_locale", "The language name for a device locale (pt-BR, zh-Hant-TW): {locale} → {language}; English when unknown."),
+                CommandSpec::new("seed_favorites", "Start the favorites as English and the device's language if they're still the defaults: {device_language} → {favorites, changed}."),
+                CommandSpec::new("engines", "The services in the order they're tried: {has_volcengine_key?} → [{id, title, enabled, configured, ready}]."),
                 CommandSpec::new("import_legacy", "Import NyTranslate history from {path} → {imported}."),
             ],
         }
@@ -327,7 +376,39 @@ impl Module for TranslateModule {
                 Ok(json!({ "text": text, "elapsed_ms": started.elapsed().as_millis() as u64 }))
             }
             "languages" => Ok(json!(SUGGESTED_LANGUAGES.iter()
-                .map(|(name, native, code)| json!({ "name": name, "native": native, "code": code })).collect::<Vec<_>>())),
+                .map(|(name, native, code)| json!({ "name": name, "native": native, "code": code, "locale": locale(name) })).collect::<Vec<_>>())),
+            "language_for_locale" => {
+                #[derive(Deserialize)]
+                struct Locale { locale: String }
+                let p: Locale = parse(params)?;
+                Ok(json!({ "language": language_for_locale(&p.locale) }))
+            }
+            "seed_favorites" => {
+                #[derive(Deserialize)]
+                struct Seed { device_language: String }
+                let p: Seed = parse(params)?;
+                validate_language(&p.device_language)?;
+                let current = core.setting::<Vec<String>>("translate.favorite_languages")?;
+                match seeded_favorites(&current, p.device_language.trim()) {
+                    Some(favorites) => {
+                        core.set_setting("translate.favorite_languages", json!(favorites))?;
+                        Ok(json!({ "favorites": favorites, "changed": true }))
+                    }
+                    None => Ok(json!({ "favorites": current, "changed": false })),
+                }
+            }
+            "engines" => {
+                #[derive(Deserialize)]
+                struct Engines { #[serde(default)] has_volcengine_key: bool }
+                let p: Engines = parse(params)?;
+                let list = engine_order(core)?.into_iter().map(|engine| {
+                    let enabled = core.setting::<bool>(&engine.enabled_setting())?;
+                    let configured = engine.is_configured(core, p.has_volcengine_key)?;
+                    Ok(json!({ "id": engine.id(), "title": engine.title(), "enabled": enabled, "configured": configured,
+                               "ready": enabled && configured }))
+                }).collect::<Result<Vec<_>>>()?;
+                Ok(json!(list))
+            }
             "cycle" => {
                 #[derive(Deserialize)]
                 struct Cycle { #[serde(default = "forward")] step: i64 }
@@ -342,7 +423,7 @@ impl Module for TranslateModule {
                 #[derive(Deserialize)]
                 struct Name { language: String }
                 let p: Name = parse(params)?;
-                Ok(json!({ "native": native_name(&p.language), "code": short_code(&p.language) }))
+                Ok(json!({ "native": native_name(&p.language), "code": short_code(&p.language), "locale": locale(&p.language) }))
             }
             "import_legacy" => {
                 let p: Import = parse(params)?;
@@ -390,6 +471,39 @@ mod tests {
     use ny_core::Store;
 
     fn core() -> Core { Core::new(Store::open_in_memory().unwrap(), crate::all(), "test", Box::new(|_| {})).unwrap() }
+
+    #[test]
+    fn engines_report_their_order_and_readiness() {
+        let core = core();
+        let engines = core.call("translate.engines", json!({})).unwrap();
+        assert_eq!(engines.as_array().unwrap().iter().map(|e| e["id"].clone()).collect::<Vec<_>>(), vec![json!("google"), json!("volcengine"), json!("model")]);
+        assert!(engines.as_array().unwrap().iter().all(|e| e["enabled"] == true && e["ready"] == false));
+        core.call("settings.set", json!({ "key": "translate.engine_order", "value": ["model"] })).unwrap();
+        core.call("settings.set", json!({ "key": "translate.google_enabled", "value": false })).unwrap();
+        core.call("settings.set", json!({ "key": "translate.google_url", "value": "https://script.google.com/macros/s/x/exec" })).unwrap();
+        let engines = core.call("translate.engines", json!({ "has_volcengine_key": true })).unwrap();
+        assert_eq!(engines[0]["id"], "model");
+        assert_eq!((engines[1]["id"].clone(), engines[1]["configured"].clone(), engines[1]["ready"].clone()), (json!("google"), json!(true), json!(false)));
+        assert_eq!((engines[2]["title"].clone(), engines[2]["ready"].clone()), (json!("Volcengine"), json!(true)));
+    }
+
+    #[test]
+    fn device_locales_and_seeded_favorites() {
+        assert_eq!(language_for_locale("pt-BR"), "Portuguese");
+        assert_eq!(language_for_locale("zh-Hant-TW"), "Traditional Chinese");
+        assert_eq!(language_for_locale("zh_CN"), "Simplified Chinese");
+        assert_eq!(language_for_locale("zh-HK"), "Traditional Chinese");
+        assert_eq!(language_for_locale("xx"), "English");
+        assert_eq!(locale("japanese"), Some("ja"));
+        assert_eq!(locale("Klingon"), None);
+        let core = core();
+        assert_eq!(core.call("translate.native_name", json!({ "language": "Korean" })).unwrap()["locale"], "ko");
+        assert_eq!(core.call("translate.seed_favorites", json!({ "device_language": "Japanese" })).unwrap()["changed"], false);
+        let seeded = core.call("translate.seed_favorites", json!({ "device_language": "German" })).unwrap();
+        assert_eq!(seeded, json!({ "favorites": ["English", "German"], "changed": true }));
+        // Once changed, they're the user's.
+        assert_eq!(core.call("translate.seed_favorites", json!({ "device_language": "French" })).unwrap()["changed"], false);
+    }
 
     #[test]
     fn prompt_matches_contract() {
