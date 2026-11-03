@@ -28,7 +28,8 @@ final class ClockTests: XCTestCase {
 
         XCTAssertEqual(face("Asia/Tokyo") { $0.showDate = false }, "14:05 · Tokyo")
         XCTAssertEqual(face("Asia/Tokyo") { $0.showSeconds = true }, "Wed 4 Nov 14:05:07 · Tokyo")
-        XCTAssertEqual(face("Asia/Tokyo") { $0.hourCycle = .twelve }, "Wed 4 Nov 2:05 PM · Tokyo")
+        // British English writes "PM" on macOS 14 and "pm" on macOS 26.
+        XCTAssertEqual(face("Asia/Tokyo") { $0.hourCycle = .twelve }.lowercased(), "wed 4 nov 2:05 pm · tokyo")
         XCTAssertEqual(face("Asia/Tokyo", locale: Locale(identifier: "en_US")) { $0.hourCycle = .twelve; $0.showDate = false }, "2:05 PM · Tokyo")
         XCTAssertEqual(face("Asia/Tokyo", locale: Locale(identifier: "en_US")) { $0.hourCycle = .twentyFour }, "Wed Nov 4 14:05 · Tokyo",
                        "no comma after the weekday")
@@ -39,7 +40,7 @@ final class ClockTests: XCTestCase {
         XCTAssertEqual(face("Asia/Tokyo") { $0.label = .custom }, "Wed 4 Nov 14:05", "an empty name is no name")
         XCTAssertEqual(face("Asia/Tokyo") { $0.label = .none }, "Wed 4 Nov 14:05")
         XCTAssertEqual(face("Etc/GMT-9"), "Wed 4 Nov 14:05 · GMT+9", "a zone that is no place goes by its offset")
-        XCTAssertEqual(face("UTC") { $0.showDate = false }, "05:05 · GMT")
+        XCTAssertTrue(["05:05 · GMT", "05:05 · GMT+0"].contains(face("UTC") { $0.showDate = false }), "GMT+0 on macOS 26")
     }
 
     func testFaceSpeaksTheInterfaceLanguage() {
@@ -211,7 +212,7 @@ final class ClockTests: XCTestCase {
         let settings = ClockSettings.read(relaunched, moduleOn: true)
         XCTAssertEqual(settings, ClockSettings(isOn: true, zoneID: "Asia/Tokyo", otherZones: ["Europe/London", "America/New_York"],
                                                showDate: false, hourCycle: .twelve, showSeconds: true, label: .custom, customLabel: "Office"))
-        XCTAssertEqual(Self.plain(ClockFace(settings, locale: british).text(at: moment)), "2:05:07 PM · Office")
+        XCTAssertEqual(Self.plain(ClockFace(settings, locale: Locale(identifier: "en_US")).text(at: moment)), "2:05:07 PM · Office")
         XCTAssertFalse(ClockSettings.read(relaunched, moduleOn: false).isOn)
     }
 }
