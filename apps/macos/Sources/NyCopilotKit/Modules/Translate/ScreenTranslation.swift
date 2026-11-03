@@ -102,7 +102,7 @@ final class ScreenTranslator {
     /// re-translates. `remember` keeps the choice for next time.
     func choose(_ name: String, remember: Bool) {
         language = name
-        nativeLanguage = services.core.nativeName(of: name)
+        nativeLanguage = services.core.language(name).native
         if remember { try? services.core.setSetting(.screenLanguage, name) }
         hover(nil)
         displays.forEach(update)
@@ -110,8 +110,7 @@ final class ScreenTranslator {
 
     /// The menu: favourites first, then every other language NyCopilot knows, in their own scripts.
     func languages() -> [[ScreenTranslationBar.Language]] {
-        struct Known: Decodable { let name: String; let native: String }
-        let known = (try? services.core.call(.translateLanguages, as: [Known].self)) ?? []
+        let known = services.core.languages()
         let favorites: [String] = services.core.setting(.favoriteLanguages, default: [String]())
         func entry(_ name: String) -> ScreenTranslationBar.Language {
             .init(name: name, native: known.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.native

@@ -241,18 +241,10 @@ final class InboxPane: SettingsPane {
     }
 
     @objc private func clearAll() {
-        let alert = NSAlert()
-        alert.messageText = L("Clear the inbox?")
-        alert.informativeText = L("Every note, waiting and done, and its screenshot is removed.")
-        alert.addButton(withTitle: L("Clear"))
-        alert.addButton(withTitle: L("Cancel"))
-        alert.buttons.first?.hasDestructiveAction = true
-        guard let window = view.window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            _ = try? self?.services.core.clearRecords(.inboxNotes)
-            _ = try? self?.services.core.clearRecords(.inboxDone)
-            _ = try? self?.services.core.clearRecords(.inboxSnoozed)
+        confirmDestructive(L("Clear the inbox?"), detail: L("Every note, waiting and done, and its screenshot is removed."),
+                           button: L("Clear")) { [weak self] in
+            guard let core = self?.services.core else { return }
+            for collection in [CoreCollection.inboxNotes, .inboxDone, .inboxSnoozed] { _ = try? core.clearRecords(collection) }
             InboxShell.images.removeAll()
         }
     }

@@ -32,7 +32,7 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
     let table = InboxTable()
     let empty = EmptyStateView()
     var rows: [Row] = []
-    private var searchGeneration = 0
+    private let searching = RecordSearch()
     var tab: Tab { Tab(rawValue: tabs.selectedSegment) ?? .inbox }
     var showsDone: Bool { tab == .done }
     var collection: CoreCollection {
@@ -76,8 +76,8 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
         self.core = core
         self.images = images
         self.toast = toast
-        let window = InboxWindowPanel(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
-                                      styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 560),
+                                    styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: true)
         window.title = L("Inbox")
         window.minSize = NSSize(width: 620, height: 380)
         window.isReleasedWhenClosed = false
@@ -250,15 +250,13 @@ final class InboxWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSo
 
     /// As you type in the search field, notes are found off the main thread; the newest search wins.
     private func searchInBackground() {
-        searchGeneration += 1
-        let mine = searchGeneration, query = search.stringValue.trimmingCharacters(in: .whitespaces), collection = collection
-        Task { [weak self, core] in
-            try? await Task.sleep(nanoseconds: 60_000_000)
-            guard let self, mine == searchGeneration else { return }
-            let items = (try? await core.searchRecords(collection, as: Note.self, search: query, limit: 500))?.records ?? []
-            guard mine == searchGeneration, collection == self.collection else { return }
+        let query = search.stringValue.trimmingCharacters(in: .whitespaces), collection = collection
+        searching.run({ [core] in
+            (try? await core.searchRecords(collection, as: Note.self, search: query, limit: 500))?.records ?? []
+        }, show: { [weak self] items in
+            guard let self, collection == self.collection else { return }
             show(items, query: query)
-        }
+        })
     }
 
     private func show(_ items: [Item], query: String) {

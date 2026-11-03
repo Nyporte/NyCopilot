@@ -67,13 +67,7 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
 
     override func paneWillAppear() {
         let core = services.core
-        favorites.load(core.setting(.favoriteLanguages, default: [String]()),
-                       suggestions: (try? core.call(.translateLanguages, as: [LanguageListEditor.Language].self)) ?? [],
-                       describe: { name in
-                           struct Shown: Decodable { let native: String; let code: String }
-                           let shown = try? core.call(.translateNativeName, ["language": name], as: Shown.self)
-                           return .init(name: name, native: shown?.native ?? name, code: shown?.code ?? String(name.prefix(2)).uppercased())
-                       })
+        favorites.load(core.setting(.favoriteLanguages, default: [String]()), suggestions: core.languages(), describe: core.language)
         trimSwitch.state = services.core.setting(.trimWhitespace, default: true) ? .on : .off
         message.isHidden = true
         loadInstructions()
@@ -177,15 +171,8 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     @objc private func showHistory() { openHistory() }
 
     @objc private func clearHistory() {
-        guard let window = view.window else { return }
-        let alert = NSAlert()
-        alert.messageText = L("Clear translation history?")
-        alert.informativeText = L("All saved translations will be permanently removed from this Mac.")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("Clear History")).hasDestructiveAction = true
-        alert.addButton(withTitle: L("Cancel"))
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
+        confirmDestructive(L("Clear translation history?"), detail: L("All saved translations will be permanently removed from this Mac."),
+                           button: L("Clear History")) { [weak self] in
             _ = try? self?.services.core.clearRecords(.translateHistory)
         }
     }

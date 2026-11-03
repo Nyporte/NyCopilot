@@ -70,6 +70,32 @@ extension NyCore {
         let notice: String?
     }
 
+    /// A language as the core knows it: its English name, its own name (日本語), and the short code
+    /// its badge shows (EN, 中, 日).
+    struct LanguageInfo: Decodable, Sendable, Equatable {
+        let name: String
+        let native: String
+        let code: String
+    }
+
+    /// Any language name, described by the core; one it doesn't know keeps its name and gets the
+    /// core's two-letter code.
+    func language(_ name: String) -> LanguageInfo {
+        struct Described: Decodable { let native: String; let code: String }
+        let described = try? call(.translateNativeName, ["language": name], as: Described.self)
+        return LanguageInfo(name: name, native: described?.native ?? name, code: described?.code ?? "")
+    }
+
+    /// The languages the core suggests, in its order.
+    func languages() -> [LanguageInfo] { (try? call(.translateLanguages, as: [LanguageInfo].self)) ?? [] }
+
+    /// Tab in the composer: the next favorite (-1 the previous one), kept as the target language.
+    func cycleLanguage(_ step: Int) throws -> LanguageInfo {
+        struct Cycled: Decodable { let targetLanguage: String; let native: String; let code: String }
+        let next = try call(.translateCycle, ["step": step], as: Cycled.self)
+        return LanguageInfo(name: next.targetLanguage, native: next.native, code: next.code)
+    }
+
     /// The language you read in: screen translation's choice, or else the Mac's own language.
     /// Screen translation, translated selections, and Ask AI's answers use it.
     var readingLanguage: String {

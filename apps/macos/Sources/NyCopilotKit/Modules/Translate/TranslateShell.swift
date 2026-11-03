@@ -76,19 +76,15 @@ final class TranslateShell: ModuleShell {
 
     private var language: String { services.core.setting(.targetLanguage, default: "English") }
 
-    private struct Display: Decodable { let native: String; let code: String }
-
     /// The badge code and own name the composer shows for a language.
-    private func display(_ language: String) -> ComposerPanel.Language {
-        let shown = try? services.core.call(.translateNativeName, ["language": language], as: Display.self)
-        return .init(code: shown?.code ?? String(language.prefix(2)).uppercased(), name: shown?.native ?? language)
+    private static func display(_ language: NyCore.LanguageInfo) -> ComposerPanel.Language {
+        .init(code: language.code, name: language.native)
     }
 
     /// Tab in the composer: the core picks the next favorite and remembers it as the target.
     private func cycleLanguage(_ step: Int) {
         do {
-            let next = try services.core.call(.translateCycle, ["step": step], as: Display.self)
-            composer.setLanguage(.init(code: next.code, name: next.native))
+            composer.setLanguage(Self.display(try services.core.cycleLanguage(step)))
         } catch {
             composer.showError(error.localizedDescription)
         }
@@ -141,7 +137,7 @@ final class TranslateShell: ModuleShell {
             }
             target = captured
             composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste,
-                             language: display(language))
+                             language: Self.display(services.core.language(language)))
         }
     }
 
@@ -319,10 +315,5 @@ extension NyCore {
         let favorites: [String] = setting(.favoriteLanguages, default: [])
         guard favorites == Self.coreFavorites, !favorites.contains(device) else { return }
         try? setSetting(.favoriteLanguages, ["English", device])
-    }
-
-    /// A language's own name (日本語 for Japanese), or the name as given.
-    func nativeName(of language: String) -> String {
-        (try? call(.translateNativeName, ["language": language]) as? [String: Any])?["native"] as? String ?? language
     }
 }

@@ -1,6 +1,23 @@
 import AppKit
 import CoreText
 
+/// How a language's short code is drawn wherever it shows as a badge: the composer and the list of
+/// favorites.
+@MainActor
+enum LanguageBadge {
+    static let size = NSSize(width: 24, height: 18)
+
+    /// A faint plate that works in light and dark.
+    static let fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        ? NSColor.white.withAlphaComponent(0.1) : NSColor.black.withAlphaComponent(0.06) }
+
+    /// CJK glyphs read better a size larger than Latin letters in the same badge.
+    static func font(for code: String) -> NSFont {
+        let wide = code.unicodeScalars.first.map { $0.value > 0x2E80 } ?? false
+        return .systemFont(ofSize: wide ? 12 : 10.5, weight: .semibold)
+    }
+}
+
 /// The target language as a pair of small icons: a badge with its short code (EN, 中, 日) and the ⇥
 /// key that steps to the next one. The badge has a fixed size, so switching never moves the text.
 /// While translating, a small spinner replaces the arrow inside the key's box, so the column's width
@@ -23,18 +40,16 @@ final class TargetLanguageLabel: NSStackView {
     private let arrow = Design.symbol("arrow.right.to.line", size: 8.5, weight: .bold)
     private var codeBaseline: NSLayoutConstraint!
     private let spinner = NSProgressIndicator()
-    private static let badgeSize = NSSize(width: 24, height: 18)
+    private static let badgeSize = LanguageBadge.size
 
     init() {
         super.init(frame: .zero)
         orientation = .horizontal
         alignment = .centerY
         spacing = 4
-        let fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.1) : NSColor.black.withAlphaComponent(0.06) }
         for (box, content) in [(badge, code), (key, arrow)] as [(AppearanceView, NSView)] {
             box.radius = 5
-            box.fill = fill
+            box.fill = LanguageBadge.fill
             box.translatesAutoresizingMaskIntoConstraints = false
             content.translatesAutoresizingMaskIntoConstraints = false
             box.addSubview(content)
@@ -75,9 +90,7 @@ final class TargetLanguageLabel: NSStackView {
         let apply = { [weak self] in
             guard let self else { return }
             code.stringValue = language.code
-            // CJK glyphs read better a size larger than Latin letters in the same badge.
-            let wide = language.code.unicodeScalars.first.map { $0.value > 0x2E80 } ?? false
-            let font = NSFont.systemFont(ofSize: wide ? 12 : 10.5, weight: .semibold)
+            let font = LanguageBadge.font(for: language.code)
             code.font = font
             // Center the ink, not the line box: measure where the glyphs actually draw relative to
             // the baseline, and put the middle of that on the badge's middle. Works for any script.

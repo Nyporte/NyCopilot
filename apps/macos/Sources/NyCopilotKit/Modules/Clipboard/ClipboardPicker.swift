@@ -140,22 +140,14 @@ final class ClipboardPicker: NSObject, NSTableViewDataSource, NSTableViewDelegat
         show(pinned: list(.clipboardPinned, limit: 100), history: list(.clipboardItems, limit: 200), query: query)
     }
 
-    /// As you type, the search runs off the main thread; only the newest answer is shown.
-    private var searchGeneration = 0
+    private let searching = RecordSearch()
 
     private func search(for query: String) {
-        searchGeneration += 1
-        let mine = searchGeneration
-        Task { [weak self, core] in
-            // A pause in typing, so each keystroke doesn't start a search of its own.
-            try? await Task.sleep(nanoseconds: 60_000_000)
-            guard let self, mine == searchGeneration else { return }
+        searching.run({ [core] in
             async let pinned = core.searchRecords(.clipboardPinned, as: ClipboardEntry.self, search: query, limit: 100)
             async let history = core.searchRecords(.clipboardItems, as: ClipboardEntry.self, search: query, limit: 200)
-            let found = ((try? await pinned)?.records ?? [], (try? await history)?.records ?? [])
-            guard mine == searchGeneration else { return }
-            show(pinned: found.0, history: found.1, query: query)
-        }
+            return ((try? await pinned)?.records ?? [], (try? await history)?.records ?? [])
+        }, show: { [weak self] found in self?.show(pinned: found.0, history: found.1, query: query) })
     }
 
     private func show(pinned: [Item], history: [Item], query: String) {

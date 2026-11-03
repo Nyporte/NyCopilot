@@ -21,6 +21,21 @@ class SettingsPane: NSViewController {
     /// Refresh live state (permissions, saved keys) each time the pane is shown.
     func paneWillAppear() {}
 
+    /// Asks in a sheet before something that can't be undone, such as clearing a history; `confirmed`
+    /// runs only after `button` is clicked.
+    func confirmDestructive(_ message: String, detail: String, button: String, confirmed: @escaping () -> Void) {
+        guard let window = view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: button).hasDestructiveAction = true
+        alert.addButton(withTitle: L("Cancel"))
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { confirmed() }
+        }
+    }
+
     override func viewDidAppear() {
         super.viewDidAppear()
         view.labelIconButtons()
@@ -74,8 +89,8 @@ final class SettingsWindow: NSWindowController, NSToolbarDelegate, NSWindowDeleg
 
     init(panes: [SettingsPane]) {
         self.panes = panes
-        let window = SettingsPanel(contentRect: NSRect(x: 0, y: 0, width: Design.paneWidth, height: 400),
-                                   styleMask: [.titled, .closable], backing: .buffered, defer: true)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: Design.paneWidth, height: 400),
+                                    styleMask: [.titled, .closable], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         window.toolbarStyle = .preference
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
@@ -144,9 +159,4 @@ final class SettingsWindow: NSWindowController, NSToolbarDelegate, NSWindowDeleg
         sender.makeFirstResponder(nil)
         return true
     }
-}
-
-/// Escape closes Settings like a sheet, and ⌘W works without a document.
-private final class SettingsPanel: NSWindow {
-    override func cancelOperation(_ sender: Any?) { performClose(sender) }
 }

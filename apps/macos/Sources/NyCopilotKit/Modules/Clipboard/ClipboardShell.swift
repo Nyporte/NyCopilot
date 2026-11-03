@@ -37,10 +37,9 @@ final class ClipboardShell: ModuleShell {
     init(services: CopilotServices) {
         self.services = services
         // Pruning and finding unused images read every entry: after launch, not during it.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak self] in
-            guard let self else { return }
-            self.services.core.clipboardPrune()
-            self.removeUnusedImages()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [core = services.core] in
+            core.clipboardPrune()
+            Self.removeUnusedImages(core: core)
         }
         startWatching()
         // Nothing is copied behind a locked screen; don't wake twice a second for it.
@@ -146,12 +145,15 @@ final class ClipboardShell: ModuleShell {
     /// finding them means reading every entry.
     private func scheduleImageCleanup() {
         cleanup?.cancel()
-        let work = DispatchWorkItem { [weak self] in MainActor.assumeIsolated { self?.removeUnusedImages() } }
+        let work = DispatchWorkItem { [core = services.core] in MainActor.assumeIsolated { Self.removeUnusedImages(core: core) } }
         cleanup = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: work)
     }
 
-    private func removeUnusedImages() { Self.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned]) }
+    /// Images no entry, kept or pinned, names any more go; those younger than `graceSeconds` stay.
+    static func removeUnusedImages(core: NyCore, graceSeconds: TimeInterval = 60) {
+        images.removeUnused(core: core, collections: [.clipboardItems, .clipboardPinned], graceSeconds: graceSeconds)
+    }
 
     // MARK: Picking
 
