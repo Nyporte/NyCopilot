@@ -47,6 +47,14 @@ struct MenuBarState: Equatable {
         return Double(screenMaxX - dividerMaxX) - 1
     }
 
+    /// An item of NyCopilot's own that must stay in sight (the clock) would hide with the icons:
+    /// it ends where the divider ends, or left of it.
+    static func wouldHide(itemMaxX: CGFloat, dividerMaxX: CGFloat) -> Bool { itemMaxX <= dividerMaxX + 1 }
+
+    /// Where such an item goes instead: right beside the chevron, so the arrow stays next to the
+    /// icons it hides. Half a point, since saved places are whole numbers.
+    static func inSightPosition(chevron: Double) -> Double { chevron - 0.5 }
+
     /// Hiding is safe only while the divider ends left of where the chevron starts (in screen x).
     /// Otherwise the chevron would be pushed off the screen with the icons, and nothing in the menu
     /// bar could bring them back.

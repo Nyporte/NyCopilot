@@ -237,7 +237,9 @@ goes.
   a timer for the next boundary, rather than counting from the last tick. It catches up at once when
   the Mac wakes and when the Mac's clock, time zone, or region changes.
 - It first goes just right of NyCopilot's icon, on the side where icons never hide behind Menu Bar's
-  arrow; ⌘-drag it anywhere. Turned off and on again, it comes back where you left it.
+  arrow; ⌘-drag it anywhere. If it's left of the arrow when icons hide, it moves right beside the
+  arrow first, so it never hides with them. Turned off and on again, it comes back where you left it.
+- The clock and Menu Bar's arrow are separate: each works with the other on or off.
 
 ## Screenshot & Pin
 

@@ -173,6 +173,18 @@ final class ClockTests: XCTestCase {
         XCTAssertNil(ClockPlacement.position(saved: nil, kept: nil, appIconSaved: nil, appIconMaxX: 0, screenMaxX: 1920))
     }
 
+    /// Menu Bar never hides the clock: one ⌘-dragged left of the arrow (it would end where the
+    /// divider ends, or left of it) goes right beside the chevron before the icons hide.
+    func testClockNeverHidesBehindTheArrow() {
+        // The user's Mac: arrow (divider) ending at x 1616, the clock ⌘-dragged left of it.
+        XCTAssertTrue(MenuBarState.wouldHide(itemMaxX: 1469, dividerMaxX: 1616))
+        XCTAssertTrue(MenuBarState.wouldHide(itemMaxX: 1616, dividerMaxX: 1616), "right up against it")
+        XCTAssertFalse(MenuBarState.wouldHide(itemMaxX: 1842, dividerMaxX: 1616), "right of the arrow, as placed")
+        // Divider saved at 431, chevron at 430: the clock goes between the chevron and what's right of it.
+        XCTAssertEqual(MenuBarState.inSightPosition(chevron: 430), 429.5)
+        XCTAssertLessThan(MenuBarState.inSightPosition(chevron: 430), 430, "right of the chevron")
+    }
+
     /// Off until asked for, following this Mac; every choice survives a relaunch, the core turns
     /// away what it can't use, and the feature switched off in General takes the clock away.
     @MainActor

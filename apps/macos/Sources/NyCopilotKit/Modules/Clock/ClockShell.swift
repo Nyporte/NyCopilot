@@ -15,6 +15,7 @@ final class ClockShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
+        services.clockItem = { [weak self] in self?.clock?.item }
         let center = NotificationCenter.default
         observe(center, NyCore.eventNotification) { [weak self] note in
             guard let key = (note.userInfo?["event"] as? [String: Any])?["key"] as? String,

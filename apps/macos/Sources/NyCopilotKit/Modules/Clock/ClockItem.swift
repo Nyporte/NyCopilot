@@ -9,7 +9,7 @@ final class ClockItem: NSObject, NSMenuDelegate {
     var onChoose: (_ zoneID: String) -> Void = { _ in }
     var onSettings: () -> Void = {}
 
-    private let item: NSStatusItem
+    let item: NSStatusItem
     private var face: ClockFace
     private let timer = DispatchSource.makeTimerSource(queue: .main)
     /// When the timer is set to fire, for what it shows if it fires a hair early.

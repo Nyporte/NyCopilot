@@ -24,6 +24,8 @@ final class MenuBarDivider: NSObject {
     private var placement = 0
     private var placingSince = Date()
     private var moveObservers: [NSObjectProtocol] = []
+    /// NyCopilot's own items that must never hide with the icons (the clock).
+    var keepInSight: () -> [NSStatusItem] = { [] }
 
     override init() {
         // Each new item goes left of the ones already there, so the first time, the divider lands
@@ -99,6 +101,7 @@ final class MenuBarDivider: NSObject {
     /// chevron, keeps the icons from sliding left to make room for it before they go.
     func hide(_ placed: @escaping (_ edges: (divider: CGFloat, chevron: CGFloat)?) -> Void) {
         placeChevronBesideDivider()
+        moveKeptItemsInSight()
         whenPlaced = placed
         whenShown = nil
         placement += 1
@@ -147,6 +150,23 @@ final class MenuBarDivider: NSObject {
         guard let position = MenuBarState.chevronPosition(dividerSaved: UserDefaults.standard.object(forKey: key(divider.autosaveName)) as? Double,
                                                           dividerMaxX: window?.frame.maxX, screenMaxX: window?.screen?.frame.maxX) else { return }
         UserDefaults.standard.set(position, forKey: key(chevron.autosaveName))
+    }
+
+    /// An item that must stay in sight but was ⌘-dragged left of the arrow goes right beside the
+    /// chevron before the icons hide, the way the chevron is placed: out of the bar, its place set,
+    /// back in.
+    private func moveKeptItemsInSight() {
+        let key = { (name: String) in "NSStatusItem Preferred Position \(name)" }
+        guard let dividerMaxX = divider.button?.window?.frame.maxX, dividerMaxX > 0,
+              let chevron = UserDefaults.standard.object(forKey: key(chevron.autosaveName)) as? Double else { return }
+        for item in keepInSight() {
+            guard let frame = item.button?.window?.frame, frame.maxY > 0,
+                  MenuBarState.wouldHide(itemMaxX: frame.maxX, dividerMaxX: dividerMaxX) else { continue }
+            item.isVisible = false
+            UserDefaults.standard.set(MenuBarState.inSightPosition(chevron: chevron), forKey: key(item.autosaveName))
+            item.isVisible = true
+            Diagnostics.note("menubar", "moved \(item.autosaveName ?? "an item") right of the arrow, so it doesn't hide")
+        }
     }
 
     func show(collapsed: Bool) {
