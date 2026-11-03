@@ -44,7 +44,6 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
                                      detail: L("To read what you select, paste results back, and move windows."))
     private let modelStep = StepRow(number: 2, title: L("Connect a model (optional)"), detail: "")
     private var poll: Timer?
-    var onFinish: (() -> Void)?
 
     init(services: CopilotServices) {
         self.services = services
@@ -198,7 +197,6 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         poll?.invalidate()
-        onFinish?()
     }
 }
 

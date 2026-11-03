@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
+        Tips.keep(in: core)
         let preferences = Preferences(core: core)
         preferences.migrateFromNyTranslate()
         services = CopilotServices(core: core, preferences: preferences, hotKeys: HotKeyCenter(preferences: preferences))
@@ -225,13 +226,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// A new bug report with the versions filled in, and Diagnostics on the clipboard to paste in
     /// (too long for the address). Diagnostics never include any of your text.
     @objc private func sendFeedback() {
-        let info = Bundle.main.infoDictionary
-        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
         var form = URLComponents(url: Self.issues, resolvingAgainstBaseURL: false)!
-        form.queryItems = [URLQueryItem(name: "template", value: "bug.yml"), URLQueryItem(name: "version", value: version),
+        form.queryItems = [URLQueryItem(name: "template", value: "bug.yml"), URLQueryItem(name: "version", value: Bundle.main.versionDescription),
                            URLQueryItem(name: "macos", value: ProcessInfo.processInfo.operatingSystemVersionString)]
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Diagnostics.report(), forType: .string)
+        Diagnostics.copyReport()
         if let url = form.url { NSWorkspace.shared.open(url) }
         services.toast.show(L("Diagnostics copied"), detail: L("Paste them into the report’s Diagnostics box."), style: .success)
     }

@@ -9,7 +9,6 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
     /// Tokens hold language names (English); they display in each language's own script.
     private let favorites = LanguageListEditor()
     private let trimSwitch = NSSwitch()
-    private let message = Design.wrapping("", size: 11.5, color: .systemRed)
     private let instructions = NSTextView()
     private let instructionsStatus = Design.label("", size: 11.5, color: .secondaryLabelColor)
     private let restoreButton = Design.button(L("Restore Default"), target: nil, action: nil)
@@ -34,7 +33,6 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         }
         trimSwitch.target = self
         trimSwitch.action = #selector(toggleTrim)
-        message.isHidden = true
 
         let open = Design.button(L("Open History"), target: self, action: #selector(showHistory))
         let clear = Design.button(L("Clear…"), target: self, action: #selector(clearHistory))
@@ -47,7 +45,6 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
             FormSection(L("Favorite Languages"),
                         footer: L("In the translate box, Tab steps through these in this order and Shift+Tab goes back. Use ▲ ▼ to change the order."),
                         rows: [favorites]),
-            message,
             FormSection(L("Result"), rows: [
                 FormRow(L("Trim spaces and line breaks"), subtitle: L("Removes them from the start and end of each translation."),
                         accessory: trimSwitch)
@@ -69,7 +66,6 @@ final class TranslatePane: SettingsPane, NSTextViewDelegate {
         let core = services.core
         favorites.load(core.setting(.favoriteLanguages, default: [String]()), suggestions: core.languages(), describe: core.language)
         trimSwitch.state = services.core.setting(.trimWhitespace, default: true) ? .on : .off
-        message.isHidden = true
         loadInstructions()
         shortcuts.refresh()
     }

@@ -74,21 +74,20 @@ final class GeneralPane: SettingsPane {
                                   rows: zip(services.moduleList(), moduleSwitches).map { module, entry in
                                       FormRow(module.title, accessory: entry.toggle)
                                   })
-        var sections: [NSView] = [
+        let guide = Design.button(L("Show Setup Guide…"), target: self, action: #selector(showGuide))
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
+        return [
             FormSection(L("Permissions"), rows: [access, recording]),
             modules,
             FormSection(L("Startup"), rows: [language, login]),
+            // Under the login switch it's about.
+            loginNote,
             shortcuts.section(L("Shortcuts"), footer: L("Shows every shortcut, and the keys that work on anything you capture or keep. On any surface, ? (or ⌘/ where you type) shows its own keys."),
                               actions: [AppDelegate.showShortcutsAction]),
             shortcuts.errorLabel,
             FormSection(L("Troubleshooting"), rows: [diagnostics, captureService]),
+            Design.hstack([Design.label("NyCopilot \(version)", size: 12, color: .tertiaryLabelColor), Design.spacer(), guide])
         ]
-        let guide = Design.button(L("Show Setup Guide…"), target: self, action: #selector(showGuide))
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–"
-        sections.append(Design.hstack([Design.label("NyCopilot \(version)", size: 12, color: .tertiaryLabelColor),
-                                       Design.spacer(), guide]))
-        sections.insert(loginNote, at: 3)
-        return sections
     }
 
     override func paneWillAppear() {
@@ -158,8 +157,7 @@ final class GeneralPane: SettingsPane {
     }
 
     @objc private func copyDiagnostics() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Diagnostics.report(), forType: .string)
+        Diagnostics.copyReport()
         diagnosticsButton.title = L("Copied")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.diagnosticsButton.title = L("Copy Diagnostics") }
     }

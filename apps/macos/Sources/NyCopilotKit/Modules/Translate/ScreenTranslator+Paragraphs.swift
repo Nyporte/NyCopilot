@@ -1,7 +1,4 @@
 import AppKit
-import Carbon
-import IOKit.ps
-import MacPlatform
 
 /// How lines of screen text become paragraphs: wrapped lines join, columns and headings stay apart.
 extension ScreenTranslator {

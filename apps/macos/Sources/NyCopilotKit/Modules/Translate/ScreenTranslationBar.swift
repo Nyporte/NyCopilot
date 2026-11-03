@@ -1,7 +1,4 @@
 import AppKit
-import Carbon
-import IOKit.ps
-import MacPlatform
 
 /// The small capsule at the bottom while the screen is translated: what it reads into, as a menu, and
 /// the way out. The translate icon turns into a spinner while the screen is being read. It never takes

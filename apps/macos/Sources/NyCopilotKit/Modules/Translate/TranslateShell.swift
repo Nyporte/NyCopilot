@@ -199,26 +199,23 @@ final class TranslateShell: ModuleShell {
     }
 
     private func showFailure(_ error: Error) {
-        let code = (error as? NyCore.Failure)?.code
-        Diagnostics.note("translate", "failed: \(code ?? "unknown") — \(error.localizedDescription)")
-        switch code {
-        case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error":
-            composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
-                self?.composer.cancel()
-                self?.services.openSettings("model")
-            }))
-        case "invalid_setting":
-            composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
-                self?.composer.cancel()
-                self?.services.openSettings("model")
-            }))
-        case "http_status" where (error as? NyCore.Failure)?.status.map({ [401, 403, 404].contains($0) }) == true:
-            composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
-                self?.composer.cancel()
-                self?.services.openSettings("model")
-            }))
-        default:
-            composer.showError(error.localizedDescription)
+        let failure = error as? NyCore.Failure
+        Diagnostics.note("translate", "failed: \(failure?.code ?? "unknown") — \(error.localizedDescription)")
+        guard let pane = Self.settingsPane(fixing: failure) else { composer.showError(error.localizedDescription); return }
+        composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
+            self?.composer.cancel()
+            self?.services.openSettings(pane)
+        }))
+    }
+
+    /// The Settings tab where a failure is put right: AI & Engines for a service that's missing,
+    /// refused, or unreachable; Translate for a setting of its own, such as the target language.
+    private static func settingsPane(fixing failure: NyCore.Failure?) -> String? {
+        switch failure?.code {
+        case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error": "model"
+        case "invalid_setting": "translate"
+        case "http_status" where failure?.status.map({ [401, 403, 404].contains($0) }) == true: "model"
+        default: nil
         }
     }
 
@@ -308,10 +305,15 @@ extension NyCore {
 
     /// On a Mac in another language, the favorites start as English and that language instead of
     /// the core's English, Chinese, and Japanese. Once per Mac, and only if they're still the core's.
+    /// The once-mark moved from UserDefaults (`defaults`) to the core.
     func seedFavoriteLanguages(device: String = ScreenText.deviceLanguage, defaults: UserDefaults = .standard) {
-        let key = "NyCopilotSeededFavorites"
-        guard !defaults.bool(forKey: key) else { return }
-        defaults.set(true, forKey: key)
+        let legacy = "NyCopilotSeededFavorites"
+        if defaults.bool(forKey: legacy) {
+            try? setSetting(.favoritesSeeded, true)
+            defaults.removeObject(forKey: legacy)
+        }
+        guard !setting(.favoritesSeeded, default: false) else { return }
+        try? setSetting(.favoritesSeeded, true)
         let favorites: [String] = setting(.favoriteLanguages, default: [])
         guard favorites == Self.coreFavorites, !favorites.contains(device) else { return }
         try? setSetting(.favoriteLanguages, ["English", device])

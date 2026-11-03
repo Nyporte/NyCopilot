@@ -114,7 +114,7 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
     @objc private func save() {
         do {
             if key.stringValue.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) {
-                throw NyCore.Failure(code: "invalid_key", message: L("The API key can’t contain line breaks or control characters."), status: nil)
+                throw KeyProblem.controlCharacters
             }
             try services.preferences.setProvider(draft)
             if !key.stringValue.isEmpty {
@@ -165,4 +165,11 @@ final class ModelPane: SettingsPane, NSTextFieldDelegate {
     }
 
     @objc private func toggleImages() { try? services.core.setSetting(.askSendImages, imagesSwitch.state == .on) }
+}
+
+/// A key that can't be saved as typed, found before anything reaches the core.
+private enum KeyProblem: LocalizedError {
+    case controlCharacters
+
+    var errorDescription: String? { L("The API key can’t contain line breaks or control characters.") }
 }

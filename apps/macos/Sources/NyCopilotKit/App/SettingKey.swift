@@ -58,6 +58,8 @@ enum SettingKey: String {
     case modulesOff = "client.modules_off"
     case keyScheme = "client.key_scheme"
     case migratedNyTranslate = "client.migrated_nytranslate"
+    case tips = "client.tips"
+    case favoritesSeeded = "client.translate.favorites_seeded"
     case rectangleImportChecked = "client.windows.rectangle_import_checked"
     case rectangleRepeatChecked = "client.windows.rectangle_repeat_checked"
 }
