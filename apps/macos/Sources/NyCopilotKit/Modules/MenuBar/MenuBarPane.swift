@@ -1,12 +1,13 @@
 import AppKit
 
-/// Menu Bar settings: whether the arrow is in the menu bar, when shown icons hide again, and the
-/// shortcut that shows or hides them.
+/// Menu Bar settings: whether the arrow is in the menu bar, when shown icons hide again, whether
+/// they show in a bar under the menu bar instead, and the shortcut that shows or hides them.
 @MainActor
 final class MenuBarPane: SettingsPane {
     private let services: CopilotServices
     private let enabledSwitch = NSSwitch()
     private let collapseAfter = NSPopUpButton()
+    private let showInBarSwitch = NSSwitch()
     private lazy var shortcuts = ShortcutEditor(services: services)
 
     init(services: CopilotServices) {
@@ -25,10 +26,15 @@ final class MenuBarPane: SettingsPane {
         }
         collapseAfter.target = self
         collapseAfter.action = #selector(changeCollapseAfter)
+        showInBarSwitch.target = self
+        showInBarSwitch.action = #selector(toggleShowInBar)
         return [
             FormSection(L("Menu bar icons"), footer: L("⌘-drag icons left of the arrow to hide them, and right of it to keep them in sight. Click the arrow to show or hide them; right-click it for Settings. On a Mac with a notch, icons that don’t fit beside it stay out of sight even when shown."), rows: [
                 FormRow(L("Hide icons behind an arrow"), subtitle: L("Puts an arrow in the menu bar."), accessory: enabledSwitch),
-                FormRow(L("Hide again"), subtitle: L("After showing hidden icons. Not while the pointer is on the menu bar."), accessory: collapseAfter)
+                FormRow(L("Hide again"), subtitle: L("After showing hidden icons. Not while the pointer is on the menu bar."), accessory: collapseAfter),
+                FormRow(L("Show hidden icons in a bar"),
+                        subtitle: L("Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording."),
+                        accessory: showInBarSwitch)
             ]),
             shortcuts.section(L("Shortcut"), actions: [MenuBarShell.Action.toggle]),
             shortcuts.errorLabel
@@ -48,6 +54,8 @@ final class MenuBarPane: SettingsPane {
             collapseAfter.select(collapseAfter.lastItem)
         }
         collapseAfter.isEnabled = on
+        showInBarSwitch.state = services.core.setting(.menuBarShowInBar, default: false) ? .on : .off
+        showInBarSwitch.isEnabled = on
         shortcuts.refresh()
     }
 
@@ -65,6 +73,10 @@ final class MenuBarPane: SettingsPane {
         try? services.core.setSetting(.menuBarEnabled, enabledSwitch.state == .on)
         if enabledSwitch.state == .on, !services.isModuleOn("menubar") { services.setModule("menubar", true) }
         paneWillAppear()
+    }
+
+    @objc private func toggleShowInBar() {
+        try? services.core.setSetting(.menuBarShowInBar, showInBarSwitch.state == .on)
     }
 
     @objc private func changeCollapseAfter() {

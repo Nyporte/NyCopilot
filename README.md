@@ -118,7 +118,8 @@ shortcut, or drag it to a screen edge. Coming from Rectangle? Import your shortc
 
 Turn it on in Settings → Menu Bar and an arrow joins your menu bar. ⌘-drag the icons you rarely
 need to the left of it; click the arrow and they're gone, click again and they're back. They can
-hide again on their own after a few seconds, and stay hidden across restarts.
+hide again on their own after a few seconds, and stay hidden across restarts. Or have the arrow
+open them in a bar under the menu bar, and click one there to open its menu.
 
 ## Every key, one press away
 

@@ -3,7 +3,8 @@
 //! People drag the icons they don't need to see to one side of the arrow; a click on it hides
 //! them, another shows them. This module owns the settings: whether the arrow is there, whether
 //! the icons are hidden now (so they stay that way across launches), and how long shown icons stay
-//! before they hide again. Clients own the menu bar itself.
+//! before they hide again, and whether a click on the arrow shows hidden icons in a bar under the
+//! menu bar instead of in it. Clients own the menu bar itself.
 
 use ny_core::{Core, Manifest, Module, NyError, Result, Scope, SettingSpec};
 use serde_json::{json, Value};
@@ -27,6 +28,8 @@ impl Module for MenuBarModule {
                 SettingSpec::new("menubar.collapsed", json!(false), Scope::Device, "The icons beyond the arrow are hidden right now."),
                 SettingSpec::new("menubar.collapse_after", json!(10.0), Scope::Device,
                                  "Seconds shown icons stay before they hide again, 0–600; 0 leaves them shown."),
+                SettingSpec::new("menubar.show_in_bar", json!(false), Scope::Device,
+                                 "Show hidden icons in a bar under the menu bar, where there's always room, instead of in it."),
             ],
             commands: vec![],
         }
@@ -59,14 +62,16 @@ mod tests {
         assert!(!core.setting::<bool>("menubar.enabled").unwrap());
         assert!(!core.setting::<bool>("menubar.collapsed").unwrap());
         assert_eq!(core.setting::<f64>("menubar.collapse_after").unwrap(), 10.0);
+        assert!(!core.setting::<bool>("menubar.show_in_bar").unwrap());
 
         for (key, value) in [("menubar.enabled", json!(true)), ("menubar.collapsed", json!(true)),
-                             ("menubar.collapse_after", json!(0)), ("menubar.collapse_after", json!(600))] {
+                             ("menubar.collapse_after", json!(0)), ("menubar.collapse_after", json!(600)),
+                             ("menubar.show_in_bar", json!(true))] {
             assert!(core.call("settings.set", json!({ "key": key, "value": value })).is_ok(), "{key} = {value}");
         }
         for (key, value) in [("menubar.enabled", json!(1)), ("menubar.collapsed", json!("yes")),
                              ("menubar.collapse_after", json!(-1)), ("menubar.collapse_after", json!(601)),
-                             ("menubar.collapse_after", json!("10"))] {
+                             ("menubar.collapse_after", json!("10")), ("menubar.show_in_bar", json!("on"))] {
             assert!(core.call("settings.set", json!({ "key": key, "value": value })).is_err(), "{key} = {value}");
         }
         assert!(core.call("menubar.anything", json!({})).is_err());

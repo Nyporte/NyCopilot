@@ -11,12 +11,16 @@ import AppKit
 final class MenuBarDivider: NSObject {
     var onToggle: () -> Void = {}
     var onSettings: () -> Void = {}
+    /// Set while a click on the arrow opens the bar of hidden icons: its right-click menu then also
+    /// offers showing them in the menu bar, where they can be ⌘-dragged.
+    var onShowInMenuBar: (() -> Void)?
 
     private let divider: NSStatusItem
     private let chevron: NSStatusItem
     private var collapsed = false
     private var isOn = true
     private var whenPlaced: ((_ edges: (divider: CGFloat, chevron: CGFloat)?) -> Void)?
+    private var whenShown: (() -> Void)?
     private var placement = 0
     private var placingSince = Date()
     private var moveObservers: [NSObjectProtocol] = []
@@ -60,6 +64,35 @@ final class MenuBarDivider: NSObject {
         return (divider.maxX, chevron.minX)
     }
 
+    /// The divider's window, for telling hidden icons from the rest in the window list.
+    var dividerWindow: CGWindowID? { (divider.button?.window?.windowNumber).map { CGWindowID($0) } }
+
+    /// Where the arrow is while icons are hidden, in AppKit screen coordinates, once it's placed.
+    var arrowFrame: NSRect? { edges != nil ? chevron.button?.window?.frame : nil }
+
+    /// The menu bar's look, which other apps' icons are drawn for (light or dark, whatever the Mac's).
+    var menuBarAppearance: NSAppearance? { chevron.button?.effectiveAppearance }
+
+    /// Shows the icons and calls back once they're in the menu bar, to click one of them. The
+    /// divider moves into place last (measured: 130–220 ms after showing, each time after every
+    /// other app's icon was on screen; no event marks when theirs are).
+    func show(then shown: @escaping () -> Void) {
+        whenShown = shown
+        placement += 1
+        observeMoves()
+        show(collapsed: false)
+        let mine = placement
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            if self?.placement == mine { self?.shownMoved() }
+        }
+    }
+
+    private func shownMoved() {
+        guard let shown = whenShown, !collapsed else { return }
+        whenShown = nil
+        shown()
+    }
+
     /// Hides at once and brings the chevron back beside the divider; once macOS has placed it,
     /// hands over where both are, so the hiding can be undone if the chevron didn't land right of
     /// the divider (where it would be hidden too). Growing first, rather than waiting for the
@@ -67,23 +100,31 @@ final class MenuBarDivider: NSObject {
     func hide(_ placed: @escaping (_ edges: (divider: CGFloat, chevron: CGFloat)?) -> Void) {
         placeChevronBesideDivider()
         whenPlaced = placed
+        whenShown = nil
         placement += 1
         placingSince = Date()
         show(collapsed: true)
-        // macOS places it about 0.1 s later (measured), and says so by moving its window; just after
-        // launch, the divider is placed the same way.
-        if moveObservers.isEmpty {
-            moveObservers = [chevron, divider].compactMap { $0.button?.window }.map { window in
-                NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.itemMoved(giveUp: false) }
-                }
-            }
-        }
+        observeMoves()
         itemMoved(giveUp: false)
         // In case they never move.
         let mine = placement
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             if self?.placement == mine { self?.itemMoved(giveUp: true) }
+        }
+    }
+
+    /// macOS places the chevron about 0.1 s after it comes back (measured), and says so by moving
+    /// its window; just after launch, and whenever icons show, the divider is placed the same way.
+    private func observeMoves() {
+        guard moveObservers.isEmpty else { return }
+        moveObservers = [chevron, divider].compactMap { $0.button?.window }.map { window in
+            NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: window, queue: .main) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.itemMoved(giveUp: false)
+                    if (note.object as? NSWindow) === self.divider.button?.window { self.shownMoved() }
+                }
+            }
         }
     }
 
@@ -128,6 +169,9 @@ final class MenuBarDivider: NSObject {
         let item = sender === chevron.button ? chevron : divider
         let menu = NSMenu()
         menu.addItem(withTitle: collapsed ? L("Show Hidden Icons") : L("Hide Menu Bar Icons"), action: #selector(toggleFromMenu), keyEquivalent: "").target = self
+        if collapsed, onShowInMenuBar != nil {
+            menu.addItem(withTitle: L("Show Icons in the Menu Bar"), action: #selector(showInMenuBarFromMenu), keyEquivalent: "").target = self
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: L("Menu Bar Settings…"), action: #selector(settingsFromMenu), keyEquivalent: "").target = self
         item.menu = menu
@@ -137,6 +181,7 @@ final class MenuBarDivider: NSObject {
 
     @objc private func toggleFromMenu() { onToggle() }
     @objc private func settingsFromMenu() { onSettings() }
+    @objc private func showInMenuBarFromMenu() { onShowInMenuBar?() }
 
     private static func arrow(_ symbol: String, _ description: String) -> NSImage? {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)?

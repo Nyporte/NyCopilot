@@ -9,6 +9,9 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
   rarely need left of it, and a click on the arrow hides them (or shows them again). They can hide
   again on their own after a few seconds, stay hidden across restarts, and can have a shortcut.
   It's off until you turn it on.
+- **Hidden icons in a bar.** With Settings → Menu Bar → Show hidden icons in a bar, the arrow opens
+  the hidden icons in a row under the menu bar instead of making room for them in it. Click one to
+  open its menu; the icons show in the menu bar while it's open and hide again when it closes.
 
 ## 0.5.0 — 2026-11-03
 

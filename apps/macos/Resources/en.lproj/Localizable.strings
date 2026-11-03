@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "Puts an arrow in the menu bar.";
 "Couldn’t hide the icons" = "Couldn’t hide the icons";
 "⌘-drag the arrow a little, then try again." = "⌘-drag the arrow a little, then try again.";
+"Show hidden icons in a bar" = "Show hidden icons in a bar";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording.";
+"Show Icons in the Menu Bar" = "Show Icons in the Menu Bar";
+"No icons are hidden" = "No icons are hidden";
+"Couldn’t reach that icon" = "Couldn’t reach that icon";
+"It didn’t fit in the menu bar." = "It didn’t fit in the menu bar.";
+"Hidden menu bar icons" = "Hidden menu bar icons";

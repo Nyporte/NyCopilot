@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "在選單列放一個箭頭。";
 "Couldn’t hide the icons" = "無法隱藏圖像";
 "⌘-drag the arrow a little, then try again." = "按住 ⌘ 把箭頭稍微拖移一下，然後再試一次。";
+"Show hidden icons in a bar" = "在列中顯示隱藏的圖像";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "按一下箭頭時改為在選單列下方的一列中顯示它們；按一下其中一個即可打開它的選單。它們的圖片需要「螢幕錄製」權限。";
+"Show Icons in the Menu Bar" = "在選單列中顯示圖像";
+"No icons are hidden" = "沒有隱藏的圖像";
+"Couldn’t reach that icon" = "無法打開該圖像";
+"It didn’t fit in the menu bar." = "選單列中放不下它。";
+"Hidden menu bar icons" = "隱藏的選單列圖像";

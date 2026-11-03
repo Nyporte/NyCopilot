@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "メニューバーに矢印を置きます。";
 "Couldn’t hide the icons" = "アイコンを隠せませんでした";
 "⌘-drag the arrow a little, then try again." = "⌘を押しながら矢印を少しドラッグして、もう一度試してください。";
+"Show hidden icons in a bar" = "隠したアイコンをバーに表示";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "矢印をクリックすると、代わりにメニューバーの下に一列で表示します。クリックするとそのメニューが開きます。画像には「画面収録」の許可が必要です。";
+"Show Icons in the Menu Bar" = "メニューバーにアイコンを表示";
+"No icons are hidden" = "隠しているアイコンはありません";
+"Couldn’t reach that icon" = "そのアイコンを開けませんでした";
+"It didn’t fit in the menu bar." = "メニューバーに収まりませんでした。";
+"Hidden menu bar icons" = "隠したメニューバーアイコン";

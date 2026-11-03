@@ -10,6 +10,8 @@ struct MenuBarState: Equatable {
     var collapsed: Bool
     /// Seconds shown icons stay before they hide again; 0 leaves them shown.
     var collapseAfter: TimeInterval
+    /// Hidden icons show in a bar under the menu bar rather than in it.
+    var showInBar = false
 
     /// Wide enough to carry every icon left of the divider past the left edge of the widest display.
     static let hidingLength: CGFloat = 10_000
@@ -20,6 +22,9 @@ struct MenuBarState: Equatable {
 
     var dividerLength: CGFloat { Self.dividerLength(collapsed: collapsed) }
 
+    /// A click on the arrow (or the shortcut) opens the bar instead of showing the icons in place.
+    var opensBar: Bool { isOn && collapsed && showInBar }
+
     static func dividerLength(collapsed: Bool) -> CGFloat { collapsed ? hidingLength : shownLength }
 
     /// How long until shown icons hide again, or nil when they stay as they are.
@@ -29,7 +34,8 @@ struct MenuBarState: Equatable {
     static func read(_ core: NyCore, moduleOn: Bool) -> MenuBarState {
         MenuBarState(isOn: moduleOn && core.setting(.menuBarEnabled, default: false),
                      collapsed: core.setting(.menuBarCollapsed, default: false),
-                     collapseAfter: core.setting(.menuBarCollapseAfter, default: 10.0))
+                     collapseAfter: core.setting(.menuBarCollapseAfter, default: 10.0),
+                     showInBar: core.setting(.menuBarShowInBar, default: false))
     }
 
     /// Where the chevron goes when it comes back: one point closer to the right edge than the

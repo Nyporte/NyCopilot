@@ -45,6 +45,7 @@ enum SettingKey: String {
     case menuBarEnabled = "menubar.enabled"
     case menuBarCollapsed = "menubar.collapsed"
     case menuBarCollapseAfter = "menubar.collapse_after"
+    case menuBarShowInBar = "menubar.show_in_bar"
     case welcomeCompleted = "client.welcome_completed"
     case modulesOff = "client.modules_off"
     case keyScheme = "client.key_scheme"

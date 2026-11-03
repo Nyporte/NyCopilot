@@ -737,3 +737,10 @@
 "Puts an arrow in the menu bar." = "Pone una flecha en la barra de menús.";
 "Couldn’t hide the icons" = "No se pudieron ocultar los iconos";
 "⌘-drag the arrow a little, then try again." = "Arrastra un poco la flecha con ⌘ y vuelve a intentarlo.";
+"Show hidden icons in a bar" = "Mostrar los iconos ocultos en una barra";
+"Clicking the arrow opens them in a row under the menu bar instead; clicking one opens its menu. Their pictures need Screen Recording." = "Al hacer clic en la flecha se muestran en una fila bajo la barra de menús; al hacer clic en uno se abre su menú. Sus imágenes necesitan Grabación de pantalla.";
+"Show Icons in the Menu Bar" = "Mostrar iconos en la barra de menús";
+"No icons are hidden" = "No hay iconos ocultos";
+"Couldn’t reach that icon" = "No se pudo abrir ese icono";
+"It didn’t fit in the menu bar." = "No cabía en la barra de menús.";
+"Hidden menu bar icons" = "Iconos ocultos de la barra de menús";
