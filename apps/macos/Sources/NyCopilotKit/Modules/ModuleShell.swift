@@ -62,6 +62,8 @@ final class CopilotServices {
     /// The loaded modules' ids and titles, in menu order.
     var moduleList: () -> [(id: String, title: String, symbol: String)] = { [] }
     var showWelcome: () -> Void = {}
+    /// NyCopilot's own icon in the menu bar, for items that go beside it.
+    var appIcon: () -> NSStatusItem? = { nil }
     /// Shows a translation of `text` on a card beside `near` (AX coordinates), for modules that find
     /// text (screenshots); Translate provides it.
     var translateText: (_ text: String, _ near: CGRect?) -> Void = { _, _ in }

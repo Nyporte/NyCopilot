@@ -12,6 +12,13 @@ how releases are made is in [docs/RELEASING.md](docs/RELEASING.md).
 - **Hidden icons in a bar.** With Settings → Menu Bar → Show hidden icons in a bar, the arrow opens
   the hidden icons in a row under the menu bar instead of making room for them in it. Click one to
   open its menu; the icons show in the menu bar while it's open and hide again when it closes.
+- **A clock for another time zone.** Settings → Clock puts the date and time of any city in the
+  menu bar, "Tue 4 Nov 14:05 · Tokyo", with the date, 12 or 24 hours, seconds, and the zone's name
+  as you like. Click it to see more zones with their times; click one to show it instead. It
+  changes right on the minute or second, and catches up when the Mac wakes or changes time zone.
+- **Screen translation settles.** Holding F2 no longer takes every highlight down and reads the
+  screen again, over and over: NyCopilot could see its own overlay in the screen it watched, when
+  it had started before its menu bar icon was up. Pointing at a block shows its translation again.
 
 ## 0.5.0 — 2026-11-03
 

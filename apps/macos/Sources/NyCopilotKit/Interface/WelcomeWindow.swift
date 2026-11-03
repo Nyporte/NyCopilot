@@ -32,7 +32,9 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
              detail: L("Halves, thirds, and corners, by shortcut or by dragging."), action: nil, fixedKeys: "⌃⌥ ← →"),
         Goal(module: "menubar", title: L("Tidy the menu bar"),
              detail: L("Hide the menu bar icons you rarely need; one click shows them."), action: MenuBarShell.Action.toggle,
-             enabled: .menuBarEnabled)
+             enabled: .menuBarEnabled),
+        Goal(module: "clock", title: L("Show the time in another time zone"),
+             detail: L("A clock in the menu bar for any city; others a click away."), action: nil, enabled: .clockEnabled)
     ]
 
     private let services: CopilotServices
