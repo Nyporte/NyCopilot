@@ -56,8 +56,14 @@ final class MenuBarDivider: NSObject {
         get { isOn }
         // macOS remembers a hidden item by its name; it's shown again here, never left out.
         set {
+            // Out of the bar, macOS forgets where both were; hidden icons need the chevron in sight.
+            if newValue, !isOn {
+                Self.restorePlace(of: Self.dividerName)
+                if collapsed { placeChevronBesideDivider() }
+            } else if !newValue, isOn {
+                Self.keepPlace(of: Self.dividerName)
+            }
             isOn = newValue
-            if newValue { Self.restorePlace(of: Self.dividerName) } else { Self.keepPlace(of: Self.dividerName) }
             divider.isVisible = newValue
             chevron.isVisible = newValue && collapsed
         }
