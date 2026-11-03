@@ -552,6 +552,16 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(HiddenItemsBar.frame(size: NSSize(width: 200, height: 32), under: NSRect(x: 1910, y: 1056, width: 26, height: 24), on: screen).maxX, 1916)
     }
 
+    /// Menu Bar turned off and on puts the arrow back where it was: macOS forgets the place of an
+    /// item out of the bar, so NyCopilot's kept copy is written back, but never over a place macOS has.
+    func testMenuBarArrowComesBackWhereItWas() {
+        // Measured on macOS 14: saved at 431 (x 1443), back at x 1365 with nothing written back.
+        XCTAssertEqual(MenuBarState.dividerPosition(saved: nil, kept: 431), 431)
+        XCTAssertNil(MenuBarState.dividerPosition(saved: 431, kept: 431), "macOS still has it")
+        XCTAssertNil(MenuBarState.dividerPosition(saved: 290, kept: 431), "dragged since: where macOS has it")
+        XCTAssertNil(MenuBarState.dividerPosition(saved: nil, kept: nil), "never placed: wherever macOS puts it")
+    }
+
     /// The chevron comes back right beside the divider, and hiding with it anywhere left of the
     /// divider would hide it too; a pointer on the
     /// menu bar (taller beside a notch, or hidden in full screen) keeps shown icons shown.
