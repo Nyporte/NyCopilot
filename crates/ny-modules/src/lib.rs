@@ -13,6 +13,7 @@ use ny_core::Module;
 pub mod ask;
 pub mod capture;
 pub mod clipboard;
+pub mod clock;
 pub mod google;
 pub mod inbox;
 pub mod menubar;
@@ -32,7 +33,7 @@ pub fn is_image_file_name(name: &str) -> bool {
 pub fn all() -> Vec<Arc<dyn Module>> {
     vec![Arc::new(ny_llm::LlmModule), Arc::new(translate::TranslateModule), Arc::new(windows::WindowsModule), Arc::new(capture::CaptureModule),
          Arc::new(clipboard::ClipboardModule), Arc::new(inbox::InboxModule), Arc::new(ask::AskModule), Arc::new(mouse::MouseModule),
-         Arc::new(menubar::MenuBarModule)]
+         Arc::new(clock::ClockModule), Arc::new(menubar::MenuBarModule)]
 }
 
 /// A loopback stand-in for the HTTP services modules call: each connection gets the next canned

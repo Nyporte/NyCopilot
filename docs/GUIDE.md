@@ -218,6 +218,29 @@ an arrow appears in the menu bar, left of NyCopilot's own icon.
 - On a Mac with a notch, icons that don't fit beside the notch stay out of sight even when shown, as
   they do without NyCopilot. Hide more of them to make room for the rest.
 
+## Clock
+
+A clock in the menu bar for any time zone: turn on **Show a clock in the menu bar** in
+**Settings → Clock** (or check it in the setup guide), then pick a **Time zone**. Type a city, a
+zone's name, or an offset ("gmt+9") to find it; **This Mac's time zone** follows the Mac wherever it
+goes.
+
+- **Format:** show the date or not, 12 or 24 hours (or as on this Mac), seconds or not, and what
+  follows the time: the city ("Tokyo"), the abbreviation ("JST"), the offset ("GMT+9"), a name of
+  your own ("Office"), or nothing. The preview shows the result as you change it. Dates and city
+  names are in NyCopilot's language.
+- **More time zones:** add others under **Other time zones**. Click the clock to see each with its
+  weekday, time, and hours from this Mac (+1, −8, +5:30); click one to show it in the menu bar, and
+  the zone that was there takes its place in the list. **Add Time Zone…** and **Clock Settings…**
+  open this pane.
+- The clock changes exactly on the minute (or second): it reads the Mac's clock each time and sets
+  a timer for the next boundary, rather than counting from the last tick. It catches up at once when
+  the Mac wakes and when the Mac's clock, time zone, or region changes.
+- It first goes just right of NyCopilot's icon, on the side where icons never hide behind Menu Bar's
+  arrow; ⌘-drag it anywhere. If it's left of the arrow when icons hide, it moves right beside the
+  arrow first, so it never hides with them. Turned off and on again, it comes back where you left it.
+- The clock and Menu Bar's arrow are separate: each works with the other on or off.
+
 ## Screenshot & Pin
 
 **F1** freezes your screens for capturing:

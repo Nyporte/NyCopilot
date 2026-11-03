@@ -123,8 +123,12 @@ notes are sent to as Markdown), `ask.send_images` (synced, `true`), `capture.gif
 `mouse.smooth_scroll` (device, `false`), `mouse.scroll_lines` (device, `3`, 1–10 lines of 33.6 points a click),
 `mouse.scroll_glide` (device, `200`, 0–600 ms), and `mouse.scroll_exceptions` (device, `[]`, at most 100 bundle
 identifiers of apps whose wheel doesn't glide), `menubar.enabled` (device, `false`), `menubar.collapsed` (device,
-`false`: the icons left of the arrow are hidden now), and `menubar.collapse_after` (device, `10`, 0–600 seconds
-before shown icons hide again; 0 = never). Inbox images may be
+`false`: the icons left of the arrow are hidden now), `menubar.collapse_after` (device, `10`, 0–600 seconds
+before shown icons hide again; 0 = never), `clock.enabled` (device, `false`), `clock.time_zone` (synced, `""` =
+the device's own zone, or an IANA identifier such as `Asia/Tokyo`), `clock.other_zones` (synced, `[]`, at most 20
+identifiers), `clock.show_date` (synced, `true`), `clock.hour_cycle` (synced, `"system"`, `"12"`, or `"24"`),
+`clock.show_seconds` (synced, `false`), `clock.label` (synced, `"city"`, `"abbreviation"`, `"offset"`, `"custom"`, or
+`"none"`), and `clock.custom_label` (synced, `""`, one line of at most 40 characters). Inbox images may be
 `<uuid>.gif` as well as `<uuid>.png`.
 
 ## Events

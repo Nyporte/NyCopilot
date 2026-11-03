@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func makeModules() -> [ModuleShell] {
         [TranslateShell(services: services), WindowsShell(services: services), CaptureShell(services: services),
          ClipboardShell(services: services), InboxShell(services: services), AskShell(services: services), MouseShell(services: services),
-         MenuBarShell(services: services)]
+         ClockShell(services: services), MenuBarShell(services: services)]
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -42,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         services = CopilotServices(core: core, preferences: preferences, hotKeys: HotKeyCenter(preferences: preferences))
         services.openSettings = { [weak self] pane in self?.showSettings(pane: pane) }
         services.showWelcome = { [weak self] in self?.showWelcome() }
+        services.appIcon = { [weak self] in self?.statusItem }
         services.isModuleOn = { [weak self] id in !(self?.modulesOff.contains(id) ?? false) }
         services.setModule = { [weak self] id, on in self?.setModule(id, on: on) }
         services.moduleList = { [weak self] in self?.modules.map { ($0.id, $0.title, $0.symbolName) } ?? [] }

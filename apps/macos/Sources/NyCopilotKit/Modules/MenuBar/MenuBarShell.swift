@@ -180,6 +180,7 @@ final class MenuBarShell: ModuleShell {
             let made = MenuBarDivider()
             made.onToggle = { [weak self] in self?.toggle() }
             made.onSettings = { [weak self] in guard let self else { return }; services.openSettings(id) }
+            made.keepInSight = { [weak self] in self?.services.clockItem().map { [$0] } ?? [] }
             divider = made
             // Hidden when NyCopilot last quit: hide again the usual way, chevron placed first.
             if state.collapsed { setCollapsed(true); return }

@@ -121,6 +121,13 @@ need to the left of it; click the arrow and they're gone, click again and they'r
 hide again on their own after a few seconds, and stay hidden across restarts. Or have the arrow
 open them in a bar under the menu bar, and click one there to open its menu.
 
+## Clock: another time zone in the menu bar
+
+Keep the time where your team is in the menu bar: "Tue 4 Nov 14:05 · Tokyo", with or without the
+date or seconds, in 12 or 24 hours, named by city, abbreviation, offset, or a name of your own. Click
+it for more zones with their times and hours from you; click one to show it instead. It changes on
+the minute (or second), right on time, and keeps up when your Mac wakes or travels.
+
 ## Every key, one press away
 
 <img src="docs/images/keys.png" width="520" alt="The keys sheet for screenshots">
