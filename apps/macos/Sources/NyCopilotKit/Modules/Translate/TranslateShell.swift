@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 import os
 
@@ -40,13 +41,21 @@ final class TranslateShell: ModuleShell {
 
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.compose, title: L("Translate as you type"),
-               defaultCombination: .init(keyCode: 120, modifiers: 0), // F2, between capture (F1) and the inbox (F3)
+               defaultCombination: Self.shortcuts(in: .functionKeys)[Action.compose],
                handler: { [weak self] in self?.beginComposition() },
                // Held: the whole screen, translated in place.
                longPress: { [weak self] in self?.screen.toggle() }),
          .init(id: Action.history, title: L("Open translation history"),
-               defaultCombination: .init(keyCode: 4, modifiers: HotKeyCombination.option | HotKeyCombination.command),
+               defaultCombination: .init(keyCode: UInt32(kVK_ANSI_H), modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.showHistory() })]
+    }
+
+    /// F2, between capture (F1) and the inbox (F3); or ⌥⌘T.
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] {
+        switch scheme {
+        case .functionKeys: [Action.compose: .init(keyCode: UInt32(kVK_F2), modifiers: 0)]
+        case .letters: [Action.compose: .init(keyCode: UInt32(kVK_ANSI_T), modifiers: KeyScheme.letterModifiers)]
+        }
     }
 
     func menuItems() -> [NSMenuItem] {

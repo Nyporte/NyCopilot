@@ -7,20 +7,43 @@ import MacPlatform
 /// module in `crates/ny-modules` (shared by every client and the server), and a `ModuleShell`
 /// supplies what only macOS can: overlays, menu items, global shortcuts, Accessibility, and
 /// pasting. To add a module, implement both halves, then register the shell in
-/// `AppDelegate.makeModules`. A shell whose core module is missing is not loaded.
+/// `ModuleShells.all`. A shell whose core module is missing is not loaded.
 @MainActor
 protocol ModuleShell: AnyObject {
+    init(services: CopilotServices)
     /// Matches the core module's manifest id, e.g. `translate`.
     var id: String { get }
     var title: String { get }
     var symbolName: String { get }
     /// Global shortcuts; `HotKeyCenter` registers them and Settings lists them under Shortcuts.
     var hotKeyActions: [HotKeyCenter.Action] { get }
+    /// The shortcuts a key scheme gives this module's one-press actions (see `KeyScheme`).
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination]
     /// Items for the menu bar menu, built fresh each time it opens.
     func menuItems() -> [NSMenuItem]
     /// A tab in Settings, or nil when the module has nothing to configure.
     func makeSettingsPane() -> SettingsPane?
+    /// At launch, once every module's shortcuts are registered.
+    func didLaunch()
+    /// Turned on or off in General or the setup guide; its shortcuts and menu items already follow.
+    func setEnabled(_ on: Bool)
     func shutdown()
+}
+
+extension ModuleShell {
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] { [:] }
+    func didLaunch() {}
+    func setEnabled(_ on: Bool) {}
+}
+
+/// Every module this build ships, in menu order, by id. Add new module shells here. A shell is
+/// made only when its core module exists, since making one starts its work (hotkeys, devices).
+enum ModuleShells {
+    static let all: [(id: String, type: any ModuleShell.Type)] = [
+        ("translate", TranslateShell.self), ("windows", WindowsShell.self), ("capture", CaptureShell.self),
+        ("clipboard", ClipboardShell.self), ("inbox", InboxShell.self), ("ask", AskShell.self), ("mouse", MouseShell.self),
+        ("clock", ClockShell.self), ("menubar", MenuBarShell.self)
+    ]
 }
 
 /// The things you can do with whatever you're looking at — a screenshot, a pin, a clipboard entry,
@@ -66,6 +89,8 @@ final class CopilotServices {
     var appIcon: () -> NSStatusItem? = { nil }
     /// The clock in the menu bar while it's on, which Menu Bar never hides with the icons.
     var clockItem: () -> NSStatusItem? = { nil }
+    /// Quits and opens NyCopilot again, as a new interface language needs.
+    var restart: () -> Void = {}
     /// Shows a translation of `text` on a card beside `near` (AX coordinates), for modules that find
     /// text (screenshots); Translate provides it.
     var translateText: (_ text: String, _ near: CGRect?) -> Void = { _, _ in }

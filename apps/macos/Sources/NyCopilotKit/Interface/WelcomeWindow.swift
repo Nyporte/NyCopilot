@@ -151,7 +151,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
             let enabled = row.goal.enabled.map { services.core.setting($0, default: false) } ?? true
             row.box.state = services.isModuleOn(row.goal.module) && enabled ? .on : .off
         }
-        let current = services.preferences.hasCompletedWelcome ? KeyScheme.current(services) : KeyScheme.recommended
+        let current = services.preferences.hasCompletedWelcome ? KeyScheme.current(services.preferences) : KeyScheme.recommended
         scheme.selectedSegment = KeyScheme.allCases.firstIndex(of: current) ?? 0
         refresh()
         window?.setContentSize(window?.contentView?.fittingSize ?? .zero)

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 
 /// macOS half of the Inbox module, one surface per job:
@@ -75,12 +76,18 @@ final class InboxShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.capture, title: L("Jot something down, or keep the selection"),
-               defaultCombination: .init(keyCode: 99, modifiers: 0), // F3
-               handler: { [weak self] in self?.capture() }),
-         .init(id: Action.open, title: L("Open the inbox"),
-               defaultCombination: .init(keyCode: 99, modifiers: HotKeyCombination.shift),
-               handler: { [weak self] in self?.openInbox() })]
+        let defaults = Self.shortcuts(in: .functionKeys)
+        return [.init(id: Action.capture, title: L("Jot something down, or keep the selection"),
+                      defaultCombination: defaults[Action.capture], handler: { [weak self] in self?.capture() }),
+                .init(id: Action.open, title: L("Open the inbox"),
+                      defaultCombination: defaults[Action.open], handler: { [weak self] in self?.openInbox() })]
+    }
+
+    /// F3 and ⇧F3, or ⌥⌘J and ⌥⌘⇧J.
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] {
+        let (key, modifiers) = scheme == .functionKeys ? (kVK_F3, UInt32(0)) : (kVK_ANSI_J, KeyScheme.letterModifiers)
+        return [Action.capture: .init(keyCode: UInt32(key), modifiers: modifiers),
+                Action.open: .init(keyCode: UInt32(key), modifiers: modifiers | HotKeyCombination.shift)]
     }
 
     func menuItems() -> [NSMenuItem] {

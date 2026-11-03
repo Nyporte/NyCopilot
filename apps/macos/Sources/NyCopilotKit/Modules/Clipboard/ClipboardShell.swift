@@ -72,6 +72,9 @@ final class ClipboardShell: ModuleShell {
 
     func makeSettingsPane() -> SettingsPane? { ClipboardPane(services: services) }
 
+    /// Off, copies are no longer kept; on, they are again.
+    func setEnabled(_ on: Bool) { try? services.core.setSetting(.clipboardEnabled, on) }
+
     /// The pasteboard has no change notification; its counter is cheap to read.
     private func startWatching() {
         guard watcher == nil else { return }

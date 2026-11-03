@@ -55,25 +55,26 @@ final class WindowsShell: ModuleShell {
         }
     }
 
-    /// Called once all shortcuts are registered: someone switching from Rectangle gets their
-    /// shortcuts carried over automatically, once, unless they already customized NyCopilot's.
-    func importRectangleOnce() {
-        // The repeat behaviour arrived after the shortcut import, so it has its own one-time check.
-        if !services.core.setting(.rectangleRepeatChecked, default: false) {
-            try? services.core.setSetting(.rectangleRepeatChecked, true)
-            if RectangleImport.isAvailable, let mode = RectangleImport.read().repeatMode {
-                try? services.core.setSetting(.windowRepeat, mode)
-            }
-        }
-        guard !services.core.setting(.rectangleImportChecked, default: false) else { return }
-        try? services.core.setSetting(.rectangleImportChecked, true)
-        guard RectangleImport.isAvailable,
-              !services.hotKeys.isCustomized(actions.map { "windows.\($0.id)" }) else { return }
+    /// Once all shortcuts are registered: someone switching from Rectangle gets their shortcuts
+    /// carried over automatically, once, unless they already customized NyCopilot's. The repeat
+    /// behaviour arrived after the shortcut import, so it has its own one-time check.
+    func didLaunch() {
+        let core = services.core
+        let repeatChecked = core.setting(.rectangleRepeatChecked, default: false)
+        let importChecked = core.setting(.rectangleImportChecked, default: false)
+        guard !repeatChecked || !importChecked else { return }
+        try? core.setSetting(.rectangleRepeatChecked, true)
+        try? core.setSetting(.rectangleImportChecked, true)
+        guard RectangleImport.isAvailable else { return }
         let result = RectangleImport.read()
-        guard !result.shortcuts.isEmpty else { return }
-        let outcome = RectangleImport.apply(result, to: services)
-        services.toast.show(L("Window shortcuts imported from Rectangle"), detail: outcome.summary,
-                            style: outcome.failed == 0 ? .success : .warning)
+        if !importChecked, !result.shortcuts.isEmpty, !services.hotKeys.isCustomized(actions.map { "windows.\($0.id)" }) {
+            // Brings the repeat behaviour along.
+            let outcome = RectangleImport.apply(result, to: services)
+            services.toast.show(L("Window shortcuts imported from Rectangle"), detail: outcome.summary,
+                                style: outcome.failed == 0 ? .success : .warning)
+        } else if !repeatChecked, let mode = result.repeatMode {
+            try? core.setSetting(.windowRepeat, mode)
+        }
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 
 /// macOS half of Ask AI: the shortcut asks about what's selected in any app (or opens a blank
@@ -24,6 +25,7 @@ final class AskShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
+        Self.keepKeyOnLetters(services.preferences)
         services.askAI = { [weak self] material in self?.present(material) }
         panel.onAsk = { [weak self] action, question, turns in
             guard let self else { throw CancellationError() }
@@ -44,8 +46,24 @@ final class AskShell: ModuleShell {
 
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.open, title: L("Ask about the selection, or ask anything"),
-               defaultCombination: .init(keyCode: 118, modifiers: 0), // F4
+               defaultCombination: Self.shortcuts(in: .functionKeys)[Action.open],
                handler: { [weak self] in self?.open() })]
+    }
+
+    /// F4, or ⌥⌘A.
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] {
+        switch scheme {
+        case .functionKeys: [Action.open: .init(keyCode: UInt32(kVK_F4), modifiers: 0)]
+        case .letters: [Action.open: .init(keyCode: UInt32(kVK_ANSI_A), modifiers: KeyScheme.letterModifiers)]
+        }
+    }
+
+    /// Ask AI was ⌥⌘A in both key schemes before it joined them as F4 or ⌥⌘A. Someone on ⌥⌘ letters
+    /// who never changed it keeps ⌥⌘A rather than moving to the new default; on F-keys, it moves to F4.
+    /// Runs before the shortcut is registered.
+    static func keepKeyOnLetters(_ preferences: Preferences) {
+        guard !preferences.hasStoredHotKey(for: Action.open), KeyScheme.current(preferences) == .letters else { return }
+        preferences.setHotKey(shortcuts(in: .letters)[Action.open], for: Action.open)
     }
 
     func menuItems() -> [NSMenuItem] {

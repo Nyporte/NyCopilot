@@ -39,6 +39,12 @@ final class LogicTests: XCTestCase {
     func testKeySchemesCoverTheSameActionsWithDistinctKeys() {
         let fkeys = KeyScheme.functionKeys.combinations, letters = KeyScheme.letters.combinations
         XCTAssertEqual(Set(fkeys.keys), Set(letters.keys))
+        // Each shell gives its own: capture's three, translate's one, the inbox's two, Ask's one.
+        XCTAssertEqual(fkeys.count, 7)
+        XCTAssertEqual(fkeys[CaptureShell.Action.capture], HotKeyCombination(keyCode: 122, modifiers: 0), "F1")
+        XCTAssertEqual(fkeys[InboxShell.Action.open], HotKeyCombination(keyCode: 99, modifiers: HotKeyCombination.shift), "⇧F3")
+        XCTAssertEqual(letters[TranslateShell.Action.compose], HotKeyCombination(keyCode: 17, modifiers: HotKeyCombination.option | HotKeyCombination.command), "⌥⌘T")
+        XCTAssertEqual(letters[AskShell.Action.open], HotKeyCombination(keyCode: 0, modifiers: HotKeyCombination.option | HotKeyCombination.command), "⌥⌘A")
         for scheme in [fkeys, letters] {
             let pairs = scheme.values.map { "\($0.keyCode)-\($0.modifiers)" }
             XCTAssertEqual(Set(pairs).count, pairs.count, "no two actions share a key")
@@ -61,29 +67,29 @@ final class LogicTests: XCTestCase {
 
         let (chose, choseLetters) = try fresh()
         try chose.setSetting(.keyScheme, KeyScheme.letters.rawValue)
-        choseLetters.keepAskOnLetters()
+        AskShell.keepKeyOnLetters(choseLetters)
         XCTAssertEqual(key(choseLetters), letters[ask])
 
         let (_, before) = try fresh()
         before.setHotKey(letters[capture], for: capture)
-        before.keepAskOnLetters()
+        AskShell.keepKeyOnLetters(before)
         XCTAssertEqual(key(before), letters[ask], "letters from before the setup guide saved a scheme")
 
         let (onKeys, functionKeys) = try fresh()
         try onKeys.setSetting(.keyScheme, KeyScheme.functionKeys.rawValue)
-        functionKeys.keepAskOnLetters()
+        AskShell.keepKeyOnLetters(functionKeys)
         XCTAssertFalse(functionKeys.hasStoredHotKey(for: ask))
         XCTAssertEqual(key(functionKeys), HotKeyCombination(keyCode: 118, modifiers: 0))
 
         let (_, newcomer) = try fresh()
-        newcomer.keepAskOnLetters()
+        AskShell.keepKeyOnLetters(newcomer)
         XCTAssertFalse(newcomer.hasStoredHotKey(for: ask), "a new Mac gets its keys from the setup guide")
 
         let (custom, customized) = try fresh()
         try custom.setSetting(.keyScheme, KeyScheme.letters.rawValue)
         let own = HotKeyCombination(keyCode: 40, modifiers: HotKeyCombination.control | HotKeyCombination.command)
         customized.setHotKey(own, for: ask)
-        customized.keepAskOnLetters()
+        AskShell.keepKeyOnLetters(customized)
         XCTAssertEqual(key(customized), own)
     }
 

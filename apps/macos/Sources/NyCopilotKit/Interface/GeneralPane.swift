@@ -142,7 +142,7 @@ final class GeneralPane: SettingsPane {
         showLanguage()
     }
 
-    @objc private func restartApp() { (NSApp.delegate as? AppDelegate)?.restart() }
+    @objc private func restartApp() { services.restart() }
 
     @objc private func requestAccess() { Accessibility.requestAccess() }
     @objc private func requestRecording() { ScreenRecording.requestAccess() }
