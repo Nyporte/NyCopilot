@@ -781,3 +781,4 @@
 "Hours must be 12, 24, or system." = "As horas devem ser 12, 24 ou system.";
 "The label must be city, abbreviation, offset, custom, or none." = "O rótulo deve ser city, abbreviation, offset, custom ou none.";
 "The clock’s name must be one line of at most 40 characters." = "O nome do relógio deve ter uma linha de no máximo 40 caracteres.";
+"File numbers start at 1." = "Os números de arquivo começam em 1.";
