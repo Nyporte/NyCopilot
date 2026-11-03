@@ -401,5 +401,19 @@ final class LogicTests: XCTestCase {
         XCTAssertTrue(instant.isIdle)
     }
 
+    /// The lookup made at launch, before NyCopilot had a window up, can't leave NyCopilot out, so
+    /// screen translation mustn't capture with it: its overlay would be in every glance.
+    func testACaptureLookupWithoutNyCopilotIsMadeAgainBeforeLeavingNyCopilotOut() {
+        let atLaunch = (displays: [CGDirectDisplayID(3)], applications: [pid_t(160), 464, 508])
+        XCTAssertFalse(ScreenGrabber.serves(displays: atLaunch.displays, applications: atLaunch.applications, for: [3],
+                                            hidingOwnWindows: true, own: 30817))
+        XCTAssertTrue(ScreenGrabber.serves(displays: atLaunch.displays, applications: atLaunch.applications, for: [3],
+                                           hidingOwnWindows: false, own: 30817), "nothing to leave out")
+        XCTAssertTrue(ScreenGrabber.serves(displays: atLaunch.displays, applications: atLaunch.applications + [30817], for: [3],
+                                           hidingOwnWindows: true, own: 30817))
+        XCTAssertFalse(ScreenGrabber.serves(displays: atLaunch.displays, applications: atLaunch.applications + [30817], for: [3, 4],
+                                            hidingOwnWindows: true, own: 30817), "a display plugged in since")
+    }
+
     private final class Counter: @unchecked Sendable { var count = 0 }
 }

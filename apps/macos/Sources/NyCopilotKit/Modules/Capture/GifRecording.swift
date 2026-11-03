@@ -107,10 +107,10 @@ final class GifRecording {
         guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
             throw ScreenGrabber.Failure.captureFailed
         }
-        let content = try await ScreenGrabber.shareableContent(reusingRecent: true)
+        let content = try await ScreenGrabber.shareableContent(for: [displayID])
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
         // The outline, the bar, and pins stay out of the recording.
-        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        let own = ScreenGrabber.ownApplications(in: content)
         let origin = CaptureSession.globalOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = region.offsetBy(dx: -origin.x, dy: -origin.y)

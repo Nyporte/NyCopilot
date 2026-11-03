@@ -97,10 +97,10 @@ final class ScrollCapture {
             throw ScreenGrabber.Failure.captureFailed
         }
         // F1 just looked this up; asking again would cost a noticeable moment.
-        let content = try await ScreenGrabber.shareableContent(reusingRecent: true)
+        let content = try await ScreenGrabber.shareableContent(for: [displayID])
         guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
         // NyCopilot's own windows — the outline, the panel, pins — never appear in the image.
-        let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+        let own = ScreenGrabber.ownApplications(in: content)
         let origin = CaptureSession.globalOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = watched.offsetBy(dx: -origin.x, dy: -origin.y)
