@@ -9,15 +9,22 @@ final class ClipboardPane: SettingsPane {
     private let atMost = NSPopUpButton()
     private let clearButton = Design.button(L("Clear History…"), target: nil, action: nil)
     private lazy var shortcuts = ShortcutEditor(services: services)
-    private static let days = [(1, DateComponents(day: 1)), (7, DateComponents(weekOfMonth: 1)), (30, DateComponents(day: 30)),
-                                (90, DateComponents(day: 90)), (365, DateComponents(year: 1))]
+    private static let dayChoices = [(1, DateComponents(day: 1)), (7, DateComponents(weekOfMonth: 1)), (30, DateComponents(day: 30)),
+                                      (90, DateComponents(day: 90)), (365, DateComponents(year: 1))]
         .map { ($0.0, ClipboardPane.duration.string(from: $0.1) ?? "\($0.0)") }
     private static let duration: DateComponentsFormatter = {
         let formatter = DateComponentsFormatter()
         formatter.unitsStyle = .full
         return formatter
     }()
-    private static let counts = [100, 500, 1000, 5000]
+    private static let countChoices = [100, 500, 1000, 5000]
+    /// The choices offered: those within what the core accepts.
+    private lazy var days = Self.dayChoices.filter { within(.clipboardKeepDays, $0.0) }
+    private lazy var counts = Self.countChoices.filter { within(.clipboardMaxItems, $0) }
+
+    private func within(_ key: SettingKey, _ value: Int) -> Bool {
+        services.core.settingRange(key)?.contains(Double(value)) ?? true
+    }
 
     init(services: CopilotServices) {
         self.services = services
@@ -29,10 +36,10 @@ final class ClipboardPane: SettingsPane {
     override func makeSections() -> [NSView] {
         enabledSwitch.target = self
         enabledSwitch.action = #selector(toggleEnabled)
-        keepFor.addItems(withTitles: Self.days.map(\.1))
+        keepFor.addItems(withTitles: days.map(\.1))
         keepFor.target = self
         keepFor.action = #selector(changeDays)
-        atMost.addItems(withTitles: Self.counts.map { L("%ld entries", $0) })
+        atMost.addItems(withTitles: counts.map { L("%ld entries", $0) })
         atMost.target = self
         atMost.action = #selector(changeCount)
         clearButton.target = self
@@ -53,22 +60,22 @@ final class ClipboardPane: SettingsPane {
     override func paneWillAppear() {
         enabledSwitch.state = services.core.setting(.clipboardEnabled, default: true) ? .on : .off
         let days = services.core.setting(.clipboardKeepDays, default: 30)
-        keepFor.selectItem(at: Self.days.firstIndex { $0.0 >= days } ?? 2)
+        keepFor.selectItem(at: self.days.firstIndex { $0.0 >= days } ?? self.days.count - 1)
         let count = services.core.setting(.clipboardMaxItems, default: 500)
-        atMost.selectItem(at: Self.counts.firstIndex { $0 >= count } ?? 1)
+        atMost.selectItem(at: counts.firstIndex { $0 >= count } ?? counts.count - 1)
         shortcuts.refresh()
     }
 
     @objc private func toggleEnabled() { try? services.core.setSetting(.clipboardEnabled, enabledSwitch.state == .on) }
 
     @objc private func changeDays() {
-        try? services.core.setSetting(.clipboardKeepDays, Self.days[keepFor.indexOfSelectedItem].0)
+        try? services.core.setSetting(.clipboardKeepDays, days[keepFor.indexOfSelectedItem].0)
         services.core.clipboardPrune()
         ClipboardShell.removeUnusedImages(core: services.core)
     }
 
     @objc private func changeCount() {
-        try? services.core.setSetting(.clipboardMaxItems, Self.counts[atMost.indexOfSelectedItem])
+        try? services.core.setSetting(.clipboardMaxItems, counts[atMost.indexOfSelectedItem])
         services.core.clipboardPrune()
         ClipboardShell.removeUnusedImages(core: services.core)
     }

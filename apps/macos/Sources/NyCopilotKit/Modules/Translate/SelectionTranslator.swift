@@ -66,7 +66,7 @@ final class SelectionTranslator {
     /// Into the language you read in, unless the text is already in it; then into the composer's.
     static func language(for text: String, core: NyCore) -> String {
         let reading = core.readingLanguage
-        if ScreenText.needsTranslation(text, into: ScreenText.code(for: reading)) { return reading }
+        if ScreenText.needsTranslation(text, into: core.language(reading).locale) { return reading }
         return core.setting(.targetLanguage, default: "English")
     }
 

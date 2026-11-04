@@ -11,17 +11,18 @@ final class MousePane: SettingsPane {
     private let times = Design.label("×", size: 12, color: .secondaryLabelColor)
     private lazy var speedRow = FormRow(L("Speed"), subtitle: " ", accessory: Design.hstack([speedSlider, speedField, times], spacing: 6))
     /// Speed runs on a doubling scale, so ½× and 2× sit the same distance either side of 1×.
-    private let speedSlider = NSSlider(value: 0, minValue: log2(0.1), maxValue: 3, target: nil, action: nil)
+    private let speedSlider = NSSlider()
     private let speedField = MousePane.numberField()
-    private let accelerationSlider = NSSlider(value: 0, minValue: 0, maxValue: 8, target: nil, action: nil)
+    /// Stops at 8 (or the core's limit, if lower); a typed value can go further.
+    private let accelerationSlider = NSSlider()
     private let accelerationField = MousePane.numberField()
     private let accelerationOff = Design.label(L("Off"), size: 12, color: .secondaryLabelColor)
     private let resetButton = Design.button(L("Reset"), target: nil, action: nil)
     private let reverseSwitch = NSSwitch()
     private let smoothSwitch = NSSwitch()
-    private let linesSlider = NSSlider(value: 3, minValue: 1, maxValue: 10, target: nil, action: nil)
+    private let linesSlider = NSSlider()
     private let linesField = MousePane.numberField()
-    private let glideSlider = NSSlider(value: 200, minValue: 0, maxValue: 600, target: nil, action: nil)
+    private let glideSlider = NSSlider()
     private let glideField = MousePane.numberField()
     private let addAppButton = Design.button(L("Add App…"), target: nil, action: nil)
     private let removeAppMenu = NSPopUpButton(frame: .zero, pullsDown: true)
@@ -32,11 +33,11 @@ final class MousePane: SettingsPane {
     private static let otherApps = ["com.naotanhaocan.BetterMouse", "com.lujjjh.LinearMouse", "com.caldis.Mos"]
     /// `mouse.acceleration` at this value follows System Settings.
     private static let followSystem = -1.0
-    /// What the core accepts; the acceleration slider stops at 8, a typed value can go further.
-    private static let speedRange = 0.1...8.0
-    private static let accelerationRange = 0.0...40.0
-    private static let linesRange = 1.0...10.0
-    private static let glideRange = 0.0...600.0
+    /// What the core accepts, from its manifest.
+    private lazy var speedRange = services.core.settingRange(.mouseSpeed)
+    private lazy var accelerationRange = services.core.settingRange(.mouseAcceleration)
+    private lazy var linesRange = services.core.settingRange(.mouseScrollLines)
+    private lazy var glideRange = services.core.settingRange(.mouseScrollGlide)
 
     init(services: CopilotServices, connected: @escaping () -> [String]) {
         self.services = services
@@ -60,9 +61,27 @@ final class MousePane: SettingsPane {
         return field
     }
 
+    /// A value within the core's range for its setting, when it has one.
+    private static func clamped(_ value: Double, to range: ClosedRange<Double>?) -> Double {
+        range.map { min(max(value, $0.lowerBound), $0.upperBound) } ?? value
+    }
+
     override func makeSections() -> [NSView] {
         enabledSwitch.target = self
         enabledSwitch.action = #selector(toggleEnabled)
+        if let speedRange {
+            speedSlider.minValue = log2(speedRange.lowerBound)
+            speedSlider.maxValue = log2(speedRange.upperBound)
+        }
+        if let accelerationRange {
+            accelerationSlider.minValue = accelerationRange.lowerBound
+            accelerationSlider.maxValue = min(8, accelerationRange.upperBound)
+        }
+        for (slider, range) in [(linesSlider, linesRange), (glideSlider, glideRange)] {
+            guard let range else { continue }
+            slider.minValue = range.lowerBound
+            slider.maxValue = range.upperBound
+        }
         for (slider, field, slid, typed) in [(speedSlider, speedField, #selector(changeSpeed), #selector(typeSpeed)),
                                              (accelerationSlider, accelerationField, #selector(changeAcceleration), #selector(typeAcceleration)),
                                              (linesSlider, linesField, #selector(changeLines), #selector(typeLines)),
@@ -138,11 +157,16 @@ final class MousePane: SettingsPane {
         notes.isHidden = lines.isEmpty
     }
 
-    /// The acceleration in effect: the one set here, or System Settings' while following it.
+    /// The acceleration in effect: the one set here, or, while following System Settings, the one the
+    /// core applies (System Settings', or macOS's own when it has none). None, linear, shows as 0.
     private var acceleration: Double {
         let set: Double = services.core.setting(.mouseAcceleration, default: Self.followSystem)
         guard set == Self.followSystem else { return set }
-        return PointerDevices.systemSetting ?? 0.6875
+        struct Pointer: Decodable { let acceleration: Double; let linear: Bool }
+        var params: [String: Any] = [:]
+        params["system_acceleration"] = PointerDevices.systemSetting
+        guard let pointer = try? services.core.call(.mousePointer, params, as: Pointer.self) else { return 0 }
+        return pointer.linear ? 0 : pointer.acceleration
     }
 
     private func showSpeed(_ speed: Double) {
@@ -177,7 +201,7 @@ final class MousePane: SettingsPane {
     }
 
     private func setSpeed(_ speed: Double) {
-        let speed = min(max(speed, Self.speedRange.lowerBound), Self.speedRange.upperBound)
+        let speed = Self.clamped(speed, to: speedRange)
         showSpeed(speed)
         try? services.core.setSetting(.mouseSpeed, speed)
     }
@@ -192,7 +216,7 @@ final class MousePane: SettingsPane {
     }
 
     private func setAcceleration(_ value: Double) {
-        let value = min(max(value, Self.accelerationRange.lowerBound), Self.accelerationRange.upperBound)
+        let value = Self.clamped(value, to: accelerationRange)
         showAcceleration(value)
         try? services.core.setSetting(.mouseAcceleration, value)
     }
@@ -217,7 +241,7 @@ final class MousePane: SettingsPane {
     @objc private func typeLines() { setLines((linesField.doubleValue * 10).rounded() / 10) }
 
     private func setLines(_ lines: Double) {
-        let lines = min(max(lines, Self.linesRange.lowerBound), Self.linesRange.upperBound)
+        let lines = Self.clamped(lines, to: linesRange)
         showLines(lines)
         try? services.core.setSetting(.mouseScrollLines, lines)
     }
@@ -232,7 +256,7 @@ final class MousePane: SettingsPane {
     @objc private func typeGlide() { setGlide(glideField.doubleValue.rounded()) }
 
     private func setGlide(_ glide: Double) {
-        let glide = min(max(glide, Self.glideRange.lowerBound), Self.glideRange.upperBound)
+        let glide = Self.clamped(glide, to: glideRange)
         showGlide(glide)
         try? services.core.setSetting(.mouseScrollGlide, glide)
     }

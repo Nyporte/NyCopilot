@@ -65,7 +65,7 @@ enum NoteExport {
         case .notes: try await toNotes(content)
         case .markdown:
             guard let folder = markdownFolder(core: core, choosingIfNeeded: true) else { throw Failure.noFolder }
-            let file = try toMarkdown(content, in: folder)
+            let file = try toMarkdown(content, in: folder, core: core)
             return L("Saved as %@", file.lastPathComponent)
         }
         return L("Sent to %@", destination.title)
@@ -141,24 +141,24 @@ enum NoteExport {
         return url
     }
 
-    /// `<date> <title>.md`, with front matter for the source; a screenshot is saved beside it.
-    static func toMarkdown(_ content: Content, in folder: URL) throws -> URL {
+    /// `<date> <title>.md`, with front matter for the source; a screenshot is saved beside it. The
+    /// core names and writes the note; the file system's part — a name not yet taken, the files — is here.
+    static func toMarkdown(_ content: Content, in folder: URL, core: NyCore) throws -> URL {
         let stamp = DateFormatter()
         stamp.dateFormat = "yyyy-MM-dd HHmm"
-        let unsafe = CharacterSet(charactersIn: "/\\:*?\"<>|#^[]").union(.newlines).union(.controlCharacters)
-        let words = content.title.components(separatedBy: unsafe).joined(separator: " ").trimmingCharacters(in: .whitespaces).prefix(60)
-        let stem = unique("\(stamp.string(from: content.created)) \(words)".trimmingCharacters(in: .whitespaces), in: folder)
-        var lines = ["---", "created: \(ISO8601DateFormatter().string(from: content.created))"]
-        if !content.source.isEmpty { lines.append("source: \"\(content.source.replacingOccurrences(of: "\"", with: "'"))\"") }
-        if let address = content.address { lines.append("url: \(address.absoluteString)") }
-        lines += ["tags: [inbox]", "---", "", content.text.trimmingCharacters(in: .whitespacesAndNewlines)]
+        func note(image: String?) throws -> NyCore.MarkdownNote {
+            try core.inboxMarkdown(title: content.title, text: content.text, source: content.source, url: content.address,
+                                   created: content.created, stamp: stamp.string(from: content.created), image: image)
+        }
+        var written = try note(image: nil)
+        let stem = unique(written.stem, in: folder)
         if let image = content.image {
             let name = "\(stem).\(image.pathExtension.lowercased())"
             try FileManager.default.copyItem(at: image, to: folder.appendingPathComponent(name))
-            lines += ["", "![](\(name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? name))"]
+            written = try note(image: name)
         }
         let file = folder.appendingPathComponent("\(stem).md")
-        try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
+        try written.markdown.write(to: file, atomically: true, encoding: .utf8)
         return file
     }
 
@@ -213,7 +213,8 @@ private final class AppleScriptThread: @unchecked Sendable {
 }
 
 /// When a snoozed note comes back, as menu choices: later today, this evening, tomorrow, the
-/// weekend, next week — the ones still ahead.
+/// weekend, next week — the ones still ahead. Kept here, not in the core: the calendar math
+/// (time zones, the week's first day) is Foundation's.
 enum SnoozeChoice: CaseIterable {
     case laterToday, thisEvening, tomorrow, weekend, nextWeek
 

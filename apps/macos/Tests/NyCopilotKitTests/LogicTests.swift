@@ -102,15 +102,17 @@ final class LogicTests: XCTestCase {
         try Data("GIF89a".utf8).write(to: image)
         let content = NoteExport.Content(text: "Ask Lin: Q3/plan?\nbefore Friday", image: image, source: "Safari — Q3",
                                          address: URL(string: "https://example.com/q3"), created: Date(timeIntervalSince1970: 0))
-        let file = try NoteExport.toMarkdown(content, in: folder)
+        let core = try NyCore(dataDirectory: folder.appendingPathComponent("core", isDirectory: true))
+        let file = try NoteExport.toMarkdown(content, in: folder, core: core)
         XCTAssertFalse(file.lastPathComponent.contains("/"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.deletingPathExtension().appendingPathExtension("gif").path), "named after the note")
         let text = try String(contentsOf: file)
         XCTAssertTrue(text.hasPrefix("---\ncreated: "))
         XCTAssertTrue(text.contains("url: https://example.com/q3"))
         XCTAssertTrue(text.contains("before Friday"))
         XCTAssertTrue(text.contains(".gif)"), "the screenshot keeps its own type")
         // A second export never overwrites the first.
-        XCTAssertNotEqual(try NoteExport.toMarkdown(content, in: folder), file)
+        XCTAssertNotEqual(try NoteExport.toMarkdown(content, in: folder, core: core), file)
     }
 
     func testGifWriterRoundTripsChangedRegionsAndDelays() throws {
@@ -310,6 +312,21 @@ final class LogicTests: XCTestCase {
         XCTAssertEqual(core.setting(.clipboardKeepDays, default: 0), 30)
     }
 
+    /// Bounds, engines, and language codes are the core's, read through the typed calls.
+    func testRangesEnginesAndLocalesComeFromTheCore() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("core-\(UUID())", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let core = try NyCore(dataDirectory: folder)
+        XCTAssertEqual(core.settingRange(.windowGap), 0...60)
+        XCTAssertEqual(core.settingRange(.favoriteLanguages)?.lowerBound, 1, "a list's length")
+        XCTAssertNil(core.settingRange(.dragSnap))
+        XCTAssertEqual(Set(core.translationEngines().map(\.id)), ["google", "volcengine", "model"])
+        try core.setSetting(.engineOrder, ["model"])
+        XCTAssertEqual(core.translationEngines().first?.id, "model", "in the order they're tried")
+        XCTAssertEqual(core.language("Korean").locale, "ko")
+        XCTAssertNil(core.language("Klingon").locale)
+    }
+
     /// A German Mac starts with English and German to Tab between; Chinese and Japanese stay for
     /// Macs in those languages, and favorites someone changed are never touched.
     func testFavoritesStartInTheMacsLanguage() throws {
@@ -323,18 +340,25 @@ final class LogicTests: XCTestCase {
         func favorites(_ core: NyCore) -> [String] { core.setting(.favoriteLanguages, default: []) }
 
         let (german, germanDefaults) = try fresh()
-        XCTAssertEqual(favorites(german), NyCore.coreFavorites, "the copy must match the core's own default")
+        let coreDefaults = favorites(german)
         german.seedFavoriteLanguages(device: "German", defaults: germanDefaults)
         XCTAssertEqual(favorites(german), ["English", "German"])
-        try german.setSetting(.favoriteLanguages, NyCore.coreFavorites)
+        try german.setSetting(.favoriteLanguages, coreDefaults)
         german.seedFavoriteLanguages(device: "German", defaults: germanDefaults)
-        XCTAssertEqual(favorites(german), NyCore.coreFavorites, "only once per Mac")
+        XCTAssertEqual(favorites(german), coreDefaults, "only once per Mac")
 
         for device in ["English", "Japanese"] {
             let (core, defaults) = try fresh()
             core.seedFavoriteLanguages(device: device, defaults: defaults)
-            XCTAssertEqual(favorites(core), NyCore.coreFavorites, device)
+            XCTAssertEqual(favorites(core), coreDefaults, device)
         }
+
+        // A Mac that seeded before the mark moved to the core isn't seeded again.
+        let (moved, movedDefaults) = try fresh()
+        movedDefaults.set(true, forKey: "NyCopilotSeededFavorites")
+        moved.seedFavoriteLanguages(device: "German", defaults: movedDefaults)
+        XCTAssertEqual(favorites(moved), coreDefaults)
+        XCTAssertFalse(movedDefaults.bool(forKey: "NyCopilotSeededFavorites"), "the old mark goes")
 
         let (changed, changedDefaults) = try fresh()
         try changed.setSetting(.favoriteLanguages, ["English", "Korean"])

@@ -10,7 +10,8 @@ final class WindowsPane: SettingsPane {
     private static let repeatModes = [("cycle_sizes", L("Cycle sizes (½ → ⅔ → ⅓)")),
                                       ("move_across_displays", L("Move to the next display")),
                                       ("nothing", L("Do nothing"))]
-    private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 60, target: nil, action: nil)
+    /// Its range is the core's for `windows.gap`.
+    private let gapSlider = NSSlider()
     private let gapValue = Design.label("", size: 12, color: .secondaryLabelColor)
     private lazy var shortcuts = ShortcutEditor(services: services)
     private let importNote = Design.wrapping("", size: 11.5)
@@ -29,6 +30,10 @@ final class WindowsPane: SettingsPane {
         repeatMode.addItems(withTitles: Self.repeatModes.map(\.1))
         repeatMode.target = self
         repeatMode.action = #selector(changeRepeat)
+        if let range = services.core.settingRange(.windowGap) {
+            gapSlider.minValue = range.lowerBound
+            gapSlider.maxValue = range.upperBound
+        }
         gapSlider.numberOfTickMarks = 11
         gapSlider.allowsTickMarkValuesOnly = true
         gapSlider.target = self

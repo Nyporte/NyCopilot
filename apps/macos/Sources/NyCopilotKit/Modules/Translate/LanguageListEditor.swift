@@ -19,7 +19,8 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     /// Looks up the badge code and own name for languages that aren't suggestions (set by `load`).
     private var describe: (String) -> Language = { Language(name: $0, native: $0, code: "") }
     private static let rowHeight: CGFloat = 36
-    private static let maximum = 8
+    /// The most languages the list may hold (set by `load`, from the core).
+    private var maximum = Int.max
 
     init() {
         super.init(frame: .zero)
@@ -83,8 +84,10 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
-    func load(_ names: [String], suggestions: [Language], describe: @escaping (String) -> Language) {
+    /// `maximum` is the most languages the list may hold; nil for no limit.
+    func load(_ names: [String], maximum: Int?, suggestions: [Language], describe: @escaping (String) -> Language) {
         self.names = names
+        self.maximum = maximum ?? .max
         self.suggestions = suggestions
         self.describe = describe
         reload()
@@ -97,8 +100,8 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     private func reload() {
         height.constant = CGFloat(max(names.count, 1)) * Self.rowHeight
         table.reloadData()
-        addButton.isEnabled = names.count < Self.maximum
-        addButton.toolTip = names.count < Self.maximum ? nil : L("You can keep up to %ld languages.", Self.maximum)
+        addButton.isEnabled = names.count < maximum
+        addButton.toolTip = names.count < maximum ? nil : L("You can keep up to %ld languages.", maximum)
     }
 
     /// Commit a new order or set; on rejection keep what was saved and say why.

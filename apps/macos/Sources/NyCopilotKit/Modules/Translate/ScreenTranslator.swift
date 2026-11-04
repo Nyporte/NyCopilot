@@ -31,6 +31,8 @@ final class ScreenTranslator {
     /// The last pointer movement or screen change: glances come quickly after it and ease off later.
     var lastActivity = Date()
     var language = "", nativeLanguage = ""
+    /// The language's BCP-47 code, for telling which text is in it already.
+    var languageCode: String?
     /// Blocks translated this session, by language and text, so switching back costs nothing.
     var translations: [String: String] = [:]
     /// Blocks out for translation right now, so none is asked for twice.
@@ -101,8 +103,10 @@ final class ScreenTranslator {
     /// Reads into `name` from now on: highlights recount what needs translating, and a card showing
     /// re-translates. `remember` keeps the choice for next time.
     func choose(_ name: String, remember: Bool) {
+        let info = services.core.language(name)
         language = name
-        nativeLanguage = services.core.language(name).native
+        nativeLanguage = info.native
+        languageCode = info.locale
         if remember { try? services.core.setSetting(.screenLanguage, name) }
         hover(nil)
         displays.forEach(update)
@@ -206,7 +210,7 @@ final class ScreenTranslator {
 
     /// Regroups a display's blocks and redraws its highlights; the card follows if its block went away.
     func update(_ display: Display) {
-        display.paragraphs = Self.paragraphs(display.entries, language: ScreenText.code(for: language))
+        display.paragraphs = Self.paragraphs(display.entries, language: languageCode)
         display.overlay.show(display.paragraphs.map { $0.entries.map(\.line.rect) })
         pointerMoved()
     }
