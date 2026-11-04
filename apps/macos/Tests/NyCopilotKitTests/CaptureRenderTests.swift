@@ -91,7 +91,7 @@ final class CaptureRenderTests: XCTestCase {
         XCTAssertFalse(view.needsDisplay)
         view.lastDirtyRect = .zero
         view.pointer = CGPoint(x: 220, y: 210)
-        view.refreshDynamic()
+        view.updateChrome()
         window.displayIfNeeded()
         XCTAssertEqual(view.lastDirtyRect, .zero, "a pointer move doesn't redraw the full-screen view")
         XCTAssertTrue(view.magnifierView.frame.insetBy(dx: -30, dy: -30).contains(CGPoint(x: 220, y: 210)), "the magnifier follows the pointer")

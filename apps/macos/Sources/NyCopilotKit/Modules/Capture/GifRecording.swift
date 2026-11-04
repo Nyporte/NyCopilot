@@ -35,7 +35,7 @@ final class GifRecording {
     private let fps: Int
     private let pixelsPerPoint: CGFloat
     private let showsCursor: Bool
-    private let border: NSWindow
+    private let border: RegionOutline
     private let bar: RecordingBar
     private let frames: FrameSink
     private var stream: SCStream?
@@ -53,8 +53,8 @@ final class GifRecording {
         self.fps = fps
         pixelsPerPoint = retina ? screen.backingScaleFactor : 1
         self.showsCursor = showsCursor
-        let frame = CaptureSession.appKitRect(region)
-        border = Self.makeBorder(around: frame)
+        let frame = ScreenGeometry.appKit(region)
+        border = RegionOutline(around: frame, look: .ready)
         bar = RecordingBar(beside: frame, on: screen, shortcut: shortcut)
         frames = FrameSink(output: FrameSink.newRecordingURL())
         bar.onRecord = { [weak self] in self?.record() }
@@ -87,7 +87,7 @@ final class GifRecording {
         guard phase == .ready else { return }
         phase = .recording
         keys = []
-        (border.contentView as? BorderView)?.state = .recording
+        border.look = .recording
         bar.showRecording()
         ticker = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -104,14 +104,9 @@ final class GifRecording {
     }
 
     private func startStream() async throws {
-        guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            throw ScreenGrabber.Failure.captureFailed
-        }
-        let content = try await ScreenGrabber.shareableContent(for: [displayID])
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
         // The outline, the bar, and pins stay out of the recording.
-        let own = ScreenGrabber.ownApplications(in: content)
-        let origin = CaptureSession.globalOrigin(of: screen)
+        let filter = try await ScreenGrabber.filter(for: screen, excludingOwnWindows: true)
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = region.offsetBy(dx: -origin.x, dy: -origin.y)
         configuration.width = max(2, Int((region.width * pixelsPerPoint).rounded()))
@@ -124,8 +119,7 @@ final class GifRecording {
         frames.begin()
         // macOS ended the stream itself: keep what was recorded rather than wait on a dead stream.
         let stream = try await CaptureStreams.shared.start(
-            "GIF recording", filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-            configuration: configuration, output: frames, queue: frames.queue) { [weak self] in self?.stop() }
+            "GIF recording", filter: filter, configuration: configuration, output: frames, queue: frames.queue) { [weak self] in self?.stop() }
         if isOver { await CaptureStreams.shared.stop(stream); return }
         self.stream = stream
     }
@@ -138,7 +132,7 @@ final class GifRecording {
 
     private func togglePause() {
         frames.setPaused(!frames.isPaused)
-        (border.contentView as? BorderView)?.state = frames.isPaused ? .paused : .recording
+        border.look = frames.isPaused ? .paused : .recording
         tick()
     }
 
@@ -175,35 +169,6 @@ final class GifRecording {
         ticker = nil
         border.orderOut(nil)
         if !keepingBar { bar.orderOut(nil) }
-    }
-
-    /// An outline just outside the region — white and dashed while ready, red while recording, red
-    /// and dashed while paused; clicks go through it.
-    static func makeBorder(around frame: NSRect) -> NSWindow {
-        let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
-        window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
-        window.contentView = BorderView()
-        return window
-    }
-
-    final class BorderView: NSView {
-        enum State { case ready, recording, paused }
-        var state = State.ready { didSet { needsDisplay = true } }
-
-        override func draw(_ dirtyRect: NSRect) {
-            let path = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
-            path.lineWidth = 2
-            if state != .recording { path.setLineDash([6, 4], count: 2, phase: 0) }
-            // White reads on any background once it has a dark edge under it.
-            if state == .ready {
-                let shadow = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
-                shadow.lineWidth = 3.5
-                NSColor.black.withAlphaComponent(0.45).setStroke()
-                shadow.stroke()
-            }
-            (state == .ready ? NSColor.white : NSColor.systemRed).setStroke()
-            path.stroke()
-        }
     }
 }
 

@@ -20,7 +20,7 @@ final class ScrollCapture {
     private let frozen: FrozenScreen
     /// Whether the frozen pixels of a global rectangle can stand in for the live screen (no pin on it).
     private let canSeed: (CGRect) -> Bool
-    private let border: NSWindow
+    private let border: RegionOutline
     private let panel: ScrollCapturePanel
     private var frames: FrameStitcher?
     private var stream: SCStream?
@@ -36,8 +36,8 @@ final class ScrollCapture {
         self.region = region
         self.frozen = frozen
         self.canSeed = canSeed
-        let frame = CaptureSession.appKitRect(region)
-        border = Self.makeBorder(around: frame)
+        let frame = ScreenGeometry.appKit(region)
+        border = RegionOutline(around: frame, look: .accent)
         panel = ScrollCapturePanel(beside: frame, on: frozen.screen)
         panel.onAction = { [weak self] action in self?.finish(action) }
         panel.onCancel = { [weak self] in self?.cancel() }
@@ -66,12 +66,13 @@ final class ScrollCapture {
 
     /// Streams the selection's columns from the top to the bottom of the scroll area.
     private func watch(_ area: CGRect) async throws {
-        let display = CGRect(origin: CaptureSession.globalOrigin(of: screen), size: screen.frame.size)
+        let display = ScreenGeometry.topLeftFrame(of: screen)
         let top = max(min(region.minY, area.minY), display.minY), bottom = min(max(region.maxY, area.maxY), display.maxY)
         let watched = CGRect(x: region.minX, y: top, width: region.width, height: bottom - top)
-        let size = pixelSize(of: watched)
-        let first = Int(((region.minY - watched.minY) * frozen.scale).rounded())
-        let frames = FrameStitcher(selection: first..<min(size.height, first + pixelSize(of: region).height))
+        let pixels = frozen.pixelRect(global: watched), selection = frozen.pixelRect(global: region)
+        let size = (width: Int(pixels.width), height: Int(pixels.height))
+        let first = Int(selection.minY - pixels.minY)
+        let frames = FrameStitcher(selection: first..<min(size.height, first + Int(selection.height)))
         frames.onUpdate = { [weak self] outcome, height, thumbnail in self?.panel.show(outcome, height: height, thumbnail: thumbnail) }
         self.frames = frames
         if canSeed(watched), let seed = crop(watched) { frames.seed(seed, size: size) }
@@ -81,27 +82,17 @@ final class ScrollCapture {
         try await stream(watched, size: size, into: frames)
     }
 
-    private func pixelSize(of rect: CGRect) -> (width: Int, height: Int) {
-        (Int((rect.width * frozen.scale).rounded()), Int((rect.height * frozen.scale).rounded()))
-    }
-
     /// Part of the frozen screen, by global rectangle.
     private func crop(_ rect: CGRect) -> CGImage? {
-        let origin = CaptureSession.globalOrigin(of: screen), size = pixelSize(of: rect)
-        return frozen.image.cropping(to: CGRect(x: ((rect.minX - origin.x) * frozen.scale).rounded(),
-                                                y: ((rect.minY - origin.y) * frozen.scale).rounded(), width: CGFloat(size.width), height: CGFloat(size.height)))
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
+        return frozen.crop(rect.offsetBy(dx: -origin.x, dy: -origin.y))
     }
 
     private func stream(_ watched: CGRect, size: (width: Int, height: Int), into frames: FrameStitcher) async throws {
-        guard let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
-            throw ScreenGrabber.Failure.captureFailed
-        }
-        // F1 just looked this up; asking again would cost a noticeable moment.
-        let content = try await ScreenGrabber.shareableContent(for: [displayID])
-        guard let display = content.displays.first(where: { $0.displayID == displayID }) else { throw ScreenGrabber.Failure.captureFailed }
-        // NyCopilot's own windows — the outline, the panel, pins — never appear in the image.
-        let own = ScreenGrabber.ownApplications(in: content)
-        let origin = CaptureSession.globalOrigin(of: screen)
+        // NyCopilot's own windows — the outline, the panel, pins — never appear in the image. F1 just
+        // looked the display up, so this doesn't ask again.
+        let filter = try await ScreenGrabber.filter(for: screen, excludingOwnWindows: true)
+        let origin = ScreenGeometry.topLeftOrigin(of: screen)
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = watched.offsetBy(dx: -origin.x, dy: -origin.y)
         configuration.width = size.width
@@ -112,8 +103,7 @@ final class ScrollCapture {
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 60)
         configuration.queueDepth = 4
         let stream = try await CaptureStreams.shared.start(
-            "scrolling capture", filter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []),
-            configuration: configuration, output: frames, queue: frames.queue) { [weak self] in
+            "scrolling capture", filter: filter, configuration: configuration, output: frames, queue: frames.queue) { [weak self] in
             // macOS ended it: keep what was stitched so far.
             self?.finish(.copy)
         }
@@ -166,25 +156,6 @@ final class ScrollCapture {
         keys = []
         border.orderOut(nil)
         panel.orderOut(nil)
-    }
-
-    /// A dashed accent outline just outside the region; clicks and scrolls go through it.
-    static func makeBorder(around frame: NSRect) -> NSWindow {
-        let window = NSWindow(contentRect: frame.insetBy(dx: -3, dy: -3), styleMask: .borderless, backing: .buffered, defer: false)
-        window.float(at: .statusBar, shadow: false, clickThrough: true, behavior: .ignoresCycle)
-        let view = BorderView()
-        window.contentView = view
-        return window
-    }
-
-    private final class BorderView: NSView {
-        override func draw(_ dirtyRect: NSRect) {
-            let path = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
-            path.lineWidth = 2
-            path.setLineDash([6, 4], count: 2, phase: 0)
-            NSColor.controlAccentColor.setStroke()
-            path.stroke()
-        }
     }
 }
 

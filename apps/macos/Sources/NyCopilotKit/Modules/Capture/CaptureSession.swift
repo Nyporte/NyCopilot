@@ -26,7 +26,7 @@ final class CaptureSession {
         // Each capture starts by outlining windows; Tab switches to elements.
         CaptureView.detectsWindows = true
         for screen in frozen {
-            let origin = Self.globalOrigin(of: screen.screen)
+            let origin = ScreenGeometry.topLeftOrigin(of: screen.screen)
             let local = recent.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
                 .filter { CGRect(origin: .zero, size: screen.screen.frame.size).contains($0) }
             let view = CaptureView(frozen: screen, recent: local, palette: palette, color: color, stroke: stroke,
@@ -69,6 +69,7 @@ final class CaptureSession {
                 self?.close()
                 self?.onCancel?()
             }
+            view.onToggleDetection = { [weak self] in self?.toggleDetection() }
             view.onSelectionStarted = { [weak self, weak view] in
                 for other in self?.views ?? [] where other !== view { other.isPassive = true }
                 view?.isPassive = false
@@ -96,6 +97,12 @@ final class CaptureSession {
         NSCursor.crosshair.set()
     }
 
+    /// Tab on any display: elements ⇄ windows, on every display at once.
+    private func toggleDetection() {
+        CaptureView.detectsWindows.toggle()
+        views.forEach { $0.detectionChanged() }
+    }
+
     /// The overlay stays up until the app you were in has the focus back, so its window never
     /// shows inactive; it takes no more clicks meanwhile.
     func close(returningFocus: Bool = true) {
@@ -109,10 +116,4 @@ final class CaptureSession {
         }
         if returningFocus, let app = returnsFocusTo { app.activate(then: hide) } else { hide() }
     }
-
-    /// A screen's top-left corner in global top-left coordinates (see ScreenGeometry).
-    static func globalOrigin(of screen: NSScreen) -> CGPoint { ScreenGeometry.topLeftOrigin(of: screen) }
-
-    /// Global top-left coordinates → AppKit screen coordinates (see ScreenGeometry).
-    static func appKitRect(_ rect: CGRect) -> NSRect { ScreenGeometry.appKit(rect) }
 }

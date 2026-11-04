@@ -1,35 +1,9 @@
 import AppKit
 @preconcurrency import ScreenCaptureKit
 
-/// One display frozen at the moment a capture starts: its pixels and the windows on it, so the
-/// selection UI works on a still image while the real screen keeps running underneath.
-/// Immutable once frozen, so it can be handed between tasks.
-struct FrozenScreen: @unchecked Sendable {
-    let screen: NSScreen
-    let image: CGImage
-    /// On-screen windows, front to back, in this screen's flipped view coordinates (top-left origin).
-    let windows: [Window]
-
-    var scale: CGFloat { CGFloat(image.width) / screen.frame.width }
-
-    /// A window's visible area and the app it belongs to, for finding the elements inside it.
-    struct Window {
-        let rect: CGRect
-        let pid: pid_t
-    }
-}
-
-/// Screen Recording permission and whole-display capture.
+/// Whole-display capture through ScreenCaptureKit, for screenshots, scrolling capture, GIF
+/// recording, and screen translation. Needs Screen Recording (see SystemAccess).
 enum ScreenGrabber {
-    static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }
-
-    /// Shows the system prompt the first time; afterwards macOS only offers System Settings.
-    static func requestPermission() {
-        if !CGRequestScreenCaptureAccess() {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-        }
-    }
-
     /// Every display, captured as close to the same instant as possible. With `hidingOwnWindows`,
     /// NyCopilot's windows (pins included) are left out of both the pixels and window detection.
     @MainActor
@@ -37,16 +11,18 @@ enum ScreenGrabber {
         let started = Date()
         let windows = visibleWindows(includingOwn: !hidingOwnWindows)
         // The display list barely changes, so the lookup made at launch (or after the last capture)
-        // usually serves; NyCopilot's windows are left out by app, which needs no fresh window list.
-        let content = try await shareableContent(for: NSScreen.screens.compactMap(displayID), hidingOwnWindows: hidingOwnWindows)
+        // usually serves, and one lookup serves every display.
+        let screens = NSScreen.screens
+        _ = try await shareableContent(for: screens.compactMap(displayID), hidingOwnWindows: hidingOwnWindows)
+        var filters: [SCContentFilter?] = []
+        for screen in screens { filters.append(try? await filter(for: screen, excludingOwnWindows: hidingOwnWindows)) }
         let looked = Date()
         // Every display at once rather than one after another.
-        let screens = NSScreen.screens, lookup = content
         let images = await withTaskGroup(of: (Int, CGImage?).self) { group in
             for (index, screen) in screens.enumerated() {
-                let target = (id: displayID(screen), size: CGSize(width: screen.frame.width * screen.backingScaleFactor,
-                                                                   height: screen.frame.height * screen.backingScaleFactor))
-                group.addTask { (index, try? await capture(target.id, pixels: target.size, hidingOwnWindows: hidingOwnWindows, content: lookup)) }
+                let filter = filters[index], size = CGSize(width: screen.frame.width * screen.backingScaleFactor,
+                                                           height: screen.frame.height * screen.backingScaleFactor)
+                group.addTask { (index, try? await capture(filter, pixels: size)) }
             }
             var images = [CGImage?](repeating: nil, count: screens.count)
             for await (index, image) in group { images[index] = image }
@@ -55,10 +31,10 @@ enum ScreenGrabber {
         let dock = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock").first?.processIdentifier
         let frozen = zip(screens, images).compactMap { (screen: NSScreen, image: CGImage?) -> FrozenScreen? in
             guard let image else { return nil }
-            let scale = CGFloat(image.width) / screen.frame.width
+            let pixels = FrozenScreen(screen: screen, image: image, windows: [])
             // The Dock reports its bar a few points off from where it draws it; the pixels say where.
             let onScreen = windows.compactMap { local($0, on: screen) }.map { (window: FrozenScreen.Window) -> FrozenScreen.Window in
-                window.pid == dock ? FrozenScreen.Window(rect: snappedToEdges(window.rect, in: image, scale: scale), pid: window.pid) : window
+                window.pid == dock ? FrozenScreen.Window(rect: snappedToEdges(window.rect, in: pixels), pid: window.pid) : window
             }
             return FrozenScreen(screen: screen, image: image, windows: onScreen)
         }
@@ -73,7 +49,7 @@ enum ScreenGrabber {
     /// Looks up the displays ahead of the first capture, so pressing the shortcut doesn't wait for it.
     @MainActor
     static func warmUp() {
-        guard hasPermission else { return }
+        guard ScreenRecording.isGranted else { return }
         Task { _ = try? await shareableContent(reusingRecent: false) }
     }
 
@@ -95,7 +71,7 @@ enum ScreenGrabber {
 
     /// A lookup for capturing these displays: the recent one if it will do, else a fresh one.
     @MainActor
-    static func shareableContent(for displays: [CGDirectDisplayID], hidingOwnWindows: Bool = true) async throws -> SCShareableContent {
+    private static func shareableContent(for displays: [CGDirectDisplayID], hidingOwnWindows: Bool) async throws -> SCShareableContent {
         let recent = try await shareableContent(reusingRecent: true)
         return serves(displays: recent.displays.map(\.displayID), applications: recent.applications.map(\.processID),
                       for: displays, hidingOwnWindows: hidingOwnWindows)
@@ -111,44 +87,38 @@ enum ScreenGrabber {
         displays.allSatisfy(known.contains) && (!hidingOwnWindows || applications.contains(own))
     }
 
-    /// NyCopilot as a lookup lists it, for a filter that leaves its windows out.
-    static func ownApplications(in content: SCShareableContent) -> [SCRunningApplication] {
-        content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
+    /// All of `screen`'s display, without NyCopilot's own windows (pins included) when
+    /// `excludingOwnWindows`. They're left out by app rather than by window, so windows opened since
+    /// the lookup are left out too. A lookup that doesn't know the display is made afresh.
+    @MainActor
+    static func filter(for screen: NSScreen, excludingOwnWindows: Bool) async throws -> SCContentFilter {
+        guard let id = displayID(screen) else { throw Failure.captureFailed }
+        let content = try await shareableContent(for: [id], hidingOwnWindows: excludingOwnWindows)
+        guard let display = content.displays.first(where: { $0.displayID == id }) else { throw Failure.captureFailed }
+        let own = excludingOwnWindows ? content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier } : []
+        return SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
     }
 
     /// One display as it is now, without any NyCopilot window, `pixelsPerPoint` pixels per point:
     /// small for spotting changes, full for reading text. The cursor is left out.
     @MainActor
-    static func snapshot(of screen: NSScreen, pixelsPerPoint: CGFloat) async throws -> CGImage? {
-        guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { return nil }
-        let width = Int((screen.frame.width * pixelsPerPoint).rounded()), height = Int((screen.frame.height * pixelsPerPoint).rounded())
-        let content = try await shareableContent(for: [id])
-        guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
-        // By app rather than by window, so windows opened since the lookup are left out too.
-        let own = ownApplications(in: content)
+    static func snapshot(of screen: NSScreen, pixelsPerPoint: CGFloat) async throws -> CGImage {
         let configuration = SCStreamConfiguration()
-        configuration.width = width
-        configuration.height = height
+        configuration.width = Int((screen.frame.width * pixelsPerPoint).rounded())
+        configuration.height = Int((screen.frame.height * pixelsPerPoint).rounded())
         configuration.showsCursor = false
-        return try await SCScreenshotManager.captureImage(
-            contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
+        let filter = try await filter(for: screen, excludingOwnWindows: true)
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }
 
-    private static func capture(_ id: CGDirectDisplayID?, pixels: CGSize, hidingOwnWindows: Bool,
-                                content: SCShareableContent) async throws -> CGImage? {
-        guard let id else { return nil }
-        do {
-            guard let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
-            // By app rather than by window, so pins opened since the lookup are left out too.
-            let own = hidingOwnWindows ? ownApplications(in: content) : []
-            let configuration = SCStreamConfiguration()
-            configuration.width = Int(pixels.width)
-            configuration.height = Int(pixels.height)
-            configuration.showsCursor = false
-            configuration.captureResolution = .best
-            return try await SCScreenshotManager.captureImage(
-                contentFilter: SCContentFilter(display: display, excludingApplications: own, exceptingWindows: []), configuration: configuration)
-        }
+    private static func capture(_ filter: SCContentFilter?, pixels: CGSize) async throws -> CGImage? {
+        guard let filter else { return nil }
+        let configuration = SCStreamConfiguration()
+        configuration.width = Int(pixels.width)
+        configuration.height = Int(pixels.height)
+        configuration.showsCursor = false
+        configuration.captureResolution = .best
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }
 
     /// Normal windows, menus, menu bar items, and the Dock, front to back, in global top-left
@@ -157,20 +127,14 @@ enum ScreenGrabber {
     private static func visibleWindows(includingOwn: Bool) -> [FrozenScreen.Window] {
         let own = ProcessInfo.processInfo.processIdentifier
         let displays = NSScreen.screens.map(ScreenGeometry.topLeftFrame)
-        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         var windows: [FrozenScreen.Window] = []
         var dock: FrozenScreen.Window?
-        for info in list {
-            let pid = info[kCGWindowOwnerPID as String] as? pid_t ?? 0
-            let layer = info[kCGWindowLayer as String] as? Int ?? 0
-            guard includingOwn || pid != own,
-                  (info[kCGWindowAlpha as String] as? Double ?? 1) > 0.05,
-                  layer < Int(CGWindowLevelForKey(.screenSaverWindow)),
-                  let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
-                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+        for info in windowList() {
+            let pid = info.pid, layer = info.layer, rect = info.bounds
+            guard includingOwn || pid != own, info.alpha > 0.05, layer < Int(CGWindowLevelForKey(.screenSaverWindow)),
                   rect.width >= 8, rect.height >= 8 else { continue }
             if layer != 0, displays.contains(where: { $0.intersection(rect).width * $0.intersection(rect).height >= $0.width * $0.height * 0.9 }) {
-                if info[kCGWindowOwnerName as String] as? String == "Dock" { dock = dockBar(pid: pid).map { .init(rect: $0, pid: pid) } }
+                if info.owner == "Dock" { dock = dockBar(pid: pid).map { .init(rect: $0, pid: pid) } }
                 continue
             }
             // The Dock's own bar sits above normal windows, wherever it fell in the list.
@@ -181,12 +145,33 @@ enum ScreenGrabber {
         return windows
     }
 
+    /// One on-screen window as the window server lists it, in global top-left coordinates.
+    struct ListedWindow {
+        let bounds: CGRect
+        let pid: pid_t
+        let layer: Int
+        let alpha: Double
+        let owner: String?
+    }
+
+    /// Every on-screen window but the desktop's, front to back.
+    static func windowList() -> [ListedWindow] {
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        return list.compactMap { info in
+            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary) else { return nil }
+            return ListedWindow(bounds: rect, pid: info[kCGWindowOwnerPID as String] as? pid_t ?? 0, layer: info[kCGWindowLayer as String] as? Int ?? 0,
+                                alpha: info[kCGWindowAlpha as String] as? Double ?? 1, owner: info[kCGWindowOwnerName as String] as? String)
+        }
+    }
+
     /// `rect` (view points) moved by up to 12 points so its edges sit on the strongest edges in the
     /// image: rows where brightness jumps along the top and bottom, columns along the sides. Kept as
     /// it is unless an offset fits clearly better.
-    static func snappedToEdges(_ rect: CGRect, in image: CGImage, scale: CGFloat) -> CGRect {
+    static func snappedToEdges(_ rect: CGRect, in frozen: FrozenScreen) -> CGRect {
+        let image = frozen.image, scale = frozen.scale
         let reach = 12 * scale
-        let pixels = CGRect(x: rect.minX * scale, y: rect.minY * scale, width: rect.width * scale, height: rect.height * scale)
+        let pixels = frozen.pixelRect(local: rect)
         let band = pixels.insetBy(dx: -reach - 1, dy: -reach - 1).integral
             .intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
         guard band.width > 4, band.height > 4, let crop = image.cropping(to: band) else { return rect }
@@ -232,13 +217,9 @@ enum ScreenGrabber {
 
     /// The Dock's visible bar, from Accessibility (its window covers the whole screen).
     private static func dockBar(pid: pid_t) -> CGRect? {
-        guard AXIsProcessTrusted() else { return nil }
-        let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.2)
-        var children: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXChildrenAttribute as CFString, &children) == .success,
-              let list = (children as? [AXUIElement])?.first else { return nil }
-        return AccessibilityFrame.of(list)
+        guard AXIsProcessTrusted(), let bar = (AX.attribute(AX.application(pid, timeout: 0.2), kAXChildrenAttribute) as? [AXUIElement])?.first,
+              let frame = AX.frame(of: bar), frame.width > 0, frame.height > 0 else { return nil }
+        return frame
     }
 
     /// Global top-left coordinates → this screen's flipped view coordinates, clipped to the screen.

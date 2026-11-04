@@ -79,7 +79,7 @@ final class HiddenItemsBar {
     /// Each item's window as it looks in the menu bar, at the screen's resolution, all at once;
     /// none without Screen Recording (never asked for here: the bar falls back to app icons).
     static func images(of items: [ItemFinder.Item], scale: CGFloat) async -> [CGWindowID: CGImage] {
-        guard ScreenGrabber.hasPermission, !items.isEmpty else { return [:] }
+        guard ScreenRecording.isGranted, !items.isEmpty else { return [:] }
         let started = Date()
         // Off-screen windows too: hidden icons are off screen.
         guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false) else { return [:] }

@@ -7,7 +7,7 @@ import AppKit
 @MainActor
 final class PinWindow: NSPanel {
     var onSave: ((NSImage) -> Void)?
-    /// R, I, A, or P on the pin: translate its text, keep it in the inbox, ask about it, pin a copy.
+    /// R, I, or A on the pin: translate its text, keep it in the inbox, ask about it.
     var onVerb: ((Verb, PinWindow) -> Void)?
     var onClose: ((PinWindow) -> Void)?
     var onCloseAll: (() -> Void)?

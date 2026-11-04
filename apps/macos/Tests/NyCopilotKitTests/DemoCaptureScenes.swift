@@ -110,8 +110,8 @@ extension DemoTests {
         director.type("s", keyCode: 1, to: overlay)
         let region = try XCTUnwrap(picked)
 
-        let frame = CaptureSession.appKitRect(region)
-        let border = ScrollCapture.makeBorder(around: frame)
+        let frame = ScreenGeometry.appKit(region)
+        let border = RegionOutline(around: frame, look: .accent)
         border.orderFrontRegardless()
         let panel = ScrollCapturePanel(beside: frame, on: director.screen)
         panel.present()
@@ -192,8 +192,8 @@ extension DemoTests {
         director.type("g", keyCode: 5, to: overlay)
         let region = try XCTUnwrap(picked)
 
-        let frame = CaptureSession.appKitRect(region)
-        let border = GifRecording.makeBorder(around: frame)
+        let frame = ScreenGeometry.appKit(region)
+        let border = RegionOutline(around: frame, look: .ready)
         border.orderFrontRegardless()
         let bar = RecordingBar(beside: frame, on: director.screen, shortcut: "F1")
         bar.orderFrontRegardless()
@@ -207,7 +207,7 @@ extension DemoTests {
         director.click()
         record.performClick(nil)
         XCTAssertTrue(recording)
-        (border.contentView as? GifRecording.BorderView)?.state = .recording
+        border.look = .recording
         bar.showRecording()
 
         // The clip, from the screen, as the stream would record it.
@@ -320,7 +320,7 @@ extension DemoTests {
         director.press("P")
         director.type("p", keyCode: 35, to: overlay)
         let capture = try XCTUnwrap(pinned)
-        let pin = PinWindow(image: capture.image, frame: CaptureSession.appKitRect(capture.region), shadow: true)
+        let pin = PinWindow(image: capture.image, frame: ScreenGeometry.appKit(capture.region), shadow: true)
         pin.orderFrontRegardless()
         director.wait(0.9)
 

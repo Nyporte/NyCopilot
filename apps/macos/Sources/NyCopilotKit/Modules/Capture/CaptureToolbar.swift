@@ -179,6 +179,7 @@ final class CaptureToolbar: NSView {
         let label = Design.label("\(Int(value))", size: 11, weight: .medium, color: .white)
         label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         label.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        // The slider finds its value label by its identifier.
         slider.identifier = NSUserInterfaceItemIdentifier(tip)
         valueLabels[tip] = label
         return Design.hstack([Design.symbol(symbol, size: 11, color: .white.withAlphaComponent(0.7)), slider, label], spacing: 4)
@@ -244,14 +245,18 @@ final class CaptureToolbar: NSView {
     @objc private func strokeChanged(_ sender: NSSlider) {
         let width = CGFloat(sender.integerValue)
         selectedStroke = width
-        valueLabels[sender.identifier?.rawValue ?? ""]?.stringValue = "\(Int(width))"
+        showValue(of: sender)
         onStroke?(width)
     }
 
     @objc private func radiusChanged(_ sender: NSSlider) {
         style.cornerRadius = CGFloat(sender.integerValue)
-        valueLabels[L("Corner radius")]?.stringValue = "\(sender.integerValue)"
+        showValue(of: sender)
         onStyle?(style)
+    }
+
+    private func showValue(of slider: NSSlider) {
+        valueLabels[slider.identifier?.rawValue ?? ""]?.stringValue = "\(slider.integerValue)"
     }
 
     @objc private func fillChanged(_ sender: NSSegmentedControl) {

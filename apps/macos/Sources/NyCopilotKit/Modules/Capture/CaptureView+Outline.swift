@@ -34,7 +34,7 @@ extension CaptureView {
         let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
                 guard let self else { timer.invalidate(); return }
-                self.refreshDynamic()
+                self.updateChrome()
                 let now = CACurrentMediaTime()
                 let gliding = self.glide.map { now - $0.start < Self.glideDuration } ?? false
                 let growing = self.handleGrowth.values.contains { now - $0.start < Self.growDuration }
@@ -95,15 +95,11 @@ extension CaptureView {
 
     /// The pixel size of `measuring` (by default `rect` itself), and where its plate goes next to `rect`.
     func sizeLabel(for rect: CGRect, measuring measured: CGRect? = nil) -> (text: String, plate: CGRect) {
-        let measured = measured ?? rect
-        let text = "\(Int(measured.width * frozen.scale)) × \(Int(measured.height * frozen.scale))"
+        let pixels = frozen.pixelRect(local: measured ?? rect)
+        let text = "\(Int(pixels.width)) × \(Int(pixels.height))"
         let size = (text as NSString).size(withAttributes: CaptureLabel.attributes)
         var origin = CGPoint(x: rect.minX, y: rect.minY - size.height - 10)
         if origin.y < 4 { origin.y = rect.minY + 6; origin.x += 6 }
         return (text, CGRect(x: origin.x, y: origin.y, width: ceil(size.width) + 12, height: ceil(size.height) + 6))
     }
-
-    /// A pixel-exact zoom of the area under the pointer with a pixel grid, then the pointer's position,
-    /// the selection size while dragging, the color in HEX and RGB (the format C copies is
-    /// highlighted), and the keys that act on it.
 }

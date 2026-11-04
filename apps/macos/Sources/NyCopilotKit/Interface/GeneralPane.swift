@@ -117,7 +117,7 @@ final class GeneralPane: SettingsPane {
         let trusted = Accessibility.isTrusted
         accessBadge.set(trusted ? L("Allowed") : L("Not allowed"), color: trusted ? .systemGreen : .systemOrange)
         accessButton.isHidden = trusted
-        let recording = ScreenGrabber.hasPermission
+        let recording = ScreenRecording.isGranted
         recordingBadge.set(recording ? L("Allowed") : L("Not allowed"), color: recording ? .systemGreen : .systemOrange)
         recordingButton.isHidden = recording
     }
@@ -145,7 +145,7 @@ final class GeneralPane: SettingsPane {
     @objc private func restartApp() { (NSApp.delegate as? AppDelegate)?.restart() }
 
     @objc private func requestAccess() { Accessibility.requestAccess() }
-    @objc private func requestRecording() { ScreenGrabber.requestPermission() }
+    @objc private func requestRecording() { ScreenRecording.requestAccess() }
 
     @objc private func toggleModule(_ sender: NSSwitch) {
         guard let id = sender.identifier?.rawValue else { return }

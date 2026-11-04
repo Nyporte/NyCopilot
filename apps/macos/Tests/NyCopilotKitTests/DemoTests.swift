@@ -68,7 +68,7 @@ final class DemoTests: XCTestCase {
         director.press("P")
         director.type("p", keyCode: 35, to: overlay)
         let capture = try XCTUnwrap(pinned)
-        let pin = PinWindow(image: capture.image, frame: CaptureSession.appKitRect(capture.region), shadow: true)
+        let pin = PinWindow(image: capture.image, frame: ScreenGeometry.appKit(capture.region), shadow: true)
         pin.orderFrontRegardless()
         director.wait(0.45)
 

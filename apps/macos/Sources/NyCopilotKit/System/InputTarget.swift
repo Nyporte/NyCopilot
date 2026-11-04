@@ -41,36 +41,31 @@ final class InputTarget: @unchecked Sendable {
     static func capture(pid: pid_t) async throws -> InputTarget {
         guard AXIsProcessTrusted() else { throw Failure.permissionRequired }
         return try await Task.detached(priority: .userInitiated) {
-            let app = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(app, 0.5)
+            let app = AX.application(pid, timeout: 0.5)
             let appName = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
-            var element = focusedElement(in: app)
-            if readable(element) == nil, exposeWebContent(app, pid: pid) {
+            var element = AX.focusedElement(in: app)
+            if readable(element) == nil, AX.exposeWebContent(app) {
                 // Chromium builds the tree on request, a moment later — only the first time it's
                 // asked; after that, a focused element that isn't a text field simply isn't one.
                 for _ in 0..<10 where readable(element) == nil {
                     try? await Task.sleep(nanoseconds: 50_000_000)
-                    element = focusedElement(in: app)
+                    element = AX.focusedElement(in: app)
                 }
             }
-            if let element { AXUIElementSetMessagingTimeout(element, 0.5) }
-            let role = element.flatMap { attribute($0, kAXRoleAttribute) as? String }
-            guard element.flatMap({ attribute($0, kAXSubroleAttribute) as? String }) != kAXSecureTextFieldSubrole else {
+            if let element { AX.setTimeout(element, 0.5) }
+            let role = element.flatMap { AX.string($0, kAXRoleAttribute) }
+            guard element.flatMap({ AX.string($0, kAXSubroleAttribute) }) != kAXSecureTextFieldSubrole else {
                 Diagnostics.note("paste", "\(appName): password field, left alone")
                 throw Failure.secureField
             }
-            let window = element.flatMap { elementAttribute($0, kAXWindowAttribute) }
-            if let window { AXUIElementSetMessagingTimeout(window, 0.5) }
+            let window = element.flatMap { AX.element($0, kAXWindowAttribute) }
+            if let window { AX.setTimeout(window, 0.5) }
             guard let element, let original = readable(element) else {
                 Diagnostics.note("paste", "\(appName): field can’t be read (role \(role ?? "none")); will paste once the app is back")
                 return InputTarget(pid: pid, element: element, window: window, original: nil, frame: nil, caret: nil)
             }
             // AX uses screen coordinates with a top-left origin; conversion happens in the UI.
-            var position = CGPoint.zero
-            var size = CGSize.zero
-            let hasFrame = readAXValue(element, name: kAXPositionAttribute, type: .cgPoint, into: &position)
-                && readAXValue(element, name: kAXSizeAttribute, type: .cgSize, into: &size)
-            let frame = hasFrame ? CGRect(origin: position, size: size) : nil
+            let frame = AX.frame(of: element)
             let caret = locateCaret(element, app: app, range: original.range, text: original.value as NSString, frame: frame, appName: appName)
             Diagnostics.note("paste", "\(appName): found \(role ?? "?")\(caret == nil ? ", no caret position" : "")"
                              + (frame == nil ? ", no frame" : ""))
@@ -90,55 +85,46 @@ final class InputTarget: @unchecked Sendable {
     /// containers, through plain text ranges or (in web content) text markers.
     static func selection(pid: pid_t) async -> Selection {
         await Task.detached(priority: .userInitiated) {
-            let app = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(app, 0.5)
-            var current = focusedElement(in: app)
+            let app = AX.application(pid, timeout: 0.5)
+            var current = AX.focusedElement(in: app)
             var answered = false
             for _ in 0..<4 {
                 guard let element = current else { break }
-                AXUIElementSetMessagingTimeout(element, 0.5)
-                if let text = attribute(element, kAXSelectedTextAttribute) as? String {
+                AX.setTimeout(element, 0.5)
+                if let text = AX.string(element, kAXSelectedTextAttribute) {
                     answered = true
                     if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         // Web content often answers only through text markers.
-                        let bounds = selectedRange(element).flatMap { range -> CGRect? in
-                            var range = range
-                            return AXValueCreate(.cfRange, &range).flatMap { rect(element, kAXBoundsForRangeParameterizedAttribute, $0) }
-                        } ?? attribute(element, "AXSelectedTextMarkerRange").flatMap { rect(element, "AXBoundsForTextMarkerRange", $0) }
+                        let bounds = selectedRange(element).flatMap { onScreen(AX.rect(element, kAXBoundsForRangeParameterizedAttribute, range: $0)) }
+                            ?? AX.attribute(element, "AXSelectedTextMarkerRange").flatMap { onScreen(AX.rect(element, "AXBoundsForTextMarkerRange", $0)) }
                         return .text(text, bounds: bounds)
                     }
                 }
-                if let markers = attribute(element, "AXSelectedTextMarkerRange") {
+                if let markers = AX.attribute(element, "AXSelectedTextMarkerRange") {
                     answered = true
-                    var result: CFTypeRef?
-                    if AXUIElementCopyParameterizedAttributeValue(element, "AXStringForTextMarkerRange" as CFString, markers, &result) == .success,
-                       let text = result as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        return .text(text, bounds: rect(element, "AXBoundsForTextMarkerRange", markers))
+                    if let text = AX.parameterized(element, "AXStringForTextMarkerRange", markers) as? String,
+                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        return .text(text, bounds: onScreen(AX.rect(element, "AXBoundsForTextMarkerRange", markers)))
                     }
                 }
-                current = elementAttribute(element, kAXParentAttribute)
+                current = AX.parent(of: element)
             }
             return answered ? .nothing : .unknown
         }.value
     }
 
-    /// A parameterized attribute that answers with an on-screen rectangle.
-    private static func rect(_ element: AXUIElement, _ name: String, _ parameter: CFTypeRef) -> CGRect? {
-        var result: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element, name as CFString, parameter, &result) == .success,
-              let result, CFGetTypeID(result) == AXValueGetTypeID() else { return nil }
-        var rect = CGRect.zero
-        guard AXValueGetValue(unsafeBitCast(result, to: AXValue.self), .cgRect, &rect),
-              rect.width > 0, rect.height > 0, rect.minX.isFinite, rect.minY.isFinite else { return nil }
+    /// A rectangle an app reported, if it has an area and a place on screen.
+    private static func onScreen(_ rect: CGRect?) -> CGRect? {
+        guard let rect, rect.width > 0, rect.height > 0, rect.minX.isFinite, rect.minY.isFinite else { return nil }
         return rect
     }
 
     /// An enabled text field's text and selection, if the element is one.
     private static func readable(_ element: AXUIElement?) -> (value: String, range: CFRange)? {
         guard let element,
-              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(attribute(element, kAXRoleAttribute) as? String ?? ""),
-              attribute(element, kAXEnabledAttribute) as? Bool != false,
-              let value = attribute(element, kAXValueAttribute) as? String,
+              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(AX.string(element, kAXRoleAttribute) ?? ""),
+              AX.attribute(element, kAXEnabledAttribute) as? Bool != false,
+              let value = AX.string(element, kAXValueAttribute),
               value.utf8.count <= 1024 * 1024,
               let range = selectedRange(element),
               TextInsertion.replacing(value, range: NSRange(location: range.location, length: range.length), with: "") != nil else {
@@ -146,25 +132,6 @@ final class InputTarget: @unchecked Sendable {
         }
         return (value, range)
     }
-
-    /// Electron apps (Claude, Slack, VS Code…) keep their web content out of Accessibility until a
-    /// client asks for it. True when this request is what exposed it, so it's worth waiting for;
-    /// a process asked before has had its tree all along.
-    private static func exposeWebContent(_ app: AXUIElement, pid: pid_t) -> Bool {
-        exposedLock.lock()
-        let first = exposed.insert(pid).inserted
-        exposedLock.unlock()
-        guard first else { return false }
-        let accepted = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success
-        let electron = NSRunningApplication(processIdentifier: pid)?.bundleURL.map {
-            FileManager.default.fileExists(atPath: $0.appendingPathComponent("Contents/Frameworks/Electron Framework.framework").path)
-        } ?? false
-        return accepted || electron
-    }
-
-    /// Processes already asked to expose their web content.
-    nonisolated(unsafe) private static var exposed: Set<pid_t> = []
-    private static let exposedLock = NSLock()
 
     /// The field is still there to paste into. Its text may have changed meanwhile — apps update
     /// drafts, and the paste goes wherever the cursor is — so only its disappearance stops a paste.
@@ -176,7 +143,7 @@ final class InputTarget: @unchecked Sendable {
 
     private func validateSnapshot() throws {
         guard let element, original != nil else { return }
-        guard Self.attribute(element, kAXValueAttribute) is String else { throw Failure.targetChanged }
+        guard AX.string(element, kAXValueAttribute) != nil else { throw Failure.targetChanged }
     }
 
     /// Activate and verify the field; no keystroke is sent unless the app is back in front with the
@@ -244,7 +211,7 @@ final class InputTarget: @unchecked Sendable {
     /// text itself changed.
     private func restoreSelection() async {
         await Task.detached(priority: .userInitiated) { [self] in
-            guard let element, let original, Self.attribute(element, kAXValueAttribute) as? String == original.value,
+            guard let element, let original, AX.string(element, kAXValueAttribute) == original.value,
                   let range = Self.selectedRange(element),
                   range.location != original.range.location || range.length != original.range.length else { return }
             var wanted = original.range
@@ -258,14 +225,12 @@ final class InputTarget: @unchecked Sendable {
     private func isFocused() async -> Bool {
         guard let element else { return true }
         return await Task.detached(priority: .userInitiated) { [self] in
-            let app = AXUIElementCreateApplication(processIdentifier)
-            AXUIElementSetMessagingTimeout(app, 0.5)
-            var focused = Self.focusedElement(in: app)
+            var focused = AX.focusedElement(in: AX.application(processIdentifier, timeout: 0.5))
             for _ in 0..<8 {
                 guard let current = focused else { return false }
                 if CFEqual(current, element) { return true }
-                focused = Self.elementAttribute(current, kAXParentAttribute)
-                if let focused { AXUIElementSetMessagingTimeout(focused, 0.5) }
+                focused = AX.parent(of: current)
+                if let focused { AX.setTimeout(focused, 0.5) }
             }
             return false
         }.value
@@ -335,24 +300,6 @@ final class InputTarget: @unchecked Sendable {
         return text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? text : nil
     }
 
-    /// Bound every attribute call through the timeout already set on the AX element.
-    private static func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else { return nil }
-        return value
-    }
-
-    /// Check CF type identities before bridging values returned by another process.
-    private static func focusedElement(in app: AXUIElement) -> AXUIElement? {
-        elementAttribute(app, kAXFocusedUIElementAttribute)
-    }
-
-    /// Window, focus, and parent references are bridged only after validating the CF type.
-    private static func elementAttribute(_ element: AXUIElement, _ name: String) -> AXUIElement? {
-        guard let value = attribute(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeBitCast(value, to: AXUIElement.self)
-    }
-
     /// Where the cursor is drawn, trying in turn: the standard range bounds, WebKit/Chromium text
     /// markers, and — for Electron apps, which build their accessibility tree only on request — both
     /// again after asking for it. Results outside the field are rejected as bogus.
@@ -369,20 +316,20 @@ final class InputTarget: @unchecked Sendable {
         }
         if let rect = plausible(caretBounds(element, range: range, text: text), "range bounds") { return rect }
         if let rect = plausible(markerBounds(element), "text markers") { return rect }
-        guard AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success else { return nil }
+        guard AX.requestWebContent(app) else { return nil }
         return plausible(caretBounds(element, range: range, text: text), "range bounds (Electron)")
             ?? plausible(markerBounds(element), "text markers (Electron)")
     }
 
     /// Chromium and WebKit describe the selection with opaque text markers rather than plain ranges.
     private static func markerBounds(_ element: AXUIElement) -> CGRect? {
-        guard let markers = attribute(element, "AXSelectedTextMarkerRange") else { return nil }
-        var result: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(element, "AXBoundsForTextMarkerRange" as CFString, markers, &result) == .success,
-              let result, CFGetTypeID(result) == AXValueGetTypeID() else { return nil }
-        var rect = CGRect.zero
-        guard AXValueGetValue(unsafeBitCast(result, to: AXValue.self), .cgRect, &rect),
-              rect.height > 0, rect.height < 200, rect.minX.isFinite, rect.minY.isFinite else { return nil }
+        guard let markers = AX.attribute(element, "AXSelectedTextMarkerRange") else { return nil }
+        return lineSized(AX.rect(element, "AXBoundsForTextMarkerRange", markers))
+    }
+
+    /// A rectangle no taller than a line of text could be, on screen.
+    private static func lineSized(_ rect: CGRect?) -> CGRect? {
+        guard let rect, rect.height > 0, rect.height < 200, rect.minX.isFinite, rect.minY.isFinite else { return nil }
         return rect
     }
 
@@ -403,33 +350,14 @@ final class InputTarget: @unchecked Sendable {
             candidates.append((CFRange(location: range.location, length: 1), false))
         }
         for (candidate, atEnd) in candidates {
-            var query = candidate
-            guard let parameter = AXValueCreate(.cfRange, &query) else { continue }
-            var result: CFTypeRef?
-            guard AXUIElementCopyParameterizedAttributeValue(element, kAXBoundsForRangeParameterizedAttribute as CFString,
-                                                             parameter, &result) == .success,
-                  let result, CFGetTypeID(result) == AXValueGetTypeID() else { continue }
-            var rect = CGRect.zero
-            guard AXValueGetValue(unsafeBitCast(result, to: AXValue.self), .cgRect, &rect),
-                  rect.height > 0, rect.height < 200, rect.minX.isFinite, rect.minY.isFinite else { continue }
+            guard let rect = lineSized(AX.rect(element, kAXBoundsForRangeParameterizedAttribute, range: candidate)) else { continue }
             return atEnd ? CGRect(x: rect.maxX, y: rect.minY, width: 1, height: rect.height) : rect
         }
         return nil
     }
 
     /// AX text ranges are UTF-16 offsets, matching NSString and NSRange semantics.
-    private static func selectedRange(_ element: AXUIElement) -> CFRange? {
-        var range = CFRange()
-        return readAXValue(element, name: kAXSelectedTextRangeAttribute, type: .cfRange, into: &range) ? range : nil
-    }
-
-    /// Decode typed AX geometry and range values without unchecked pointer conversions.
-    private static func readAXValue<T>(_ element: AXUIElement, name: String, type: AXValueType, into output: inout T) -> Bool {
-        guard let value = attribute(element, name), CFGetTypeID(value) == AXValueGetTypeID() else { return false }
-        let axValue = unsafeBitCast(value, to: AXValue.self)
-        guard AXValueGetType(axValue) == type else { return false }
-        return withUnsafeMutablePointer(to: &output) { AXValueGetValue(axValue, type, $0) }
-    }
+    private static func selectedRange(_ element: AXUIElement) -> CFRange? { AX.value(element, kAXSelectedTextRangeAttribute) }
 
     /// On any uncertainty the result remains available for manual copy instead of another write.
     enum Failure: LocalizedError {

@@ -4,13 +4,26 @@ import AppKit
 extension CaptureView {
     static let magnifierZoom: CGFloat = 8, magnifierSpan: CGFloat = 17
 
+    /// What the magnifier shows at one pointer position, worked out once per move and kept by the
+    /// magnifier view until the next: its lines, the panel they need, and where it all goes.
+    struct MagnifierLayout {
+        let pointer: CGPoint
+        let lines: [(text: NSAttributedString, swatch: NSColor?)]
+        let panel: CGSize
+        let frame: CGRect
+    }
+
+    func magnifierLayout(at point: CGPoint) -> MagnifierLayout {
+        let (lines, panel) = magnifierLines(at: point)
+        return MagnifierLayout(pointer: point, lines: lines, panel: panel, frame: magnifierFrame(at: point, panel: panel))
+    }
+
     /// The magnifier's lines and the size of the panel under the zoom.
     func magnifierLines(at point: CGPoint) -> (lines: [(text: NSAttributedString, swatch: NSColor?)], panel: CGSize) {
         let zoom = Self.magnifierZoom, span = Self.magnifierSpan
         let box = CGSize(width: span * zoom, height: span * zoom)
-        let scale = frozen.scale
         // Whole pixels around the pointer, so every cell in the grid is exactly one screen pixel.
-        let center = CGPoint(x: floor(point.x * scale), y: floor(point.y * scale))
+        let center = frozen.pixel(at: point).origin
 
         // The lines under the zoom, measured first so the panel fits the longest one.
         let mono = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
@@ -25,7 +38,8 @@ extension CaptureView {
         var lines: [(text: NSAttributedString, swatch: NSColor?)] = []
         lines.append((text([("X \(Int(center.x))   Y \(Int(center.y))", mono, .white)]), nil))
         if isSizing, let selection {
-            lines.append((text([("\(Int((selection.width * scale).rounded())) × \(Int((selection.height * scale).rounded())) px", mono, .white)]), nil))
+            let pixels = frozen.pixelRect(local: selection)
+            lines.append((text([("\(Int(pixels.width)) × \(Int(pixels.height)) px", mono, .white)]), nil))
         }
         let swatch = color(at: point)
         if let swatch {
@@ -54,9 +68,8 @@ extension CaptureView {
     static let padding: CGFloat = 9, swatchIndent: CGFloat = 17, lineHeight: CGFloat = 15
 
     /// Beside the pointer, flipped to the other side near a screen edge: the zoom and the panel under it.
-    func magnifierFrame(at point: CGPoint, panel: CGSize? = nil) -> CGRect {
+    func magnifierFrame(at point: CGPoint, panel: CGSize) -> CGRect {
         let side = Self.magnifierSpan * Self.magnifierZoom
-        let panel = panel ?? magnifierLines(at: point).panel
         let width = max(side, panel.width), height = side + 4 + panel.height
         var origin = CGPoint(x: point.x + 20, y: point.y + 20)
         if origin.x + width > bounds.maxX - 8 { origin.x = point.x - 20 - width }
@@ -65,15 +78,16 @@ extension CaptureView {
         return CGRect(origin: origin, size: CGSize(width: width, height: height))
     }
 
-    /// Draws the magnifier where `magnifierFrame` puts it, in this view's coordinates.
-    func drawMagnifier(at point: CGPoint) {
+    /// Draws the magnifier, in this view's coordinates: a pixel-exact zoom of the area under the
+    /// pointer with a pixel grid, then the pointer's position, the selection's size while dragging,
+    /// the color in HEX and RGB (the format C copies highlighted), and the keys that act on it.
+    func drawMagnifier(_ layout: MagnifierLayout) {
         let zoom = Self.magnifierZoom, span = Self.magnifierSpan
         let box = CGSize(width: span * zoom, height: span * zoom)
-        let scale = frozen.scale
-        let center = CGPoint(x: floor(point.x * scale), y: floor(point.y * scale))
-        let (lines, panel) = magnifierLines(at: point)
+        let center = frozen.pixel(at: layout.pointer).origin
+        let lines = layout.lines, panel = layout.panel
         let padding = Self.padding, swatchIndent = Self.swatchIndent, lineHeight = Self.lineHeight
-        let frame = CGRect(origin: magnifierFrame(at: point, panel: panel).origin, size: box)
+        let frame = CGRect(origin: layout.frame.origin, size: box)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         let half = floor(span / 2)
         let source = CGRect(x: center.x - half, y: center.y - half, width: span, height: span)
@@ -136,9 +150,7 @@ extension CaptureView {
     // MARK: Pixels
 
     func color(at point: CGPoint) -> NSColor? {
-        let scale = frozen.scale
-        let pixel = CGRect(x: floor(point.x * scale), y: floor(point.y * scale), width: 1, height: 1)
-        guard let crop = frozen.image.cropping(to: pixel), let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        guard let crop = frozen.image.cropping(to: frozen.pixel(at: point)), let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
         var bytes = [UInt8](repeating: 0, count: 4)
         guard let context = CGContext(data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }

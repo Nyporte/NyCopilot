@@ -2,7 +2,8 @@ import AppKit
 import ApplicationServices
 import ServiceManagement
 
-/// Accessibility is the one permission NyCopilot needs: to find the focused field and paste into it.
+/// Accessibility: to find the focused field and paste into it, read what's selected, and find and
+/// move other apps' windows. One of the two permissions NyCopilot asks for; see ScreenRecording.
 enum Accessibility {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
@@ -10,6 +11,18 @@ enum Accessibility {
     static func requestAccess() {
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+    }
+}
+
+/// Screen Recording: to capture the screen, record GIFs, and translate what's on screen.
+enum ScreenRecording {
+    static var isGranted: Bool { CGPreflightScreenCaptureAccess() }
+
+    /// Shows the system prompt the first time; afterwards macOS only offers System Settings.
+    static func requestAccess() {
+        if !CGRequestScreenCaptureAccess() {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        }
     }
 }
 
