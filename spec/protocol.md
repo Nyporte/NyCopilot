@@ -21,11 +21,16 @@ Branch on `code`, not on `message`.
 | `not_found` | The record no longer exists. |
 | `storage` | The database could not be read or written. |
 | `cancelled` | The request was cancelled with `core.cancel`. |
-| `provider_not_configured` | `llm.endpoint` or `llm.model` is empty. |
+| `provider_not_configured` | No model is connected (`llm.endpoint` or `llm.model` is empty), or no translation service is set up. |
+| `unsupported_language` | None of the translation services that are set up offers the target language. |
 | `empty_input`, `input_too_large`, `invalid_key` | Request rejected before any network access. |
 | `http_status` | Non-2xx reply; `status` holds the code. Never retried. |
 | `network` | DNS, connection, TLS, or timeout failure. |
 | `invalid_response`, `empty_response`, `response_too_large`, `truncated_response` | Unusable reply. |
+| `model_error` | A streamed reply reported an error from the model. |
+| `google_access`, `google_error` | The Google Translate web app needs “Who has access: Anyone”, or reported its own error. |
+| `volcengine_error` | Volcengine refused the request or had a problem; `message` carries its reason. |
+| `invalid_module` | Two modules share an id, or one uses a reserved id (only when the core is assembled). |
 
 ## C ABI
 
@@ -55,9 +60,9 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `records.delete` | `{id}` | `{deleted: bool}` (tombstone; deleting nothing changes nothing, including the revision) |
 | `records.clear` | `{collection}` | `{deleted: count}` (an empty collection leaves the revision and emits no event) |
 | `records.changes` | `{since?=0, limit?=100}` | `{records, revision}` including tombstones |
+| `core.compact` | — | `{removed}`: deletion markers older than 30 days are removed and the write-ahead log is folded into the database (clients call it at launch and quit) |
 
 `Record` = `{id, collection, data, created_at, updated_at, deleted, origin, rev}` (times in Unix ms).
-| `core.compact` | — | `{removed}`: deletion markers older than 30 days are removed and the write-ahead log is folded into the database (clients call it at launch and quit) |
 
 
 ## Module methods
@@ -81,7 +86,6 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `windows.move_to_screen` | `{window, from, to}` | `{frame}` keeping relative position and size |
 | `windows.snap_area` | `{point: {x, y}, screen}` | `{action, frame}` or nulls when the pointer isn't at an edge |
 | `mouse.pointer` | `{system_acceleration?}` | `{enabled, resolution, acceleration, linear}` for every mouse: `resolution` (counts per inch, 10–1995) is 400 divided by `mouse.speed`, whatever resolution a mouse claims; `acceleration` is `mouse.acceleration`, or the system's while following it. At 0, `linear` is `true`, `resolution` is 400, and `acceleration` is `mouse.speed`: macOS then moves the pointer exactly that many points per count (measured on macOS 14), where a resolution would only drop counts. A missing `system_acceleration` defaults to 0.6875 |
-
 | `capture.palette` | — | `["#RRGGBB"]` annotation colors |
 | `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system. `{n}` is `capture.next_number`, which then counts up by one; a pattern without `{n}` leaves it alone. Unique names are still the client's job |
 | `capture.record` | `{region, display?, width, height, path?}` | `{record}` in `capture.history` |
@@ -143,12 +147,17 @@ Delivered through the `on_event` callback as JSON, on whichever thread made the 
 { "type": "records.changed", "collection": "translate.history", "id": "…", "change": "inserted" }
 { "type": "records.changed", "collection": "translate.history", "change": "cleared" }
 { "type": "settings.changed", "key": "translate.target_language" }
+{ "type": "ask.delta", "request_id": "…", "text": "The answer so far…" }
 ```
+
+`change` is `inserted`, `updated`, `deleted`, `cleared`, or `pruned`; the last two carry no `id`.
 
 ## Model requests
 
 `llm.*` and model-backed module methods send one `POST` with `Content-Type: application/json`:
 `{"model", "messages": [{"role": "system"}, {"role": "user"}], "stream": false}`. Input is limited
 to 64 KiB of UTF-8, replies to 1 MiB. Timeouts: 15 s connect, 30 s waiting for a reply, 60 s total.
+A streamed `ask.run` sends `"stream": true` and reads server-sent events instead, with 60 s to start
+replying and 5 minutes in all; a server that answers in one piece is accepted too.
 Redirects are refused, nothing is cached, and there are no retries. The reply must contain a
 non-empty `choices[0].message.content`; `finish_reason: "length"` is rejected as truncated.
