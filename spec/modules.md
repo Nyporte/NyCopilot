@@ -55,7 +55,7 @@ Pinned images are kept by the macOS client today; keeping them as core records w
    Keep it free of OS calls. Add it to `ny_modules::all()` and write unit tests against
    `Core::new(Store::open_in_memory()…)`.
 2. **Protocol:** document its commands in [protocol.md](protocol.md).
-3. **macOS shell:** add `apps/macos/Sources/NyCopilot/Modules/<Name>/` with a type conforming to
+3. **macOS shell:** add `apps/macos/Sources/NyCopilotKit/Modules/<Name>/` with a type conforming to
    `ModuleShell` (menu items, hotkey actions, optional `SettingsPane`), and list it in
    `AppDelegate.makeModules`. Use `CopilotServices` for the core, toasts, and Settings navigation.
 4. Other clients repeat step 3 in their own language against the same protocol.

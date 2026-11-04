@@ -781,6 +781,7 @@
 "Hours must be 12, 24, or system." = "時刻の表記は 12、24、system のいずれかです。";
 "The label must be city, abbreviation, offset, custom, or none." = "ラベルは city、abbreviation、offset、custom、none のいずれかです。";
 "The clock’s name must be one line of at most 40 characters." = "時計の名前は 1 行、40 文字までです。";
+"File numbers start at 1." = "ファイル番号は 1 から始まります。";
 "Explain" = "説明";
 "Summarize" = "要約";
 "Rewrite" = "書き直す";
