@@ -19,12 +19,23 @@ pub struct SettingSpec {
     pub default: Value,
     pub scope: Scope,
     pub description: String,
+    /// The bounds of a number, or of a list's length, so clients can size their controls. The
+    /// module's `validate_setting` enforces them (with any exceptions it documents).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
 }
 
 impl SettingSpec {
     pub fn new(key: &str, default: Value, scope: Scope, description: &str) -> Self {
-        Self { key: key.into(), default, scope, description: description.into() }
+        Self { key: key.into(), default, scope, description: description.into(), min: None, max: None }
     }
+
+    pub fn range(self, (min, max): (f64, f64)) -> Self { Self { min: Some(min), max: Some(max), ..self } }
+
+    /// Whether `value` is within `range`.
+    pub fn within(range: (f64, f64), value: f64) -> bool { (range.0..=range.1).contains(&value) }
 }
 
 #[derive(Debug, Clone, Serialize)]

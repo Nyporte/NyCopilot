@@ -18,4 +18,4 @@ mod store;
 pub use crate::core::{parse, Core, EventSink, RequestGuard};
 pub use error::{NyError, Result};
 pub use module::{CommandSpec, Manifest, Module, Scope, SettingSpec};
-pub use store::{now_millis, ListQuery, Page, Record, Store};
+pub use store::{now_millis, ListQuery, Page, Record, Store, DAY_MILLIS};

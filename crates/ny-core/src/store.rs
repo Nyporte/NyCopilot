@@ -32,7 +32,7 @@ pub struct ListQuery {
     /// Exclusive cursor: return records older than this id.
     pub before: Option<String>,
     pub limit: usize,
-    /// Case-insensitive substring over the module-supplied search text.
+    /// Case-insensitive substring over the module-supplied search text, in any script.
     pub search: Option<String>,
 }
 
@@ -47,15 +47,21 @@ pub fn now_millis() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
+/// One day in milliseconds, for retention periods.
+pub const DAY_MILLIS: i64 = 24 * 60 * 60 * 1000;
+
 /// The local database. One file per user profile holds every module's records and all settings.
 pub struct Store {
     conn: Connection,
     device: String,
 }
 
-const MIGRATIONS: &[&str] = &[
+/// One schema step: SQL, or Rust where SQL can't do it (SQLite's `lower()` knows only ASCII).
+enum Migration { Sql(&'static str), Code(fn(&Transaction) -> Result<()>) }
+
+const MIGRATIONS: &[Migration] = &[
     // 1: records, settings, and store metadata.
-    "CREATE TABLE records (
+    Migration::Sql("CREATE TABLE records (
         id TEXT PRIMARY KEY,
         collection TEXT NOT NULL,
         data TEXT NOT NULL,
@@ -76,11 +82,31 @@ const MIGRATIONS: &[&str] = &[
         origin TEXT NOT NULL,
         rev INTEGER NOT NULL
      );
-     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);"),
     // 2: a lookup key a module can set (a content hash) to find a record without scanning.
-    "ALTER TABLE records ADD COLUMN lookup TEXT;
-     CREATE INDEX records_by_lookup ON records (collection, lookup) WHERE lookup IS NOT NULL AND deleted = 0;",
+    Migration::Sql("ALTER TABLE records ADD COLUMN lookup TEXT;
+     CREATE INDEX records_by_lookup ON records (collection, lookup) WHERE lookup IS NOT NULL AND deleted = 0;"),
+    // 3: tombstones left by clearing and pruning kept their content hash; they hold nothing now.
+    Migration::Sql("UPDATE records SET lookup = NULL WHERE deleted = 1;"),
+    // 4: search text is stored case-folded, so search ignores case in every script.
+    Migration::Code(fold_stored_search),
 ];
+
+/// Lowercase, character by character, with a final sigma read as σ: what search compares.
+fn fold(text: &str) -> String {
+    text.chars().flat_map(char::to_lowercase).map(|c| if c == 'ς' { 'σ' } else { c }).collect()
+}
+
+fn fold_stored_search(tx: &Transaction) -> Result<()> {
+    let mut statement = tx.prepare("SELECT id, search FROM records WHERE search != ''")?;
+    let rows = statement.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for (id, search) in rows {
+        let folded = fold(&search);
+        if folded != search { tx.execute("UPDATE records SET search = ?2 WHERE id = ?1", params![id, folded])?; }
+    }
+    Ok(())
+}
 
 impl Store {
     /// Open or create the database with private permissions (directory 0700, file 0600 on Unix).
@@ -105,9 +131,12 @@ impl Store {
         if version > MIGRATIONS.len() {
             return Err(NyError::new("storage", "This database was created by a newer version of NyCopilot."));
         }
-        for (index, sql) in MIGRATIONS.iter().enumerate().skip(version) {
+        for (index, migration) in MIGRATIONS.iter().enumerate().skip(version) {
             let tx = conn.transaction()?;
-            tx.execute_batch(sql)?;
+            match migration {
+                Migration::Sql(sql) => tx.execute_batch(sql)?,
+                Migration::Code(step) => step(&tx)?,
+            }
             tx.pragma_update(None, "user_version", index + 1)?;
             tx.commit()?;
         }
@@ -137,15 +166,17 @@ impl Store {
     }
 
     /// `created_at` may be supplied when importing older data; ids still sort by import time.
-    pub fn insert(&mut self, collection: &str, data: Value, search: &str, created_at: Option<i64>) -> Result<Record> {
-        self.insert_keyed(collection, data, search, created_at, None)
+    /// `lookup` files the record under a key (see `find`).
+    pub fn insert(&mut self, collection: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Record> {
+        let tx = self.conn.transaction()?;
+        let record = Self::insert_in(&tx, &self.device, collection, data, search, created_at, lookup)?;
+        tx.commit()?;
+        Ok(record)
     }
 
-    /// `insert`, with a lookup key (see `find`).
-    pub fn insert_keyed(&mut self, collection: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Record> {
+    fn insert_in(tx: &Transaction, device: &str, collection: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Record> {
         let now = now_millis();
-        let tx = self.conn.transaction()?;
-        let rev = Self::next_rev(&tx)?;
+        let rev = Self::next_rev(tx)?;
         let record = Record {
             id: Uuid::now_v7().to_string(),
             collection: collection.into(),
@@ -153,16 +184,27 @@ impl Store {
             created_at: created_at.unwrap_or(now),
             updated_at: now,
             deleted: false,
-            origin: self.device.clone(),
+            origin: device.into(),
             rev,
         };
         tx.execute(
             "INSERT INTO records (id, collection, data, search, created_at, updated_at, deleted, origin, rev, lookup)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8, ?9)",
-            params![record.id, record.collection, record.data.to_string(), search, record.created_at, record.updated_at, record.origin, rev, lookup],
+            params![record.id, record.collection, record.data.to_string(), fold(search), record.created_at, record.updated_at, record.origin, rev, lookup],
         )?;
-        tx.commit()?;
         Ok(record)
+    }
+
+    /// In one transaction, tombstone the live record `id` in `from` and insert its replacement in `to`
+    /// (as `insert` would), so a move never leaves both or neither. `None`, with nothing changed, if
+    /// `id` isn't live in `from`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn move_record(&mut self, id: &str, from: &str, to: &str, data: Value, search: &str, created_at: Option<i64>, lookup: Option<&str>) -> Result<Option<Record>> {
+        let tx = self.conn.transaction()?;
+        if Self::tombstone_in(&tx, &self.device, id, Some(from))?.is_none() { return Ok(None); }
+        let record = Self::insert_in(&tx, &self.device, to, data, search, created_at, lookup)?;
+        tx.commit()?;
+        Ok(Some(record))
     }
 
     /// Live records in `collection` with this lookup key, through its index.
@@ -185,10 +227,11 @@ impl Store {
         Ok(self.conn.query_row(&format!("SELECT {COLUMNS} FROM records WHERE id = ?1 AND deleted = 0"), [id], row_to_record).optional()?)
     }
 
-    /// Newest first. Search is a literal substring match (LIKE wildcards are escaped).
+    /// Newest first. Search is a literal substring match (LIKE wildcards are escaped) over case-folded
+    /// text, since LIKE by itself ignores case only in ASCII.
     pub fn list(&self, collection: &str, query: &ListQuery) -> Result<Page> {
         let limit = query.limit.clamp(1, 500);
-        let search = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty())
+        let search = query.search.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(fold)
             .map(|s| format!("%{}%", s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")));
         let mut statement = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM records
@@ -205,21 +248,26 @@ impl Store {
     /// Returns the collection the record belonged to, or `None` if there was nothing to delete.
     pub fn delete(&mut self, id: &str) -> Result<Option<String>> {
         let tx = self.conn.transaction()?;
-        let rev = Self::next_rev(&tx)?;
-        let collection: Option<String> = tx.query_row(
-            "UPDATE records SET deleted = 1, data = 'null', search = '', lookup = NULL, updated_at = ?2, origin = ?3, rev = ?4
-             WHERE id = ?1 AND deleted = 0 RETURNING collection",
-            params![id, now_millis(), self.device, rev], |r| r.get(0)).optional()?;
+        let collection = Self::tombstone_in(&tx, &self.device, id, None)?;
         // A delete that changed nothing must not advance the revision a sync client reads.
         if collection.is_some() { tx.commit()?; }
         Ok(collection)
+    }
+
+    /// Tombstone `id` if it's live (and in `collection`, when given) → the collection it was in.
+    fn tombstone_in(tx: &Transaction, device: &str, id: &str, collection: Option<&str>) -> Result<Option<String>> {
+        let rev = Self::next_rev(tx)?;
+        Ok(tx.query_row(
+            "UPDATE records SET deleted = 1, data = 'null', search = '', lookup = NULL, updated_at = ?2, origin = ?3, rev = ?4
+             WHERE id = ?1 AND deleted = 0 AND (?5 IS NULL OR collection = ?5) RETURNING collection",
+            params![id, now_millis(), device, rev, collection], |r| r.get(0)).optional()?)
     }
 
     pub fn clear(&mut self, collection: &str) -> Result<usize> {
         let tx = self.conn.transaction()?;
         let rev = Self::next_rev(&tx)?;
         let changed = tx.execute(
-            "UPDATE records SET deleted = 1, data = 'null', search = '', updated_at = ?2, origin = ?3, rev = ?4
+            "UPDATE records SET deleted = 1, data = 'null', search = '', lookup = NULL, updated_at = ?2, origin = ?3, rev = ?4
              WHERE collection = ?1 AND deleted = 0",
             params![collection, now_millis(), self.device, rev],
         )?;
@@ -234,7 +282,7 @@ impl Store {
         let rev = Self::next_rev(&tx)?;
         let changed = tx.execute(
             "UPDATE records SET data = ?2, search = ?3, updated_at = ?4, origin = ?5, rev = ?6 WHERE id = ?1 AND deleted = 0",
-            params![id, data.to_string(), search, now_millis(), self.device, rev],
+            params![id, data.to_string(), fold(search), now_millis(), self.device, rev],
         )?;
         if changed == 0 { return Ok(None); }
         tx.commit()?;
@@ -247,16 +295,17 @@ impl Store {
         Ok(count as usize)
     }
 
-    /// Tombstone every record in `collection` beyond the newest `keep`, and any created before
-    /// `before` (milliseconds); for collections with a retention policy. Returns how many went.
-    pub fn prune(&mut self, collection: &str, keep: usize, before: i64) -> Result<usize> {
+    /// Tombstone every record in `collection` beyond the newest `keep` (when given), and any created
+    /// before `before` (milliseconds); for collections with a retention policy. Returns how many went.
+    pub fn prune(&mut self, collection: &str, keep: Option<usize>, before: i64) -> Result<usize> {
         let tx = self.conn.transaction()?;
         let rev = Self::next_rev(&tx)?;
+        // LIMIT -1 is SQLite's "no limit": without `keep`, no record is beyond it.
         let changed = tx.execute(
-            "UPDATE records SET deleted = 1, data = 'null', search = '', updated_at = ?3, origin = ?4, rev = ?5
+            "UPDATE records SET deleted = 1, data = 'null', search = '', lookup = NULL, updated_at = ?3, origin = ?4, rev = ?5
              WHERE collection = ?1 AND deleted = 0 AND (created_at < ?2 OR id NOT IN (
                  SELECT id FROM records WHERE collection = ?1 AND deleted = 0 ORDER BY id DESC LIMIT ?6))",
-            params![collection, before, now_millis(), self.device, rev, keep as i64],
+            params![collection, before, now_millis(), self.device, rev, keep.map_or(-1, |keep| keep as i64)],
         )?;
         if changed > 0 { tx.commit()?; }
         Ok(changed)
@@ -338,9 +387,9 @@ mod tests {
     #[test]
     fn lookup_keys_find_records_and_compact_drops_old_tombstones() {
         let mut store = Store::open_in_memory().unwrap();
-        let kept = store.insert_keyed("t.items", json!({ "n": 1 }), "", None, Some("h1")).unwrap();
-        store.insert_keyed("t.items", json!({ "n": 2 }), "", None, Some("h2")).unwrap();
-        store.insert_keyed("t.other", json!({ "n": 3 }), "", None, Some("h1")).unwrap();
+        let kept = store.insert("t.items", json!({ "n": 1 }), "", None, Some("h1")).unwrap();
+        store.insert("t.items", json!({ "n": 2 }), "", None, Some("h2")).unwrap();
+        store.insert("t.other", json!({ "n": 3 }), "", None, Some("h1")).unwrap();
         assert_eq!(store.find("t.items", "h1").unwrap().iter().map(|r| r.id.clone()).collect::<Vec<_>>(), vec![kept.id.clone()]);
         store.delete(&kept.id).unwrap();
         assert!(store.find("t.items", "h1").unwrap().is_empty());
@@ -353,7 +402,7 @@ mod tests {
     #[test]
     fn records_round_trip_newest_first_with_cursor() {
         let mut store = Store::open_in_memory().unwrap();
-        let ids: Vec<String> = (0..5).map(|i| store.insert("t.items", json!({ "n": i }), &format!("item {i}"), None).unwrap().id).collect();
+        let ids: Vec<String> = (0..5).map(|i| store.insert("t.items", json!({ "n": i }), &format!("item {i}"), None, None).unwrap().id).collect();
         let first = store.list("t.items", &ListQuery { limit: 2, ..Default::default() }).unwrap();
         assert_eq!(first.records.iter().map(|r| r.id.clone()).collect::<Vec<_>>(), vec![ids[4].clone(), ids[3].clone()]);
         let rest = store.list("t.items", &ListQuery { limit: 10, before: first.next.clone(), ..Default::default() }).unwrap();
@@ -365,8 +414,8 @@ mod tests {
     #[test]
     fn search_is_literal_and_case_insensitive() {
         let mut store = Store::open_in_memory().unwrap();
-        store.insert("t.items", json!(1), "The Meeting is at 10", None).unwrap();
-        let percent = store.insert("t.items", json!(2), "Up 50% today", None).unwrap();
+        store.insert("t.items", json!(1), "The Meeting is at 10", None, None).unwrap();
+        let percent = store.insert("t.items", json!(2), "Up 50% today", None, None).unwrap();
         let found = store.list("t.items", &ListQuery { limit: 10, search: Some("meeting".into()), ..Default::default() }).unwrap();
         assert_eq!(found.records.len(), 1);
         let literal = store.list("t.items", &ListQuery { limit: 10, search: Some("%".into()), ..Default::default() }).unwrap();
@@ -374,10 +423,79 @@ mod tests {
     }
 
     #[test]
+    fn search_ignores_case_beyond_ascii() {
+        let mut store = Store::open_in_memory().unwrap();
+        let hello = store.insert("t.items", json!(1), "Привет, мир", None, None).unwrap();
+        let cafe = store.insert("t.items", json!(2), "CAFÉ au lait", None, None).unwrap();
+        let road = store.insert("t.items", json!(3), "ΟΔΟΣ", None, None).unwrap();
+        let ids = |store: &Store, query: &str| store.list("t.items", &ListQuery { limit: 10, search: Some(query.into()), ..Default::default() }).unwrap()
+            .records.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        for (query, id) in [("ПРИВЕТ", &hello.id), ("привет", &hello.id), ("Café", &cafe.id), ("café", &cafe.id), ("οδος", &road.id), ("ΟΔΟΣ", &road.id)] {
+            assert_eq!(ids(&store, query), vec![id.clone()], "{query}");
+        }
+        // Edited text is folded too.
+        store.update(&cafe.id, json!(2), "Crème BRÛLÉE").unwrap();
+        assert_eq!(ids(&store, "brûlée"), vec![cafe.id.clone()]);
+    }
+
+    #[test]
+    fn moves_are_one_change_and_leave_content_free_tombstones() {
+        let mut store = Store::open_in_memory().unwrap();
+        let old = store.insert("t.items", json!("secret"), "secret", Some(7), Some("h1")).unwrap();
+        let before = store.revision().unwrap();
+        // Not in `from`: nothing changes, not even the revision.
+        assert!(store.move_record(&old.id, "t.other", "t.pinned", json!("x"), "", None, None).unwrap().is_none());
+        assert_eq!(store.revision().unwrap(), before);
+        let moved = store.move_record(&old.id, "t.items", "t.pinned", json!("secret"), "Secret", Some(7), Some("h1")).unwrap().unwrap();
+        assert_eq!((moved.collection.as_str(), moved.created_at), ("t.pinned", 7));
+        assert!(store.get(&old.id).unwrap().is_none());
+        assert_eq!(store.find("t.pinned", "h1").unwrap().len(), 1);
+        let changes = store.changes_since(before, 10).unwrap();
+        assert_eq!(changes.iter().map(|r| (r.id.clone(), r.deleted)).collect::<Vec<_>>(), vec![(old.id.clone(), true), (moved.id.clone(), false)]);
+        assert_eq!(store.revision().unwrap(), moved.rev);
+        // Moving it again from where it was finds nothing.
+        assert!(store.move_record(&old.id, "t.items", "t.pinned", json!("secret"), "", None, None).unwrap().is_none());
+    }
+
+    #[test]
+    fn cleared_and_pruned_tombstones_keep_no_lookup_key() {
+        let mut store = Store::open_in_memory().unwrap();
+        for n in 0..3 { store.insert("t.items", json!(n), "", None, Some(&format!("h{n}"))).unwrap(); }
+        store.insert("t.other", json!(9), "", None, Some("h9")).unwrap();
+        assert_eq!(store.prune("t.items", Some(1), 0).unwrap(), 2);
+        assert_eq!(store.prune("t.items", None, 0).unwrap(), 0);
+        assert_eq!(store.clear("t.other").unwrap(), 1);
+        assert_eq!(store.prune("t.items", None, now_millis() + 1).unwrap(), 1);
+        let keyed: i64 = store.conn.query_row("SELECT COUNT(*) FROM records WHERE deleted = 1 AND lookup IS NOT NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(keyed, 0);
+    }
+
+    #[test]
+    fn migrations_drop_tombstone_keys_and_fold_search_text() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for migration in &MIGRATIONS[..2] {
+            let Migration::Sql(sql) = migration else { unreachable!() };
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        let tx = conn.transaction().unwrap();
+        for (id, deleted, search, lookup) in [("a", 0, "ПРИВЕТ Café", Some("h1")), ("b", 1, "", Some("h2")), ("c", 0, "plain", None)] {
+            tx.execute("INSERT INTO records (id, collection, data, search, created_at, updated_at, deleted, origin, rev, lookup)
+                        VALUES (?1, 't.items', 'null', ?2, 0, 0, ?3, 'd', 1, ?4)", params![id, search, deleted, lookup]).unwrap();
+        }
+        tx.commit().unwrap();
+        let store = Store::prepare(conn).unwrap();
+        let column = |id: &str, name: &str| store.conn.query_row(&format!("SELECT {name} FROM records WHERE id = ?1"), [id], |r| r.get::<_, Option<String>>(0)).unwrap();
+        assert_eq!((column("a", "search"), column("a", "lookup")), (Some("привет café".into()), Some("h1".into())));
+        assert_eq!(column("b", "lookup"), None);
+        assert_eq!(store.list("t.items", &ListQuery { limit: 10, search: Some("привет".into()), ..Default::default() }).unwrap().records.len(), 1);
+    }
+
+    #[test]
     fn deletes_leave_content_free_tombstones_for_sync() {
         let mut store = Store::open_in_memory().unwrap();
-        let a = store.insert("t.items", json!("secret"), "secret", None).unwrap();
-        store.insert("t.items", json!("other"), "other", None).unwrap();
+        let a = store.insert("t.items", json!("secret"), "secret", None, None).unwrap();
+        store.insert("t.items", json!("other"), "other", None, None).unwrap();
         let before = store.revision().unwrap();
         assert_eq!(store.delete(&a.id).unwrap().as_deref(), Some("t.items"));
         let after = store.revision().unwrap();
@@ -402,7 +520,7 @@ mod tests {
         let id = {
             let mut store = Store::open(&path).unwrap();
             store.set_setting("x.y", &json!("value"), Scope::Synced).unwrap();
-            store.insert("t.items", json!({ "text": text }), text, Some(42)).unwrap().id
+            store.insert("t.items", json!({ "text": text }), text, Some(42), None).unwrap().id
         };
         let store = Store::open(&path).unwrap();
         let record = store.get(&id).unwrap().unwrap();
@@ -421,8 +539,8 @@ mod tests {
     fn device_id_is_stable_and_revisions_increase() {
         let mut store = Store::open_in_memory().unwrap();
         let device = store.device_id().to_string();
-        let a = store.insert("t.items", json!(1), "", None).unwrap();
-        let b = store.insert("t.items", json!(2), "", None).unwrap();
+        let a = store.insert("t.items", json!(1), "", None, None).unwrap();
+        let b = store.insert("t.items", json!(2), "", None, None).unwrap();
         assert!(b.rev > a.rev);
         assert_eq!(a.origin, device);
     }

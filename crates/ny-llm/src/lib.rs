@@ -75,12 +75,13 @@ pub fn request_body(prompt: &ChatPrompt, config: &ProviderConfig, api_key: &str)
     if prompt.user.len() > MAX_INPUT_BYTES {
         return Err(NyError::new("input_too_large", "That’s more than 64 KB of text. Shorten it and try again."));
     }
-    messages_body(&[json!({ "role": "system", "content": prompt.system }), json!({ "role": "user", "content": prompt.user })], config, api_key)
+    messages_body(&[json!({ "role": "system", "content": prompt.system }), json!({ "role": "user", "content": prompt.user })], config, api_key, false)
 }
 
 /// A whole conversation — Chat Completions messages, whose content may mix text and images —
-/// validated and serialized. Callers bound its size; this checks the provider and the key.
-pub fn messages_body(messages: &[Value], config: &ProviderConfig, api_key: &str) -> Result<Vec<u8>> {
+/// validated and serialized, asking for a streamed reply or not. Callers bound its size; this
+/// checks the provider and the key.
+pub fn messages_body(messages: &[Value], config: &ProviderConfig, api_key: &str, stream: bool) -> Result<Vec<u8>> {
     config.validate()?;
     if !config.is_complete() {
         return Err(NyError::new("provider_not_configured", "Connect a model provider in Settings first."));
@@ -88,7 +89,7 @@ pub fn messages_body(messages: &[Value], config: &ProviderConfig, api_key: &str)
     if api_key.chars().any(char::is_control) {
         return Err(NyError::new("invalid_key", "The API key can’t contain line breaks or control characters."));
     }
-    Ok(serde_json::to_vec(&json!({ "model": config.model, "messages": messages, "stream": false }))?)
+    Ok(serde_json::to_vec(&json!({ "model": config.model, "messages": messages, "stream": stream }))?)
 }
 
 /// Send one request and return the first choice's text.
@@ -98,7 +99,7 @@ pub fn complete(prompt: &ChatPrompt, config: &ProviderConfig, api_key: &str) -> 
 
 /// Send a whole conversation and return the reply's text.
 pub fn complete_messages(messages: &[Value], config: &ProviderConfig, api_key: &str) -> Result<String> {
-    send(messages_body(messages, config, api_key)?, config, api_key)
+    send(messages_body(messages, config, api_key, false)?, config, api_key)
 }
 
 /// A conversation, streamed: `on_text` gets the reply so far each time more arrives and returns
@@ -106,15 +107,8 @@ pub fn complete_messages(messages: &[Value], config: &ProviderConfig, api_key: &
 /// when the reply is done. A server that doesn't stream answers in one piece, and `on_text` gets it
 /// once. Bounded like `complete`, but with time for a long answer.
 pub fn stream_messages(messages: &[Value], config: &ProviderConfig, api_key: &str, mut on_text: impl FnMut(&str) -> bool) -> Result<String> {
-    let mut body: Value = serde_json::from_slice(&messages_body(messages, config, api_key)?)?;
-    body["stream"] = json!(true);
-    let mut request = http::streaming_agent().post(endpoint_url(&config.endpoint)?.as_str())
-        .header("Content-Type", "application/json")
-        .header("Accept", "text/event-stream, application/json");
-    if !api_key.is_empty() { request = request.header("Authorization", &format!("Bearer {api_key}")); }
-    let mut response = request.send(&serde_json::to_vec(&body)?[..]).map_err(http::transport_error)?;
-    let status = response.status().as_u16();
-    if !(200..300).contains(&status) { return Err(http_status(status)); }
+    let body = messages_body(messages, config, api_key, true)?;
+    let mut response = post(http::streaming_agent(), config, api_key, "text/event-stream, application/json", &body)?;
     let streams = response.headers().get("content-type").and_then(|value| value.to_str().ok())
         .is_some_and(|kind| kind.contains("text/event-stream"));
     if !streams {
@@ -152,14 +146,20 @@ pub fn stream_messages(messages: &[Value], config: &ProviderConfig, api_key: &st
 fn cancelled() -> NyError { NyError::new("cancelled", "Cancelled.") }
 
 fn send(body: Vec<u8>, config: &ProviderConfig, api_key: &str) -> Result<String> {
-    let mut request = http::agent().post(endpoint_url(&config.endpoint)?.as_str())
+    let mut response = post(http::agent(), config, api_key, "application/json", &body)?;
+    decode_response(&http::read_body(&mut response)?)
+}
+
+/// POST a body to the provider, with the key when there is one → the response, if it succeeded.
+fn post(agent: ureq::Agent, config: &ProviderConfig, api_key: &str, accept: &str, body: &[u8]) -> Result<ureq::http::Response<ureq::Body>> {
+    let mut request = agent.post(endpoint_url(&config.endpoint)?.as_str())
         .header("Content-Type", "application/json")
-        .header("Accept", "application/json");
+        .header("Accept", accept);
     if !api_key.is_empty() { request = request.header("Authorization", &format!("Bearer {api_key}")); }
-    let mut response = request.send(&body[..]).map_err(http::transport_error)?;
+    let response = request.send(body).map_err(http::transport_error)?;
     let status = response.status().as_u16();
     if !(200..300).contains(&status) { return Err(http_status(status)); }
-    decode_response(&http::read_body(&mut response)?)
+    Ok(response)
 }
 
 /// The bounds every outgoing request shares, for model providers and other translation services.
@@ -167,31 +167,22 @@ pub mod http {
     use super::*;
 
     /// No automatic redirects (callers decide), no retries, platform-verified TLS, and time limits.
-    pub fn agent() -> ureq::Agent {
-        ureq::Agent::config_builder()
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .save_redirect_history(false)
-            .timeout_global(Some(Duration::from_secs(60)))
-            .timeout_connect(Some(Duration::from_secs(15)))
-            .timeout_recv_response(Some(Duration::from_secs(30)))
-            .timeout_recv_body(Some(Duration::from_secs(30)))
-            .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
-            .build()
-            .into()
-    }
+    pub fn agent() -> ureq::Agent { build(60, 30, 30) }
 
     /// For streamed replies: the same bounds, with minutes rather than seconds for the whole reply,
     /// since a long answer keeps arriving well past a minute.
-    pub fn streaming_agent() -> ureq::Agent {
+    pub fn streaming_agent() -> ureq::Agent { build(300, 60, 300) }
+
+    /// The shared bounds, with time limits in seconds for the whole request, the response's start, and its body.
+    fn build(whole: u64, response: u64, body: u64) -> ureq::Agent {
         ureq::Agent::config_builder()
             .max_redirects(0)
             .http_status_as_error(false)
             .save_redirect_history(false)
-            .timeout_global(Some(Duration::from_secs(300)))
+            .timeout_global(Some(Duration::from_secs(whole)))
             .timeout_connect(Some(Duration::from_secs(15)))
-            .timeout_recv_response(Some(Duration::from_secs(60)))
-            .timeout_recv_body(Some(Duration::from_secs(300)))
+            .timeout_recv_response(Some(Duration::from_secs(response)))
+            .timeout_recv_body(Some(Duration::from_secs(body)))
             .tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build())
             .build()
             .into()
@@ -309,6 +300,56 @@ impl Module for LlmModule {
             "llm.model" => validate_model(text.trim()),
             _ => Ok(()),
         }
+    }
+}
+
+/// A loopback stand-in for the HTTP services modules call: each connection gets the next canned
+/// response, and every request is logged for the test to inspect. For tests here and, through the
+/// `test-support` feature, in other crates.
+#[cfg(any(test, feature = "test-support"))]
+#[doc(hidden)]
+pub mod stand_in {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    pub fn serve(responses: Vec<String>) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://127.0.0.1:{}", listener.local_addr().unwrap().port());
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let requests = log.clone();
+        thread::spawn(move || {
+            for (stream, response) in listener.incoming().zip(responses) {
+                let Ok(mut stream) = stream else { break };
+                // Read the whole request (headers and declared body) before replying; answering
+                // early can reset the connection while the client is still sending.
+                let mut buffer = Vec::new();
+                let mut chunk = [0u8; 65536];
+                while let Ok(count) = stream.read(&mut chunk) {
+                    if count == 0 { break; }
+                    buffer.extend_from_slice(&chunk[..count]);
+                    let text = String::from_utf8_lossy(&buffer).to_string();
+                    if let Some(split) = text.find("\r\n\r\n") {
+                        let needed = text[..split].lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:")
+                            .map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
+                        if buffer.len() >= split + 4 + needed { break; }
+                    }
+                }
+                requests.lock().unwrap().push(String::from_utf8_lossy(&buffer).to_string());
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        (base, log)
+    }
+
+    pub fn http(status: &str, headers: &str, body: &str) -> String {
+        format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\n{headers}Connection: close\r\n\r\n{body}", body.len())
+    }
+
+    /// A Chat Completions reply carrying `content`.
+    pub fn model_reply(content: &str) -> String {
+        http("200 OK", "", &serde_json::json!({ "choices": [{ "message": { "content": content }, "finish_reason": "stop" }] }).to_string())
     }
 }
 
