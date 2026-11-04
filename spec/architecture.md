@@ -67,12 +67,13 @@ A module has two halves:
 1. **Core module** (Rust, `crates/ny-modules`): implements `ny_core::Module` — a `Manifest`
    (id, name, required capabilities, collections, settings, commands) plus a `call` handler and
    setting validation. It has no UI and no OS calls.
-2. **Client shell** (per platform, e.g. `apps/macos/Sources/NyCopilot/Modules`): menu items,
+2. **Client shell** (per platform, e.g. `apps/macos/Sources/NyCopilotKit/Modules`): menu items,
    global shortcuts, windows, and whatever OS capabilities the manifest lists.
 
-Clients read `core.modules` and load only shells whose core module exists and whose
-capabilities they can provide. A server, for example, would host Chat or Kanban but never
-Screenshot. See [modules.md](modules.md) for how planned modules split.
+Clients read the modules this core build has (`core.info`, or the full manifests from
+`core.modules`) and build only the shells whose core module exists and whose capabilities they can
+provide; the macOS client provides every capability today. A server, for example, would host Chat
+or Kanban but never Screenshot. See [modules.md](modules.md) for how planned modules split.
 
 ## Concurrency and cancellation
 

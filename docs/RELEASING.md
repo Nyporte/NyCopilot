@@ -18,7 +18,7 @@ scripts/release.sh prepare          # the next version, from the commits since t
 scripts/release.sh prepare 0.6.0    # or a version you choose
 ```
 
-It sets the version in `Info.plist`, turns `## Unreleased` in `CHANGELOG.md` into a dated section
+It sets the version in `Info.plist` and the Rust workspace (`Cargo.toml`, `Cargo.lock`), turns `## Unreleased` in `CHANGELOG.md` into a dated section
 (your hand-written highlights first, then every `feat`, `fix`, and `perf` since the last tag), and
 opens a `release/vX.Y.Z` pull request titled `chore(release): vX.Y.Z`.
 
