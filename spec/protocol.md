@@ -21,11 +21,16 @@ Branch on `code`, not on `message`.
 | `not_found` | The record no longer exists. |
 | `storage` | The database could not be read or written. |
 | `cancelled` | The request was cancelled with `core.cancel`. |
-| `provider_not_configured` | `llm.endpoint` or `llm.model` is empty. |
+| `provider_not_configured` | No model is connected (`llm.endpoint` or `llm.model` is empty), or no translation service is set up. |
+| `unsupported_language` | None of the translation services that are set up offers the target language. |
 | `empty_input`, `input_too_large`, `invalid_key` | Request rejected before any network access. |
 | `http_status` | Non-2xx reply; `status` holds the code. Never retried. |
 | `network` | DNS, connection, TLS, or timeout failure. |
 | `invalid_response`, `empty_response`, `response_too_large`, `truncated_response` | Unusable reply. |
+| `model_error` | A streamed reply reported an error from the model. |
+| `google_access`, `google_error` | The Google Translate web app needs “Who has access: Anyone”, or reported its own error. |
+| `volcengine_error` | Volcengine refused the request or had a problem; `message` carries its reason. |
+| `invalid_module` | Two modules share an id, or one uses a reserved id (only when the core is assembled). |
 
 ## C ABI
 
@@ -44,20 +49,20 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | Method | Params | Result |
 | --- | --- | --- |
 | `core.info` | — | `{version, platform, device_id, revision, modules: [id]}` |
-| `core.modules` | — | `[Manifest]` |
+| `core.modules` | — | `[Manifest]`; a setting may carry `min`/`max`, the bounds of a number or of a list's length |
 | `core.cancel` | `{request_id}` | `{cancelled: bool}` |
 | `settings.get` | `{key}` | value (stored or manifest default; `null` for unset `client.*`) |
 | `settings.set` | `{key, value}` | `{}`; type must match the default |
 | `settings.reset` | `{key}` | `{}` |
 | `settings.list` | `{prefix?}` | `{key: value}` including defaults |
-| `records.list` | `{collection, before?, limit?=100, search?}` | `{records: [Record], next?}` newest first |
+| `records.list` | `{collection, before?, limit?=100, search?}` | `{records: [Record], next?}` newest first; `search` is a literal substring that ignores case in any script (Привет finds ПРИВЕТ, café finds CAFÉ) |
 | `records.get` | `{id}` | `Record` |
 | `records.delete` | `{id}` | `{deleted: bool}` (tombstone; deleting nothing changes nothing, including the revision) |
 | `records.clear` | `{collection}` | `{deleted: count}` (an empty collection leaves the revision and emits no event) |
 | `records.changes` | `{since?=0, limit?=100}` | `{records, revision}` including tombstones |
+| `core.compact` | — | `{removed}`: deletion markers older than 30 days are removed and the write-ahead log is folded into the database (clients call it at launch and quit) |
 
 `Record` = `{id, collection, data, created_at, updated_at, deleted, origin, rev}` (times in Unix ms).
-| `core.compact` | — | `{removed}`: deletion markers older than 30 days are removed and the write-ahead log is folded into the database (clients call it at launch and quit) |
 
 
 ## Module methods
@@ -69,31 +74,34 @@ freed with `ny_string_free`. `ny_call` is thread-safe and blocks for the duratio
 | `translate.run` | `{text, target_language?, api_key?, google_key?, volcengine_key?, request_id?, save?}` | `{text, target_language, engine, notice?, record}` — tries the engines in `translate.engine_order`, skipping any that are off, not set up, or don't offer the language; the next takes over when one fails. `engine` is `"google"`, `"volcengine"`, or `"model"`; `notice` names the engines that failed and why. Saved to `translate.history` before returning, unless `save` is `false` (then `record` is `null`; screen translation uses this) |
 | `translate.test_google` | `{url, key?}` | `{text, elapsed_ms}` — translates a short sample through the web app |
 | `translate.test_volcengine` | `{app_id?, key}` | `{text, elapsed_ms}` — translates a short sample with Volcengine credentials |
-| `translate.languages` | — | `[{name, native, code}]` — suggested languages with their own names and badge codes |
+| `translate.languages` | — | `[{name, native, code, locale?}]` — suggested languages with their own names, badge codes, and BCP-47 codes |
 | `translate.cycle` | `{step: 1 or -1}` | `{target_language, native, code}` — steps through the favorites and saves the result as the target |
-| `translate.native_name` | `{language}` | `{native, code}` — own name (as given when unknown) and badge code (EN, 中, 日; a mentioned language's code, else two letters) |
+| `translate.native_name` | `{language}` | `{native, code, locale?}` — own name (as given when unknown), badge code (EN, 中, 日; a mentioned language's code, else two letters), and BCP-47 code when known |
+| `translate.language_for_locale` | `{locale}` | `{language}` — the language name for a device locale (`pt-BR`, `zh-Hant-TW`); English when unknown |
+| `translate.seed_favorites` | `{device_language}` | `{favorites, changed}` — English and the device's language, if the favorites are still the defaults and lack it |
+| `translate.engines` | `{has_volcengine_key?}` | `[{id, title, enabled, configured, ready}]` in the order they're tried; `ready` is on and set up |
 | `translate.import_legacy` | `{path}` | `{imported}` — NyTranslate history |
 | `windows.actions` | — | `[{id, title, group}]` in menu order |
 | `windows.compute` | `{action, window, screen, repeat?}` | `{frame}` — `screen` is the usable area; `repeat` counts consecutive presses. With `windows.repeat = move_across_displays`, a repeated side layout returns `{frame: null, move: {direction, action}}`: apply `action` on the nearest display in `direction` |
 | `windows.move_to_screen` | `{window, from, to}` | `{frame}` keeping relative position and size |
 | `windows.snap_area` | `{point: {x, y}, screen}` | `{action, frame}` or nulls when the pointer isn't at an edge |
 | `mouse.pointer` | `{system_acceleration?}` | `{enabled, resolution, acceleration, linear}` for every mouse: `resolution` (counts per inch, 10–1995) is 400 divided by `mouse.speed`, whatever resolution a mouse claims; `acceleration` is `mouse.acceleration`, or the system's while following it. At 0, `linear` is `true`, `resolution` is 400, and `acceleration` is `mouse.speed`: macOS then moves the pointer exactly that many points per count (measured on macOS 14), where a resolution would only drop counts. A missing `system_acceleration` defaults to 0.6875 |
-
 | `capture.palette` | — | `["#RRGGBB"]` annotation colors |
-| `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system |
+| `capture.file_name` | `{date: [y, m, d, H, M, S]}` | `{name}` from `capture.file_name` and `capture.format`, made safe for any file system. `{n}` is `capture.next_number`, which then counts up by one; a pattern without `{n}` leaves it alone. Unique names are still the client's job |
 | `capture.record` | `{region, display?, width, height, path?}` | `{record}` in `capture.history` |
 | `capture.recent_regions` | `{limit?=20}` | distinct `[{x, y, w, h}]`, newest first |
 | `clipboard.add` | `{text, app?, bundle_id?}` or `{image, digest, width, height, app?, bundle_id?}` | `{record}` in `clipboard.items` — an earlier entry with the same text (or an image with the same `digest`) is removed, so it moves to the top — then the retention settings are applied; or `{record: null, skipped}` with `skipped` one of `off`, `ignored_app`, `empty`, `too_large` (over 256 KiB), `pinned` (already pinned). `image` is a client-kept file named `<uuid>.png` |
 | `clipboard.pin` | `{id}` | `{record}` moved to `clipboard.pinned` (at most 100), which is never pruned |
 | `clipboard.unpin` | `{id}` | `{record}` moved back to the top of `clipboard.items` |
 | `clipboard.prune` | — | `{deleted}`: entries beyond `clipboard.max_items` or older than `clipboard.keep_days` are tombstoned |
-| `inbox.add` | `{text?, image?, app?, title?, url?, source?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png`; `app`, `title` (the window's), and `url` (page or document) record where it came from, each one line; `source` is `typed` (default), `selection`, or `screenshot` |
+| `inbox.add` | `{text?, image?, app?, title?, url?, source?, created?}` | `{record}` in `inbox.notes`; needs text (up to 64 KiB) or an image; `image` is a client-kept file named `<uuid>.png` (or `.gif`); `created` (Unix ms, positive and not in the future) keeps an earlier date as the record's `created_at`, as `inbox.undone` does, for putting a deleted note back; `app`, `title` (the window's), and `url` (page or document) record where it came from, each one line; `source` is `typed` (default), `selection`, or `screenshot` |
 | `inbox.update` | `{id, text}` | `{record}`: a waiting or done note's text replaced, everything else kept |
 | `inbox.done` | `{id}` | `{record}` moved to `inbox.done` with `created` (its original date) and `done_at`; done notes are tombstoned after 30 days |
 | `inbox.undone` | `{id}` | `{record}` moved back to `inbox.notes` with its original date |
 | `inbox.snooze` | `{id, until}` | `{record}`: a waiting note moved to `inbox.snoozed` with `until` (ms, in the future) and `created` |
 | `inbox.wake` | `{id?}` | `{woken: [record]}`: the snoozed note `id`, or every one whose `until` has passed, back on top of `inbox.notes` (`created` keeps its first date) |
 | `inbox.count` | — | `{count}` of notes waiting |
+| `inbox.markdown` | `{title, text, source?, url?, created, stamp, image?}` | `{stem, markdown}` — a file stem (`<stamp> <title>`, made safe) and the note as Markdown with front matter; the client makes the stem unique, names any image after it, and writes the files |
 | `ask.run` | `{action, text?, image?, question?, language?, turns?, api_key?, request_id?}` | `{text}`: the model's answer. `action` is `explain`, `summarize`, `rewrite`, or `ask` (needs a `question`); `image` is a base64 PNG (up to 12 MiB), sent as an image only while `ask.send_images` is on, else `text` (its recognized text) stands in; `language` is the reply language; `turns` are earlier `{role: user\|assistant, content}` follow-ups (the last 20 are kept), with `question` the new one. With `stream: true` and a `request_id`, the reply is streamed and `ask.delta` events `{request_id, text}` carry it so far (at most every 40 ms); cancelling stops reading at once. Cancellable |
 
 Window and capture rectangles are `{x, y, w, h}` in points with a top-left origin and y growing downward.
@@ -111,7 +119,7 @@ target language; `settings.reset` restores the built-in text), `windows.gap` (sy
 points), `windows.repeat` (synced, `"cycle_sizes"`, or `"move_across_displays"` or `"nothing"`), and
 `windows.drag_snap` (synced, `true`), `capture.save_folder` (device, `""` = Pictures/NyCopilot),
 `capture.format` (synced, `"png"` or `"jpg"`), `capture.file_name` (synced, pattern with `{date}`,
-`{time}`, `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
+`{time}`, `{n}`), `capture.next_number` (device, `1`, a positive integer: the next `{n}`), `capture.color` (synced, `#RRGGBB`), `capture.stroke` (synced, 1–24), `capture.style` (synced, an
 object: `corner_radius` 0–64, `filled`, `font` family name or `""` for the system font, `text_size` 6–144, `bold`,
 `italic`, `underline`, `strikethrough`; unknown keys are rejected), `capture.pin_shadow` (synced, `true`), `capture.hide_own_windows` (synced, `false`), `clipboard.enabled` (device, `true`), `clipboard.keep_days`
 (synced, 1–365, `30`), `clipboard.max_items` (synced, 10–5000, `500`), `clipboard.ignored_apps` (synced,
@@ -139,12 +147,17 @@ Delivered through the `on_event` callback as JSON, on whichever thread made the 
 { "type": "records.changed", "collection": "translate.history", "id": "…", "change": "inserted" }
 { "type": "records.changed", "collection": "translate.history", "change": "cleared" }
 { "type": "settings.changed", "key": "translate.target_language" }
+{ "type": "ask.delta", "request_id": "…", "text": "The answer so far…" }
 ```
+
+`change` is `inserted`, `updated`, `deleted`, `cleared`, or `pruned`; the last two carry no `id`.
 
 ## Model requests
 
 `llm.*` and model-backed module methods send one `POST` with `Content-Type: application/json`:
 `{"model", "messages": [{"role": "system"}, {"role": "user"}], "stream": false}`. Input is limited
 to 64 KiB of UTF-8, replies to 1 MiB. Timeouts: 15 s connect, 30 s waiting for a reply, 60 s total.
+A streamed `ask.run` sends `"stream": true` and reads server-sent events instead, with 60 s to start
+replying and 5 minutes in all; a server that answers in one piece is accepted too.
 Redirects are refused, nothing is cached, and there are no retries. The reply must contain a
 non-empty `choices[0].message.content`; `finish_reason: "length"` is rejected as truncated.

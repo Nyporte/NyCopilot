@@ -79,14 +79,14 @@ impl Module for MouseModule {
             settings: vec![
                 SettingSpec::new("mouse.enabled", json!(false), Scope::Device, "Set the connected mice's speed and acceleration."),
                 SettingSpec::new("mouse.speed", json!(1.0), Scope::Device,
-                                 "Pointer speed, 0.1–8: with acceleration, 1 treats the mouse as 400 counts per inch; without, points per count."),
+                                 "Pointer speed, 0.1–8: with acceleration, 1 treats the mouse as 400 counts per inch; without, points per count.").range(SPEED_RANGE),
                 SettingSpec::new("mouse.acceleration", json!(FOLLOW_SYSTEM), Scope::Device,
-                                 "Pointer acceleration, 0 (off) to 40; -1 follows the system's setting."),
+                                 "Pointer acceleration, 0 (off) to 40; -1 follows the system's setting.").range(ACCELERATION_RANGE),
                 SettingSpec::new("mouse.reverse_scroll", json!(false), Scope::Device,
                                  "Scroll the other way with a mouse wheel; trackpads keep the system's direction."),
                 SettingSpec::new("mouse.smooth_scroll", json!(false), Scope::Device, "A wheel click glides instead of jumping."),
-                SettingSpec::new("mouse.scroll_lines", json!(3.0), Scope::Device, "Lines a smooth wheel click scrolls, 1–10; quick spins go further."),
-                SettingSpec::new("mouse.scroll_glide", json!(200.0), Scope::Device, "Milliseconds a smooth wheel click glides for, 0–600."),
+                SettingSpec::new("mouse.scroll_lines", json!(3.0), Scope::Device, "Lines a smooth wheel click scrolls, 1–10; quick spins go further.").range(SCROLL_LINES_RANGE),
+                SettingSpec::new("mouse.scroll_glide", json!(200.0), Scope::Device, "Milliseconds a smooth wheel click glides for, 0–600.").range(SCROLL_GLIDE_RANGE),
                 SettingSpec::new("mouse.scroll_exceptions", json!([]), Scope::Device,
                                  "Bundle identifiers of apps whose wheel scrolls without gliding (games, remote desktops)."),
             ],
@@ -115,13 +115,13 @@ impl Module for MouseModule {
     fn validate_setting(&self, key: &str, value: &Value) -> Result<()> {
         let number = value.as_f64().unwrap_or(f64::NAN);
         match key {
-            "mouse.speed" if !(SPEED_RANGE.0..=SPEED_RANGE.1).contains(&number) =>
+            "mouse.speed" if !SettingSpec::within(SPEED_RANGE, number) =>
                 Err(NyError::invalid_setting("The speed must be between 0.1 and 8.")),
-            "mouse.acceleration" if number != FOLLOW_SYSTEM && !(ACCELERATION_RANGE.0..=ACCELERATION_RANGE.1).contains(&number) =>
+            "mouse.acceleration" if number != FOLLOW_SYSTEM && !SettingSpec::within(ACCELERATION_RANGE, number) =>
                 Err(NyError::invalid_setting("The acceleration must be between 0 and 40, or -1 to follow the system.")),
-            "mouse.scroll_lines" if !(SCROLL_LINES_RANGE.0..=SCROLL_LINES_RANGE.1).contains(&number) =>
+            "mouse.scroll_lines" if !SettingSpec::within(SCROLL_LINES_RANGE, number) =>
                 Err(NyError::invalid_setting("A click must scroll between 1 and 10 lines.")),
-            "mouse.scroll_glide" if !(SCROLL_GLIDE_RANGE.0..=SCROLL_GLIDE_RANGE.1).contains(&number) =>
+            "mouse.scroll_glide" if !SettingSpec::within(SCROLL_GLIDE_RANGE, number) =>
                 Err(NyError::invalid_setting("The glide must be between 0 and 600 milliseconds.")),
             "mouse.scroll_exceptions" => {
                 let apps = value.as_array().map(Vec::as_slice).unwrap_or_default();

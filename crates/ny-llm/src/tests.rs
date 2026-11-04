@@ -1,8 +1,5 @@
 use super::*;
-use std::io::{Read, Write};
-use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 fn prompt(text: &str) -> ChatPrompt {
     ChatPrompt { system: "Translate into English.".into(), user: text.into() }
@@ -65,36 +62,16 @@ fn response_decoding() {
     assert_eq!(decode_response(&vec![b' '; 1_048_577]).unwrap_err().code, "response_too_large");
 }
 
-/// A one-connection-per-request loopback server; no test contacts a real provider.
+/// A loopback provider (see `stand_in`); no test contacts a real one.
 struct Server { config: ProviderConfig, requests: Arc<Mutex<Vec<String>>> }
 
 fn serve(status: &str, body: String, headers: &str, include_length: bool) -> Server {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let requests = Arc::new(Mutex::new(Vec::new()));
-    let log = requests.clone();
     let length = if include_length { format!("Content-Length: {}\r\n", body.len()) } else { String::new() };
     let kind = if headers.contains("Content-Type:") { "" } else { "Content-Type: application/json\r\n" };
     let response = format!("HTTP/1.1 {status}\r\n{kind}{length}{headers}Connection: close\r\n\r\n{body}");
-    thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { break };
-            let mut buffer = Vec::new();
-            let mut chunk = [0u8; 65536];
-            while let Ok(count) = stream.read(&mut chunk) {
-                if count == 0 { break; }
-                buffer.extend_from_slice(&chunk[..count]);
-                let text = String::from_utf8_lossy(&buffer).to_string();
-                if let Some(split) = text.find("\r\n\r\n") {
-                    let needed = text[..split].lines().find_map(|l| l.to_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0))).unwrap_or(0);
-                    if buffer.len() >= split + 4 + needed { break; }
-                }
-            }
-            log.lock().unwrap().push(String::from_utf8_lossy(&buffer).to_string());
-            let _ = stream.write_all(response.as_bytes());
-        }
-    });
-    Server { config: ProviderConfig::new(&format!("http://127.0.0.1:{port}/v1/chat/completions"), "test-model"), requests }
+    // A second connection is answered too, so a retry would show in the log.
+    let (base, requests) = stand_in::serve(vec![response.clone(), response]);
+    Server { config: ProviderConfig::new(&format!("{base}/v1/chat/completions"), "test-model"), requests }
 }
 
 const SUCCESS: &str = r#"{"choices":[{"message":{"content":"Hello, world!"},"finish_reason":"stop"}]}"#;
