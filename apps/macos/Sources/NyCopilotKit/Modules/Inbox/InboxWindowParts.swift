@@ -52,8 +52,3 @@ final class InboxRow: NSTableCellView {
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 }
-
-/// Escape closes the window, as in History.
-final class InboxWindowPanel: NSWindow {
-    override func cancelOperation(_ sender: Any?) { performClose(sender) }
-}

@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 
 /// Hosts the core and the module shells: menu bar item, app menu, Settings, and first-run guide.
@@ -10,17 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private var settingsWindow: SettingsWindow?
     private var welcomeWindow: WelcomeWindow?
-
-    /// Every module this build ships, in menu order, by id. Add new module shells here. A shell is
-    /// made only when its core module exists, since making one starts its work (hotkeys, devices).
-    private func makeModules(available: Set<String>) -> [ModuleShell] {
-        let makers: [(id: String, make: (CopilotServices) -> ModuleShell)] = [
-            ("translate", { TranslateShell(services: $0) }), ("windows", { WindowsShell(services: $0) }), ("capture", { CaptureShell(services: $0) }),
-            ("clipboard", { ClipboardShell(services: $0) }), ("inbox", { InboxShell(services: $0) }), ("ask", { AskShell(services: $0) }),
-            ("mouse", { MouseShell(services: $0) }), ("clock", { ClockShell(services: $0) }), ("menubar", { MenuBarShell(services: $0) })
-        ]
-        return makers.filter { available.contains($0.id) }.map { $0.make(services) }
-    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let identifier = Bundle.main.bundleIdentifier,
@@ -40,29 +30,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.terminate(nil)
             return
         }
+        Tips.keep(in: core)
         let preferences = Preferences(core: core)
         preferences.migrateFromNyTranslate()
-        preferences.keepAskOnLetters()
         services = CopilotServices(core: core, preferences: preferences, hotKeys: HotKeyCenter(preferences: preferences))
         services.openSettings = { [weak self] pane in self?.showSettings(pane: pane) }
         services.showWelcome = { [weak self] in self?.showWelcome() }
         services.appIcon = { [weak self] in self?.statusItem }
+        services.restart = { [weak self] in self?.restart() }
         services.isModuleOn = { [weak self] id in !(self?.modulesOff.contains(id) ?? false) }
         services.setModule = { [weak self] id, on in self?.setModule(id, on: on) }
         services.moduleList = { [weak self] in self?.modules.map { ($0.id, $0.title, $0.symbolName) } ?? [] }
 
         // Only load shells whose platform-neutral half exists in this core build.
-        let available = Set((try? core.call(.coreInfo) as? [String: Any])?["modules"] as? [String] ?? [])
-        // Old deletion markers go and the log is folded in, off the launch path.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [core] in _ = try? core?.call(.coreCompact) }
-        modules = makeModules(available: available)
+        let available = core.moduleIDs
+        // Old deletion markers go and the log is folded in, after launch and off the main thread.
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 5) { [core] in _ = try? core?.call(.coreCompact) }
+        modules = ModuleShells.all.filter { available.contains($0.id) }.map { $0.type.init(services: services) }
         for module in modules { module.hotKeyActions.forEach(services.hotKeys.add) }
         services.hotKeys.add(.init(id: Self.showShortcutsAction, title: L("Show all keyboard shortcuts"),
-                                   defaultCombination: .init(keyCode: 44, modifiers: HotKeyCombination.option | HotKeyCombination.command), // ⌥⌘/
+                                   defaultCombination: .init(keyCode: UInt32(kVK_ANSI_Slash), modifiers: HotKeyCombination.option | HotKeyCombination.command),
                                    handler: { [weak self] in self?.showShortcuts() }))
-        modules.compactMap { $0 as? WindowsShell }.first?.importRectangleOnce()
 
         installMenus()
+        modules.forEach { $0.didLaunch() }
         if !preferences.hasCompletedWelcome { showWelcome() }
     }
 
@@ -174,18 +165,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var modulesOff: Set<String> { Set(services.core.setting(.modulesOff, default: [String]())) }
 
-    /// Off: its shortcuts are cleared and its menu items hidden (Clipboard also stops keeping copies).
-    /// On: its shortcuts come back as they were by default, in the current key scheme.
+    /// Off: its shortcuts are cleared and its menu items hidden, and the shell hears of it (Clipboard
+    /// stops keeping copies). On: its shortcuts come back as they were by default, in the current key scheme.
     private func setModule(_ id: String, on: Bool) {
         var off = modulesOff
         guard off.contains(id) == on, let module = modules.first(where: { $0.id == id }) else { return }
         if on { off.remove(id) } else { off.insert(id) }
         try? services.core.setSetting(.modulesOff, off.sorted())
-        let scheme = KeyScheme.current(services).combinations
+        let scheme = KeyScheme.current(services.preferences).combinations
         var changes: [String: HotKeyCombination?] = [:]
         for action in module.hotKeyActions { changes[action.id] = on ? scheme[action.id] ?? action.defaultCombination : nil }
         _ = services.hotKeys.set(changes)
-        if id == "clipboard" { try? services.core.setSetting(.clipboardEnabled, on) }
+        module.setEnabled(on)
     }
 
     @objc private func showShortcutsFromMenu() { showShortcuts() }
@@ -214,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Quits and opens again: a small shell waits for this process to exit (a second copy would
     /// otherwise see this one still running and quit), then opens the app.
-    @objc func restart() {
+    @objc private func restart() {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.1; done; /usr/bin/open \"$2\"", "restart",
@@ -235,13 +226,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// A new bug report with the versions filled in, and Diagnostics on the clipboard to paste in
     /// (too long for the address). Diagnostics never include any of your text.
     @objc private func sendFeedback() {
-        let info = Bundle.main.infoDictionary
-        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
         var form = URLComponents(url: Self.issues, resolvingAgainstBaseURL: false)!
-        form.queryItems = [URLQueryItem(name: "template", value: "bug.yml"), URLQueryItem(name: "version", value: version),
+        form.queryItems = [URLQueryItem(name: "template", value: "bug.yml"), URLQueryItem(name: "version", value: Bundle.main.versionDescription),
                            URLQueryItem(name: "macos", value: ProcessInfo.processInfo.operatingSystemVersionString)]
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(Diagnostics.report(), forType: .string)
+        Diagnostics.copyReport()
         if let url = form.url { NSWorkspace.shared.open(url) }
         services.toast.show(L("Diagnostics copied"), detail: L("Paste them into the report’s Diagnostics box."), style: .success)
     }

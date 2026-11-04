@@ -1,7 +1,4 @@
 import AppKit
-import Carbon
-import IOKit.ps
-import MacPlatform
 
 /// One display's overlay, in the manner of Live Text: the screen dimmed a little except for its text,
 /// each block (a paragraph's lines together) one glowing shape; the block under the pointer outlined;

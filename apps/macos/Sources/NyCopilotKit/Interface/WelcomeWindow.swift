@@ -44,7 +44,6 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
                                      detail: L("To read what you select, paste results back, and move windows."))
     private let modelStep = StepRow(number: 2, title: L("Connect a model (optional)"), detail: "")
     private var poll: Timer?
-    var onFinish: (() -> Void)?
 
     init(services: CopilotServices) {
         self.services = services
@@ -151,7 +150,7 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
             let enabled = row.goal.enabled.map { services.core.setting($0, default: false) } ?? true
             row.box.state = services.isModuleOn(row.goal.module) && enabled ? .on : .off
         }
-        let current = services.preferences.hasCompletedWelcome ? KeyScheme.current(services) : KeyScheme.recommended
+        let current = services.preferences.hasCompletedWelcome ? KeyScheme.current(services.preferences) : KeyScheme.recommended
         scheme.selectedSegment = KeyScheme.allCases.firstIndex(of: current) ?? 0
         refresh()
         window?.setContentSize(window?.contentView?.fittingSize ?? .zero)
@@ -198,7 +197,6 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         poll?.invalidate()
-        onFinish?()
     }
 }
 

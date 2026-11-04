@@ -27,7 +27,6 @@ enum CoreMethod: String {
     case mousePointer = "mouse.pointer"
     case recordsClear = "records.clear"
     case recordsDelete = "records.delete"
-    case recordsGet = "records.get"
     case recordsList = "records.list"
     case settingsGet = "settings.get"
     case settingsReset = "settings.reset"
@@ -47,21 +46,31 @@ enum CoreMethod: String {
 
 /// Typed forms of the record calls every module makes.
 extension NyCore {
+    /// `records.list`'s parameters; an empty search matches everything.
+    private struct RecordsQuery: Encodable {
+        let collection: String
+        let limit: Int
+        let search: String?
+        let before: String?
+
+        init(_ collection: CoreCollection, search: String?, limit: Int, before: String?) {
+            self.collection = collection.rawValue
+            self.limit = limit
+            self.search = search?.isEmpty == false ? search : nil
+            self.before = before
+        }
+    }
+
     /// Newest first; `search` matches the module's search text.
     func records<T: Decodable>(_ collection: CoreCollection, as type: T.Type, search: String? = nil, limit: Int = 50,
                                before: String? = nil) throws -> CorePage<T> {
-        var params: [String: Any] = ["collection": collection.rawValue, "limit": limit]
-        if let search, !search.isEmpty { params["search"] = search }
-        if let before { params["before"] = before }
-        return try call(.recordsList, params, as: CorePage<T>.self)
+        try call(.recordsList, encoding: RecordsQuery(collection, search: search, limit: limit, before: before), as: CorePage<T>.self)
     }
 
     /// `records`, off the main thread: for searches run as you type.
     @MainActor
     func searchRecords<T: Decodable & Sendable>(_ collection: CoreCollection, as type: T.Type, search: String?, limit: Int) async throws -> CorePage<T> {
-        var params: [String: Any] = ["collection": collection.rawValue, "limit": limit]
-        if let search, !search.isEmpty { params["search"] = search }
-        return try await perform(.recordsList, params, as: CorePage<T>.self)
+        try await perform(.recordsList, encoding: RecordsQuery(collection, search: search, limit: limit, before: nil), as: CorePage<T>.self)
     }
 
     func deleteRecord(_ id: String) throws { try call(.recordsDelete, ["id": id]) }

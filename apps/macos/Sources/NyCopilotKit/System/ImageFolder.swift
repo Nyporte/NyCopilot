@@ -28,19 +28,32 @@ struct ImageFolder: Sendable {
         return keep(png: data)
     }
 
-    /// Removes files no record in `collections` names any more (entries pruned or deleted). Files
-    /// younger than `graceSeconds` stay: one may be kept but not yet recorded.
-    @MainActor
+    /// Takes over a file no one else keeps, such as a finished recording: it moves in under a new
+    /// name with its own extension. The name, or the reason it couldn't move.
+    func keep(moving source: URL) throws -> String {
+        let name = "\(UUID().uuidString).\(source.pathExtension.lowercased())"
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: source, to: file(name))
+        // Kept from now on: `removeUnused`'s grace counts from here, not from when it was written.
+        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: file(name).path)
+        return name
+    }
+
+    /// Removes files no record in `collections` names any more (entries pruned or deleted), off the
+    /// main thread: it reads every record. Files younger than `graceSeconds` stay: one may be kept
+    /// but not yet recorded.
     func removeUnused(core: NyCore, collections: [CoreCollection], graceSeconds: TimeInterval = 60) {
+        Task.detached(priority: .utility) { [self] in sweep(core: core, collections: collections, graceSeconds: graceSeconds) }
+    }
+
+    private func sweep(core: NyCore, collections: [CoreCollection], graceSeconds: TimeInterval) {
         struct Entry: Decodable { let image: String? }
         var used: Set<String> = []
         for collection in collections {
             var before: String?
             repeat {
-                var params: [String: Any] = ["collection": collection.rawValue, "limit": 500]
-                if let before { params["before"] = before }
                 // A failed read must not look like "nothing is used".
-                guard let page = try? core.call(.recordsList, params, as: CorePage<Entry>.self) else { return }
+                guard let page = try? core.records(collection, as: Entry.self, limit: 500, before: before) else { return }
                 used.formUnion(page.records.compactMap(\.data.image))
                 before = page.next
             } while before != nil

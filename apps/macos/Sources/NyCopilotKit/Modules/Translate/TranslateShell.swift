@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 import os
 
@@ -40,13 +41,21 @@ final class TranslateShell: ModuleShell {
 
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.compose, title: L("Translate as you type"),
-               defaultCombination: .init(keyCode: 120, modifiers: 0), // F2, between capture (F1) and the inbox (F3)
+               defaultCombination: Self.shortcuts(in: .functionKeys)[Action.compose],
                handler: { [weak self] in self?.beginComposition() },
                // Held: the whole screen, translated in place.
                longPress: { [weak self] in self?.screen.toggle() }),
          .init(id: Action.history, title: L("Open translation history"),
-               defaultCombination: .init(keyCode: 4, modifiers: HotKeyCombination.option | HotKeyCombination.command),
+               defaultCombination: .init(keyCode: UInt32(kVK_ANSI_H), modifiers: HotKeyCombination.option | HotKeyCombination.command),
                handler: { [weak self] in self?.showHistory() })]
+    }
+
+    /// F2, between capture (F1) and the inbox (F3); or ⌥⌘T.
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] {
+        switch scheme {
+        case .functionKeys: [Action.compose: .init(keyCode: UInt32(kVK_F2), modifiers: 0)]
+        case .letters: [Action.compose: .init(keyCode: UInt32(kVK_ANSI_T), modifiers: KeyScheme.letterModifiers)]
+        }
     }
 
     func menuItems() -> [NSMenuItem] {
@@ -67,19 +76,15 @@ final class TranslateShell: ModuleShell {
 
     private var language: String { services.core.setting(.targetLanguage, default: "English") }
 
-    private struct Display: Decodable { let native: String; let code: String }
-
     /// The badge code and own name the composer shows for a language.
-    private func display(_ language: String) -> ComposerPanel.Language {
-        let shown = try? services.core.call(.translateNativeName, ["language": language], as: Display.self)
-        return .init(code: shown?.code ?? String(language.prefix(2)).uppercased(), name: shown?.native ?? language)
+    private static func display(_ language: NyCore.LanguageInfo) -> ComposerPanel.Language {
+        .init(code: language.code, name: language.native)
     }
 
     /// Tab in the composer: the core picks the next favorite and remembers it as the target.
     private func cycleLanguage(_ step: Int) {
         do {
-            let next = try services.core.call(.translateCycle, ["step": step], as: Display.self)
-            composer.setLanguage(.init(code: next.code, name: next.native))
+            composer.setLanguage(Self.display(try services.core.cycleLanguage(step)))
         } catch {
             composer.showError(error.localizedDescription)
         }
@@ -132,7 +137,7 @@ final class TranslateShell: ModuleShell {
             }
             target = captured
             composer.present(over: Self.anchor(for: captured), mode: captured == nil ? .copy : .paste,
-                             language: display(language))
+                             language: Self.display(services.core.language(language)))
         }
     }
 
@@ -174,7 +179,7 @@ final class TranslateShell: ModuleShell {
             } catch {
                 guard let self, !Task.isCancelled, operationID == id else { return }
                 // Nothing set up yet: macOS translates it, and its Replace hands the result back.
-                if (error as? NyCore.Failure)?.code == "provider_not_configured", SystemTranslation.isAvailable {
+                if SystemTranslation.standsIn(for: error) {
                     composer.stopLoading()
                     SystemTranslation.present(text, near: composer.frame ?? .zero) { [weak self] translated in
                         Task { await self?.deliver(translated, id: id) }
@@ -194,33 +199,30 @@ final class TranslateShell: ModuleShell {
     }
 
     private func showFailure(_ error: Error) {
-        let code = (error as? NyCore.Failure)?.code
-        Diagnostics.note("translate", "failed: \(code ?? "unknown") — \(error.localizedDescription)")
-        switch code {
-        case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error":
-            composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
-                self?.composer.cancel()
-                self?.services.openSettings("model")
-            }))
-        case "invalid_setting":
-            composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
-                self?.composer.cancel()
-                self?.services.openSettings("model")
-            }))
-        case "http_status" where (error as? NyCore.Failure)?.status.map({ [401, 403, 404].contains($0) }) == true:
-            composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
-                self?.composer.cancel()
-                self?.services.openSettings("model")
-            }))
-        default:
-            composer.showError(error.localizedDescription)
+        let failure = error as? NyCore.Failure
+        Diagnostics.note("translate", "failed: \(failure?.code ?? "unknown") — \(error.localizedDescription)")
+        guard let pane = Self.settingsPane(fixing: failure) else { composer.showError(error.localizedDescription); return }
+        composer.showError(error.localizedDescription, action: (L("Open Settings"), { [weak self] in
+            self?.composer.cancel()
+            self?.services.openSettings(pane)
+        }))
+    }
+
+    /// The Settings tab where a failure is put right: AI & Engines for a service that's missing,
+    /// refused, or unreachable; Translate for a setting of its own, such as the target language.
+    private static func settingsPane(fixing failure: NyCore.Failure?) -> String? {
+        switch failure?.code {
+        case "google_access", "invalid_key", "unsupported_language", "provider_not_configured", "volcengine_error": "model"
+        case "invalid_setting": "translate"
+        case "http_status" where failure?.status.map({ [401, 403, 404].contains($0) }) == true: "model"
+        default: nil
         }
     }
 
     /// The result is already in history. Paste once into the field the composer came from; if that
     /// can't be done safely, the translation goes on the clipboard with a short note.
     private func deliver(_ text: String, id: UUID) async {
-        let anchor = Self.anchor(for: target).map(Self.appKitRect)
+        let anchor = Self.anchor(for: target).map(ScreenGeometry.appKit)
         guard let target else {
             Diagnostics.note("paste", "copied instead: Accessibility is off")
             composer.hideForInsertion()
@@ -295,36 +297,25 @@ final class TranslateShell: ModuleShell {
         log.notice("composer anchored to \(source, privacy: .public) \(String(describing: anchor), privacy: .public)")
         return anchor
     }
-
-    private static func appKitRect(_ ax: CGRect) -> NSRect { ScreenGeometry.appKit(ax) }
 }
 
 extension NyCore {
-    /// Fire-and-forget: tells the core to discard a request's result if it is still running.
-    func cancel(requestID: String) { _ = try? call(.coreCancel, ["request_id": requestID]) }
-
-    /// The language you read in: screen translation's choice, or else the Mac's own language.
-    var readingLanguage: String {
-        let chosen: String = setting(.screenLanguage, default: "")
-        return chosen.isEmpty ? ScreenText.deviceLanguage : chosen
-    }
-
     /// The core's favorites, which Tab steps through in the composer, until someone changes them.
     static let coreFavorites = ["English", "Simplified Chinese", "Japanese"]
 
     /// On a Mac in another language, the favorites start as English and that language instead of
     /// the core's English, Chinese, and Japanese. Once per Mac, and only if they're still the core's.
+    /// The once-mark moved from UserDefaults (`defaults`) to the core.
     func seedFavoriteLanguages(device: String = ScreenText.deviceLanguage, defaults: UserDefaults = .standard) {
-        let key = "NyCopilotSeededFavorites"
-        guard !defaults.bool(forKey: key) else { return }
-        defaults.set(true, forKey: key)
+        let legacy = "NyCopilotSeededFavorites"
+        if defaults.bool(forKey: legacy) {
+            try? setSetting(.favoritesSeeded, true)
+            defaults.removeObject(forKey: legacy)
+        }
+        guard !setting(.favoritesSeeded, default: false) else { return }
+        try? setSetting(.favoritesSeeded, true)
         let favorites: [String] = setting(.favoriteLanguages, default: [])
         guard favorites == Self.coreFavorites, !favorites.contains(device) else { return }
         try? setSetting(.favoriteLanguages, ["English", device])
-    }
-
-    /// A language's own name (日本語 for Japanese), or the name as given.
-    func nativeName(of language: String) -> String {
-        (try? call(.translateNativeName, ["language": language]) as? [String: Any])?["native"] as? String ?? language
     }
 }

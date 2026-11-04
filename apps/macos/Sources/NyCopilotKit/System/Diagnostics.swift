@@ -27,15 +27,13 @@ enum Diagnostics {
 
     /// The version, macOS, permissions, and recent events, ready to paste into a bug report.
     static func report() -> String {
-        let info = Bundle.main.infoDictionary
-        let version = "\(info?["CFBundleShortVersionString"] as? String ?? "?") (\(info?["CFBundleVersion"] as? String ?? "?"))"
         let recent: [String] = {
             lock.lock()
             defer { lock.unlock() }
             return events
         }()
         return """
-            NyCopilot \(version)
+            NyCopilot \(Bundle.main.versionDescription)
             macOS \(ProcessInfo.processInfo.operatingSystemVersionString)
             Accessibility: \(AXIsProcessTrusted() ? "allowed" : "not allowed")
             Screen Recording: \(CGPreflightScreenCaptureAccess() ? "allowed" : "not allowed")

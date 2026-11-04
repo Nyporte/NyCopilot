@@ -25,10 +25,10 @@ enum KeyScheme: String, CaseIterable {
 
     /// The scheme chosen in the setup guide; before that, the one the screenshot shortcut is in.
     @MainActor
-    static func current(_ services: CopilotServices) -> KeyScheme {
-        if let chosen = KeyScheme(rawValue: services.core.setting(.keyScheme, default: "")) { return chosen }
-        let capture = services.hotKeys.combination(for: CaptureShell.Action.capture)
-        return capture != nil && capture == letters.combinations[CaptureShell.Action.capture] ? .letters : .functionKeys
+    static func current(_ preferences: Preferences) -> KeyScheme {
+        if let chosen = preferences.chosenKeyScheme { return chosen }
+        let capture = CaptureShell.Action.capture
+        return preferences.hotKey(for: capture, default: nil) == letters.combinations[capture] ? .letters : .functionKeys
     }
 
     /// Moves the scheme's shortcuts (those of modules that are on) to this scheme; the failures, if
@@ -41,25 +41,11 @@ enum KeyScheme: String, CaseIterable {
         return services.hotKeys.set(changes)
     }
 
+    /// Every module's shortcuts in this scheme, as each shell gives them.
     var combinations: [String: HotKeyCombination] {
-        let option = HotKeyCombination.option, command = HotKeyCombination.command, shift = HotKeyCombination.shift
-        switch self {
-        case .functionKeys:
-            return [CaptureShell.Action.capture: .init(keyCode: 122, modifiers: 0),
-                    CaptureShell.Action.pinClipboard: .init(keyCode: 122, modifiers: shift),
-                    CaptureShell.Action.togglePins: .init(keyCode: 122, modifiers: option),
-                    TranslateShell.Action.compose: .init(keyCode: 120, modifiers: 0),
-                    InboxShell.Action.capture: .init(keyCode: 99, modifiers: 0),
-                    InboxShell.Action.open: .init(keyCode: 99, modifiers: shift),
-                    AskShell.Action.open: .init(keyCode: 118, modifiers: 0)]
-        case .letters:
-            return [CaptureShell.Action.capture: .init(keyCode: 1, modifiers: option | command), // ⌥⌘S
-                    CaptureShell.Action.pinClipboard: .init(keyCode: 35, modifiers: option | command), // ⌥⌘P
-                    CaptureShell.Action.togglePins: .init(keyCode: 35, modifiers: option | command | shift),
-                    TranslateShell.Action.compose: .init(keyCode: 17, modifiers: option | command), // ⌥⌘T
-                    InboxShell.Action.capture: .init(keyCode: 38, modifiers: option | command), // ⌥⌘J
-                    InboxShell.Action.open: .init(keyCode: 38, modifiers: option | command | shift),
-                    AskShell.Action.open: .init(keyCode: 0, modifiers: option | command)] // ⌥⌘A
-        }
+        ModuleShells.all.reduce(into: [:]) { all, shell in all.merge(shell.type.shortcuts(in: self)) { first, _ in first } }
     }
+
+    /// The letters scheme's ⌥⌘; a second action on the same letter adds ⇧.
+    static let letterModifiers = HotKeyCombination.option | HotKeyCombination.command
 }

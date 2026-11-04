@@ -4,7 +4,7 @@ import AppKit
 @MainActor
 final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate,
                            NSToolbarDelegate, NSSearchFieldDelegate, NSMenuDelegate {
-    private struct Entry: Decodable { let text: String; let targetLanguage: String }
+    private struct Entry: Decodable, Sendable { let text: String; let targetLanguage: String }
     private typealias Item = CoreRecord<Entry>
 
     private let core: NyCore
@@ -18,15 +18,16 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
     private var search = ""
     private var items: [Item] = []
     private var next: String?
-    private var observer: NSObjectProtocol?
+    private var changes: CoreObservation?
+    private let searching = RecordSearch()
     private let searchItem = NSToolbarItem.Identifier("search")
     private lazy var searchField = NSSearchField()
 
     init(core: NyCore) {
         self.core = core
-        let window = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 760, height: 500),
-                                  styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
-                                  backing: .buffered, defer: true)
+        let window = ClosableWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 500),
+                                    styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
+                                    backing: .buffered, defer: true)
         window.title = L("Translation History")
         window.minSize = NSSize(width: 560, height: 360)
         window.isReleasedWhenClosed = false
@@ -55,12 +56,9 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         window.toolbarStyle = .unified
         if !window.setFrameUsingName("NyCopilotHistory") { window.center() }
 
-        observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any],
-                  event["type"] as? String == "records.changed", event["collection"] as? String == CoreCollection.translateHistory.rawValue else { return }
-            MainActor.assumeIsolated {
-                if self?.window?.isVisible == true { self?.reload() }
-            }
+        changes = core.observe { [weak self] event in
+            guard event.changedCollection == CoreCollection.translateHistory.rawValue else { return }
+            if self?.window?.isVisible == true { self?.reload() }
         }
     }
 
@@ -164,12 +162,16 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
 
     private func load(reset: Bool) {
         if !reset && next == nil { return }
-        var params: [String: Any] = ["collection": CoreCollection.translateHistory.rawValue, "limit": 100]
-        if !reset, let next { params["before"] = next }
-        if !search.isEmpty { params["search"] = search }
+        let before = reset ? nil : next
+        show(Result { try core.records(.translateHistory, as: Entry.self, search: search, limit: 100, before: before) }, reset: reset)
+    }
+
+    /// A page of translations: a first page replaces the list, a later one extends it; the selected
+    /// translation stays selected.
+    private func show(_ page: Result<CorePage<Entry>, Error>, reset: Bool) {
         let selectedID = selectedItem?.id
-        do {
-            let page = try core.call(.recordsList, params, as: CorePage<Entry>.self)
+        switch page {
+        case .success(let page):
             items = reset ? page.records : items + page.records
             next = page.next
             table.reloadData()
@@ -178,7 +180,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
                 table.selectRowIndexes(IndexSet(integer: max(row, 0)), byExtendingSelection: false)
             }
             emptyState.configure(searching: !search.isEmpty, query: search)
-        } catch {
+        case .failure(let error):
             items = []
             table.reloadData()
             emptyState.configure(error: error.localizedDescription)
@@ -248,9 +250,14 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
         updateDetail()
     }
 
+    /// Searches as you type, off the main thread.
     func controlTextDidChange(_ obj: Notification) {
         search = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        reload()
+        let query = search
+        searching.run({ [core] () async -> Result<CorePage<Entry>, Error> in
+            do { return .success(try await core.searchRecords(.translateHistory, as: Entry.self, search: query, limit: 100)) }
+            catch { return .failure(error) }
+        }, show: { [weak self] page in self?.show(page, reset: true) })
     }
 
     // MARK: Toolbar
@@ -271,6 +278,7 @@ final class HistoryWindow: NSWindowController, NSWindowDelegate, NSTableViewData
     @objc func performFindPanelAction(_ sender: Any?) { window?.makeFirstResponder(searchField) }
 
     func windowWillClose(_ notification: Notification) {
+        searching.cancel()
         searchField.stringValue = ""
         search = ""
     }
@@ -306,11 +314,6 @@ private final class HistoryTable: NSTableView {
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 51 || event.keyCode == 117 { onDelete?() } else { super.keyDown(with: event) }
     }
-}
-
-/// Escape and ⌘W both close History.
-private final class HistoryPanel: NSWindow {
-    override func cancelOperation(_ sender: Any?) { performClose(sender) }
 }
 
 private final class HistoryRow: NSTableCellView {

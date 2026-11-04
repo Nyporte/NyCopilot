@@ -64,29 +64,22 @@ final class ClipboardPane: SettingsPane {
     @objc private func changeDays() {
         try? services.core.setSetting(.clipboardKeepDays, Self.days[keepFor.indexOfSelectedItem].0)
         services.core.clipboardPrune()
-        ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
+        ClipboardShell.removeUnusedImages(core: services.core)
     }
 
     @objc private func changeCount() {
         try? services.core.setSetting(.clipboardMaxItems, Self.counts[atMost.indexOfSelectedItem])
         services.core.clipboardPrune()
-        ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned])
+        ClipboardShell.removeUnusedImages(core: services.core)
     }
 
     @objc private func clearHistory() {
-        let alert = NSAlert()
-        alert.messageText = L("Clear clipboard history?")
-        alert.informativeText = L("Every kept copy is removed; pinned entries and what’s on the clipboard now stay.")
-        alert.addButton(withTitle: L("Clear"))
-        alert.addButton(withTitle: L("Cancel"))
-        alert.buttons.first?.hasDestructiveAction = true
-        guard let window = view.window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            guard let services = self?.services else { return }
-            _ = try? services.core.clearRecords(.clipboardItems)
+        confirmDestructive(L("Clear clipboard history?"), detail: L("Every kept copy is removed; pinned entries and what’s on the clipboard now stay."),
+                           button: L("Clear")) { [weak self] in
+            guard let core = self?.services.core else { return }
+            _ = try? core.clearRecords(.clipboardItems)
             // Cleared means gone, however recent.
-            ClipboardShell.images.removeUnused(core: services.core, collections: [.clipboardItems, .clipboardPinned], graceSeconds: 0)
+            ClipboardShell.removeUnusedImages(core: core, graceSeconds: 0)
         }
     }
 }

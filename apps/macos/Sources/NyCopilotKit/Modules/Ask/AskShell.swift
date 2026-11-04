@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 
 /// macOS half of Ask AI: the shortcut asks about what's selected in any app (or opens a blank
@@ -24,6 +25,7 @@ final class AskShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
+        Self.keepKeyOnLetters(services.preferences)
         services.askAI = { [weak self] material in self?.present(material) }
         panel.onAsk = { [weak self] action, question, turns in
             guard let self else { throw CancellationError() }
@@ -44,8 +46,24 @@ final class AskShell: ModuleShell {
 
     var hotKeyActions: [HotKeyCenter.Action] {
         [.init(id: Action.open, title: L("Ask about the selection, or ask anything"),
-               defaultCombination: .init(keyCode: 118, modifiers: 0), // F4
+               defaultCombination: Self.shortcuts(in: .functionKeys)[Action.open],
                handler: { [weak self] in self?.open() })]
+    }
+
+    /// F4, or ⌥⌘A.
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] {
+        switch scheme {
+        case .functionKeys: [Action.open: .init(keyCode: UInt32(kVK_F4), modifiers: 0)]
+        case .letters: [Action.open: .init(keyCode: UInt32(kVK_ANSI_A), modifiers: KeyScheme.letterModifiers)]
+        }
+    }
+
+    /// Ask AI was ⌥⌘A in both key schemes before it joined them as F4 or ⌥⌘A. Someone on ⌥⌘ letters
+    /// who never changed it keeps ⌥⌘A rather than moving to the new default; on F-keys, it moves to F4.
+    /// Runs before the shortcut is registered.
+    static func keepKeyOnLetters(_ preferences: Preferences) {
+        guard !preferences.hasStoredHotKey(for: Action.open), KeyScheme.current(preferences) == .letters else { return }
+        preferences.setHotKey(shortcuts(in: .letters)[Action.open], for: Action.open)
     }
 
     func menuItems() -> [NSMenuItem] {
@@ -69,7 +87,7 @@ final class AskShell: ModuleShell {
             var material = AskMaterial(source: await SourceContext.of(foreign), app: foreign)
             if let foreign, Accessibility.isTrusted, let selected = await InputTarget.selectedText(pid: foreign.processIdentifier) {
                 material.text = selected.text
-                material.anchor = selected.bounds.map(Self.appKitRect)
+                material.anchor = selected.bounds.map(ScreenGeometry.appKit)
                 if let target = try? await InputTarget.capture(pid: foreign.processIdentifier), target.hasSelection {
                     material.replaceable = target
                 }
@@ -84,31 +102,46 @@ final class AskShell: ModuleShell {
         panel.present(material)
     }
 
-    private func ask(action: String, question: String, turns: [[String: String]]) async throws -> String {
+    /// `ask.run`'s parameters, streamed.
+    private struct Request: Encodable {
+        let action: String
+        var text: String
+        let question: String
+        let turns: [AskTurn]
+        let language: String
+        let apiKey: String
+        var image: String?
+        var requestID = ""
+        let stream = true
+
+        enum CodingKeys: String, CodingKey {
+            case action, text, question, turns, language, image, stream, apiKey = "api_key", requestID = "request_id"
+        }
+    }
+
+    private func ask(action: String, question: String, turns: [AskTurn]) async throws -> String {
         struct Answer: Decodable { let text: String }
-        var params: [String: Any] = ["action": action, "text": material.text, "question": question, "turns": turns,
-                                     "language": services.core.readingLanguage, "api_key": try KeychainStore.read()]
+        var request = Request(action: action, text: material.text, question: question, turns: turns,
+                              language: services.core.readingLanguage, apiKey: try KeychainStore.read())
         if let screenshot = await prepared?.value {
-            if let image = screenshot.image { params["image"] = image }
-            params["text"] = screenshot.text
+            request.image = screenshot.image
+            request.text = screenshot.text
         }
         let id = UUID().uuidString
         requestID = id
-        params["request_id"] = id
-        params["stream"] = true
+        request.requestID = id
         // The answer so far, as the core streams it.
-        let progress = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let event = note.userInfo?["event"] as? [String: Any], event["type"] as? String == "ask.delta",
-                  event["request_id"] as? String == id, let text = event["text"] as? String else { return }
+        let progress = services.core.observe { [weak self] event in
             // Only while it's still the current request: a cancelled one may send one more piece.
-            MainActor.assumeIsolated { if self?.requestID == id { self?.panel.streamed(text) } }
+            guard case .askDelta(id, let text) = event, self?.requestID == id else { return }
+            self?.panel.streamed(text)
         }
         defer {
-            NotificationCenter.default.removeObserver(progress)
+            progress.cancel()
             if requestID == id { requestID = nil }
         }
         do {
-            return try await services.core.perform(.askRun, params, as: Answer.self).text
+            return try await services.core.perform(.askRun, encoding: request, as: Answer.self).text
         } catch {
             Diagnostics.note("ask", "\(action) failed: \(error.localizedDescription)")
             throw error
@@ -150,6 +183,4 @@ final class AskShell: ModuleShell {
             }
         }
     }
-
-    static func appKitRect(_ rect: CGRect) -> NSRect { ScreenGeometry.appKit(rect) }
 }

@@ -4,7 +4,7 @@ import AppKit
 /// by name. The order is the order Tab steps through in the composer. Every change is saved at once.
 @MainActor
 final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelegate {
-    struct Language: Decodable { let name: String; let native: String; let code: String }
+    typealias Language = NyCore.LanguageInfo
 
     /// Saves a new list; returns an error message to show (and keep the old list), or nil.
     var onChange: (([String]) -> String?)?
@@ -16,8 +16,8 @@ final class LanguageListEditor: NSView, NSTableViewDataSource, NSTableViewDelega
     private var height: NSLayoutConstraint!
     private var names: [String] = []
     private var suggestions: [Language] = []
-    /// Looks up the badge code and own name for languages that aren't suggestions.
-    private var describe: (String) -> Language = { Language(name: $0, native: $0, code: String($0.prefix(2)).uppercased()) }
+    /// Looks up the badge code and own name for languages that aren't suggestions (set by `load`).
+    private var describe: (String) -> Language = { Language(name: $0, native: $0, code: "") }
     private static let rowHeight: CGFloat = 36
     private static let maximum = 8
 
@@ -192,16 +192,16 @@ private final class LanguageRow: NSView {
         super.init(frame: .zero)
         let badge = AppearanceView()
         badge.radius = 5
-        badge.fill = NSColor(name: nil) { $0.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor.white.withAlphaComponent(0.1) : NSColor.black.withAlphaComponent(0.06) }
-        let wide = language.code.unicodeScalars.first.map { $0.value > 0x2E80 } ?? false
-        let code = Design.label(language.code, size: wide ? 12 : 10.5, weight: .semibold, color: .secondaryLabelColor)
+        badge.fill = LanguageBadge.fill
+        let code = Design.label(language.code, color: .secondaryLabelColor)
+        code.font = LanguageBadge.font(for: language.code)
         code.translatesAutoresizingMaskIntoConstraints = false
         badge.addSubview(code)
         badge.translatesAutoresizingMaskIntoConstraints = false
         let native = Design.label(language.native, size: 13)
         // The core's English name, in the interface language; a name typed by hand shows as typed.
         let english = Design.label(language.native == language.name ? "" : L(language.name), size: 12, color: .secondaryLabelColor)
+        // A disabled button fades, so the first row has no ▲ to press.
         let up = Self.button("chevron.up", L("Move %@ up", L(language.name)), enabled: !isFirst, action: #selector(moveRowUp), target: self)
         let down = Self.button("chevron.down", L("Move %@ down", L(language.name)), enabled: !isLast, action: #selector(moveRowDown), target: self)
         let remove = Self.button("minus.circle", L("Remove %@", L(language.name)), enabled: canRemove, action: #selector(removeTapped), target: self)
@@ -216,8 +216,8 @@ private final class LanguageRow: NSView {
             row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
             row.centerYAnchor.constraint(equalTo: centerYAnchor),
-            badge.widthAnchor.constraint(equalToConstant: 24),
-            badge.heightAnchor.constraint(equalToConstant: 18),
+            badge.widthAnchor.constraint(equalToConstant: LanguageBadge.size.width),
+            badge.heightAnchor.constraint(equalToConstant: LanguageBadge.size.height),
             code.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
             code.centerYAnchor.constraint(equalTo: badge.centerYAnchor)
         ]
@@ -239,15 +239,9 @@ private final class LanguageRow: NSView {
 
     required init?(coder: NSCoder) { fatalError("Use init(language:isFirst:isLast:canRemove:)") }
 
-    /// A small borderless icon button; a disabled one fades, so the first row has no ▲ to press.
     private static func button(_ symbol: String, _ label: String, enabled: Bool, action: Selector, target: AnyObject) -> NSButton {
-        let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, target: target, action: action)
-        button.isBordered = false
-        button.contentTintColor = .secondaryLabelColor
-        button.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+        let button = Design.iconButton(symbol, label: label, pointSize: 12, weight: .medium, target: target, action: action)
         button.isEnabled = enabled
-        button.toolTip = label
-        button.widthAnchor.constraint(equalToConstant: 22).isActive = true
         return button
     }
 

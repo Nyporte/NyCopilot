@@ -41,6 +41,20 @@ enum Design {
         return button
     }
 
+    /// A small borderless symbol button, 22 points wide, tinted like secondary text; `label` is its
+    /// tooltip and what VoiceOver reads. A disabled one fades.
+    static func iconButton(_ symbol: String, label: String, pointSize: CGFloat, weight: NSFont.Weight,
+                           target: AnyObject, action: Selector) -> NSButton {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: label) ?? NSImage()
+        let button = NSButton(image: image, target: target, action: action)
+        button.isBordered = false
+        button.symbolConfiguration = .init(pointSize: pointSize, weight: weight)
+        button.contentTintColor = .secondaryLabelColor
+        button.toolTip = label
+        button.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        return button
+    }
+
     static func hstack(_ views: [NSView], spacing: CGFloat = 8) -> NSStackView {
         let stack = NSStackView(views: views)
         stack.orientation = .horizontal
@@ -109,6 +123,11 @@ extension NSWindow {
         isReleasedWhenClosed = false
         collectionBehavior = behavior.union([.canJoinAllSpaces, .fullScreenAuxiliary])
     }
+}
+
+/// A titled window that Escape closes like ⌘W, as Settings, History, and the inbox do.
+final class ClosableWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) { performClose(sender) }
 }
 
 extension NSWindow.Level {

@@ -18,7 +18,7 @@ final class MenuBarShell: ModuleShell {
     private let services: CopilotServices
     private var divider: MenuBarDivider?
     private var hideAgain: Timer?
-    private var observer: NSObjectProtocol?
+    private var settingChanges: CoreObservation?
     private var bar: HiddenItemsBar?
     private var openingBar = false
     /// When a click on the arrow closed the bar, so that click doesn't open it again.
@@ -28,14 +28,15 @@ final class MenuBarShell: ModuleShell {
 
     init(services: CopilotServices) {
         self.services = services
-        observer = NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-            guard let key = (note.userInfo?["event"] as? [String: Any])?["key"] as? String,
-                  key.hasPrefix("menubar.") || key == SettingKey.modulesOff.rawValue else { return }
-            MainActor.assumeIsolated { self?.apply() }
+        settingChanges = services.core.observe { [weak self] event in
+            guard let key = event.changedSetting, key.hasPrefix("menubar.") || key == SettingKey.modulesOff.rawValue else { return }
+            self?.apply()
         }
-        // After NyCopilot's own icon is in the menu bar, so the first time, these land left of it.
-        DispatchQueue.main.async { [weak self] in self?.apply() }
     }
+
+    /// NyCopilot's own icon is in the menu bar now, so the first time, the arrow and the icons it
+    /// hides land left of it.
+    func didLaunch() { apply() }
 
     private var state: MenuBarState { MenuBarState.read(services.core, moduleOn: services.isModuleOn(id)) }
 

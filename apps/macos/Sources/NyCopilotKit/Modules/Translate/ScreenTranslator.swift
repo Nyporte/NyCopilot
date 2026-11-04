@@ -7,14 +7,14 @@ import MacPlatform
 /// highlighted, like Live Text. Point at a block not in the chosen language and a card with its
 /// translation floats beside it. The page itself is left exactly as it is. A small capsule at the
 /// bottom picks the language — its own, apart from the composer's, since reading usually goes into
-/// your language and writing out of it. The overlay lets every click and scroll
-/// through, so the computer works as usual underneath, and it keeps up as the screen changes. Esc ends it.
+/// your language and writing out of it. The overlay lets every click and scroll through, so the
+/// computer works as usual underneath, and it keeps up as the screen changes. Esc ends it.
 ///
 /// Keeping up cheaply: each display is glanced at ten times a second at an eighth of its resolution.
-/// Where it changed, every block touching the change is taken down at once — nothing stale stays up —
-/// and once
-/// it has settled, only the changed band of the screen is read again, at full resolution. Only a block
-/// you point at is translated, once the pointer rests on it, and never twice in a session.
+/// Where it changed, every block touching the change is taken down at once — nothing stale stays
+/// up — and once it has settled, only the changed band of the screen is read again, at full
+/// resolution. Only a block you point at is translated, once the pointer rests on it, and never
+/// twice in a session.
 @MainActor
 final class ScreenTranslator {
     let services: CopilotServices
@@ -102,7 +102,7 @@ final class ScreenTranslator {
     /// re-translates. `remember` keeps the choice for next time.
     func choose(_ name: String, remember: Bool) {
         language = name
-        nativeLanguage = services.core.nativeName(of: name)
+        nativeLanguage = services.core.language(name).native
         if remember { try? services.core.setSetting(.screenLanguage, name) }
         hover(nil)
         displays.forEach(update)
@@ -110,8 +110,7 @@ final class ScreenTranslator {
 
     /// The menu: favourites first, then every other language NyCopilot knows, in their own scripts.
     func languages() -> [[ScreenTranslationBar.Language]] {
-        struct Known: Decodable { let name: String; let native: String }
-        let known = (try? services.core.call(.translateLanguages, as: [Known].self)) ?? []
+        let known = services.core.languages()
         let favorites: [String] = services.core.setting(.favoriteLanguages, default: [String]())
         func entry(_ name: String) -> ScreenTranslationBar.Language {
             .init(name: name, native: known.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.native

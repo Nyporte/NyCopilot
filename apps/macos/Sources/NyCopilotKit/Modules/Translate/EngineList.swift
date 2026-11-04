@@ -68,14 +68,9 @@ final class EngineList: NSStackView {
     }
 
     private func arrow(_ symbol: String, _ tip: String, index: Int, enabled: Bool, action: Selector) -> NSButton {
-        let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!, target: self, action: action)
-        button.isBordered = false
-        button.symbolConfiguration = .init(pointSize: 11, weight: .semibold)
-        button.contentTintColor = .secondaryLabelColor
-        button.toolTip = tip
+        let button = Design.iconButton(symbol, label: tip, pointSize: 11, weight: .semibold, target: self, action: action)
         button.tag = index
         button.isEnabled = enabled
-        button.widthAnchor.constraint(equalToConstant: 22).isActive = true
         return button
     }
 

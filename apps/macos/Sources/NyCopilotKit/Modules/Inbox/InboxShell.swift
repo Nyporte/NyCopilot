@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import MacPlatform
 
 /// macOS half of the Inbox module, one surface per job:
@@ -46,27 +47,24 @@ final class InboxShell: ModuleShell {
         }
         // Snoozed notes come back on time, or at launch (or wake) when they fell due meanwhile.
         wakeDueNotes()
-        snoozeObservers = [
-            NotificationCenter.default.addObserver(forName: NyCore.eventNotification, object: nil, queue: .main) { [weak self] note in
-                guard let event = note.userInfo?["event"] as? [String: Any],
-                      event["collection"] as? String == CoreCollection.inboxSnoozed.rawValue else { return }
-                MainActor.assumeIsolated { self?.scheduleAlarm() }
-            },
-            NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.wakeDueNotes() }
-            }
-        ]
+        snoozeChanges = services.core.observe { [weak self] event in
+            if event.changedCollection == CoreCollection.inboxSnoozed.rawValue { self?.scheduleAlarm() }
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.wakeDueNotes() }
+        }
     }
 
-    private var snoozeObservers: [NSObjectProtocol] = []
+    /// Kept until shutdown: they set the alarm for the next snoozed note.
+    private var snoozeChanges: CoreObservation?
+    private var wakeObserver: NSObjectProtocol?
 
     /// One timer, for the next snoozed note that's due — none while nothing is snoozed.
     private func scheduleAlarm() {
         alarm?.invalidate()
         alarm = nil
         struct Snoozed: Decodable { let until: Int64? }
-        let page = try? services.core.call(.recordsList, ["collection": CoreCollection.inboxSnoozed.rawValue, "limit": 500],
-                                           as: CorePage<Snoozed>.self)
+        let page = try? services.core.records(.inboxSnoozed, as: Snoozed.self, limit: 500)
         guard let next = page?.records.compactMap(\.data.until).min() else { return }
         let due = Date(timeIntervalSince1970: Double(next) / 1000)
         let timer = Timer(fire: max(due, Date().addingTimeInterval(1)), interval: 0, repeats: false) { [weak self] _ in
@@ -78,12 +76,18 @@ final class InboxShell: ModuleShell {
     }
 
     var hotKeyActions: [HotKeyCenter.Action] {
-        [.init(id: Action.capture, title: L("Jot something down, or keep the selection"),
-               defaultCombination: .init(keyCode: 99, modifiers: 0), // F3
-               handler: { [weak self] in self?.capture() }),
-         .init(id: Action.open, title: L("Open the inbox"),
-               defaultCombination: .init(keyCode: 99, modifiers: HotKeyCombination.shift),
-               handler: { [weak self] in self?.openInbox() })]
+        let defaults = Self.shortcuts(in: .functionKeys)
+        return [.init(id: Action.capture, title: L("Jot something down, or keep the selection"),
+                      defaultCombination: defaults[Action.capture], handler: { [weak self] in self?.capture() }),
+                .init(id: Action.open, title: L("Open the inbox"),
+                      defaultCombination: defaults[Action.open], handler: { [weak self] in self?.openInbox() })]
+    }
+
+    /// F3 and ⇧F3, or ⌥⌘J and ⌥⌘⇧J.
+    nonisolated static func shortcuts(in scheme: KeyScheme) -> [String: HotKeyCombination] {
+        let (key, modifiers) = scheme == .functionKeys ? (kVK_F3, UInt32(0)) : (kVK_ANSI_J, KeyScheme.letterModifiers)
+        return [Action.capture: .init(keyCode: UInt32(key), modifiers: modifiers),
+                Action.open: .init(keyCode: UInt32(key), modifiers: modifiers | HotKeyCombination.shift)]
     }
 
     func menuItems() -> [NSMenuItem] {
@@ -96,7 +100,8 @@ final class InboxShell: ModuleShell {
 
     func shutdown() {
         alarm?.invalidate()
-        snoozeObservers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        snoozeChanges?.cancel()
+        if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         bar.close(returningFocus: false)
         window?.forgetUndo()
     }
@@ -154,13 +159,12 @@ final class InboxShell: ModuleShell {
         services.toast.show(L("Added to Inbox"), detail: [snippet, context.app].filter { !$0.isEmpty }.joined(separator: " · "), style: .success)
     }
 
-    /// A GIF recording, copied in beside the screenshots.
-    /// The file moves into the inbox's folder: it's a temporary recording no one else keeps.
+    /// A GIF recording, beside the screenshots. The file moves into the inbox's folder: it's a
+    /// temporary recording no one else keeps.
     private func send(file url: URL, context: SourceContext) {
-        let name = "\(UUID().uuidString).\(url.pathExtension.lowercased())"
+        let name: String
         do {
-            try FileManager.default.createDirectory(at: Self.images.url, withIntermediateDirectories: true)
-            try FileManager.default.moveItem(at: url, to: Self.images.file(name))
+            name = try Self.images.keep(moving: url)
         } catch {
             services.toast.show(L("Couldn’t add the recording to the inbox"), detail: error.localizedDescription, style: .warning)
             return
@@ -178,77 +182,6 @@ final class InboxShell: ModuleShell {
         } catch {
             services.toast.show(L("Couldn’t add to the inbox"), detail: error.localizedDescription, style: .warning)
             return false
-        }
-    }
-}
-
-/// Inbox settings: the shortcuts, and clearing everything.
-@MainActor
-final class InboxPane: SettingsPane {
-    private let services: CopilotServices
-    private lazy var shortcuts = ShortcutEditor(services: services)
-    private let clearButton = Design.button(L("Clear Inbox…"), target: nil, action: nil)
-    private let folderButton = Design.button(L("Choose…"), target: nil, action: nil)
-    private let folderLabel = Design.label("", size: 12, color: .secondaryLabelColor)
-
-    init(services: CopilotServices) {
-        self.services = services
-        super.init(id: "inbox", title: L("Inbox"), symbol: "tray")
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init(services:)") }
-
-    override func makeSections() -> [NSView] {
-        clearButton.target = self
-        clearButton.action = #selector(clearAll)
-        folderButton.target = self
-        folderButton.action = #selector(chooseFolder)
-        folderLabel.lineBreakMode = .byTruncatingMiddle
-        folderLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        showFolder()
-        return [
-            shortcuts.section(L("Shortcuts"), footer: L("With text selected in any app, the first shortcut keeps it in the inbox; otherwise it opens a bar to jot into. In a screenshot, I sends the capture."),
-                              actions: [InboxShell.Action.capture, InboxShell.Action.open]),
-            shortcuts.errorLabel,
-            FormSection(L("Send To"), footer: L("S on a note in the inbox sends it to Reminders, Notes, or this folder as a Markdown file (an Obsidian vault works well), then marks it done. L snoozes it until later."), rows: [
-                FormRow(L("Markdown folder"), accessory: Design.hstack([folderLabel, folderButton], spacing: 8))
-            ]),
-            FormSection(L("Notes"), footer: L("Notes and their screenshots stay on this Mac. Done notes are kept for 30 days."), rows: [
-                FormRow(L("Remove every note, waiting and done"), accessory: clearButton)
-            ])
-        ]
-    }
-
-    override func paneWillAppear() {
-        shortcuts.refresh()
-        showFolder()
-    }
-
-    private func showFolder() {
-        let folder = NoteExport.markdownFolder(core: services.core, choosingIfNeeded: false)
-        folderLabel.stringValue = folder.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? L("Not chosen")
-        folderLabel.toolTip = folder?.path
-    }
-
-    @objc private func chooseFolder() {
-        NoteExport.chooseMarkdownFolder(core: services.core)
-        showFolder()
-    }
-
-    @objc private func clearAll() {
-        let alert = NSAlert()
-        alert.messageText = L("Clear the inbox?")
-        alert.informativeText = L("Every note, waiting and done, and its screenshot is removed.")
-        alert.addButton(withTitle: L("Clear"))
-        alert.addButton(withTitle: L("Cancel"))
-        alert.buttons.first?.hasDestructiveAction = true
-        guard let window = view.window else { return }
-        alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            _ = try? self?.services.core.clearRecords(.inboxNotes)
-            _ = try? self?.services.core.clearRecords(.inboxDone)
-            _ = try? self?.services.core.clearRecords(.inboxSnoozed)
-            InboxShell.images.removeAll()
         }
     }
 }

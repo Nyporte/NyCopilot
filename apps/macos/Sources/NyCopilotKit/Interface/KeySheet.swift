@@ -153,20 +153,34 @@ enum KeyGuide {
     ] }
 }
 
-/// A tip shown at the moment it's useful, a few times at most, then never again. Kept per Mac.
+/// A tip shown at the moment it's useful, a few times at most, then never again. Kept per Mac, in
+/// the core's `client.tips` like every other one-time mark.
 enum Tips {
-    private static let key = "NyCopilotTips"
+    private static let lock = NSLock()
+    /// Where the counts are kept, from `keep(in:)` at launch; guarded by `lock`. Without it no tip shows.
+    nonisolated(unsafe) private static var core: NyCore?
+
+    /// Keeps the counts in `core` from now on. Counts kept in UserDefaults before move there, once.
+    static func keep(in core: NyCore, defaults: UserDefaults = .standard) {
+        lock.lock(); self.core = core; lock.unlock()
+        let legacy = "NyCopilotTips"
+        guard let counted = defaults.dictionary(forKey: legacy) as? [String: [Int]] else { return }
+        if core.setting(.tips, default: [String: [Int]]()).isEmpty { try? core.setSetting(.tips, counted) }
+        defaults.removeObject(forKey: legacy)
+    }
 
     /// Counts a use of `id`; true (and counts a showing) when the tip should show now — from the
     /// `after`th use on, at most `times` times in all.
     static func due(_ id: String, after uses: Int = 1, times: Int = 2) -> Bool {
-        var state = UserDefaults.standard.dictionary(forKey: key) as? [String: [Int]] ?? [:]
+        lock.lock(); let core = self.core; lock.unlock()
+        guard let core else { return false }
+        var state = core.setting(.tips, default: [String: [Int]]())
         var counts = state[id] ?? [0, 0]
         counts[0] += 1
         let show = counts[0] >= uses && counts[1] < times
         if show { counts[1] += 1 }
         state[id] = counts
-        UserDefaults.standard.set(state, forKey: key)
+        try? core.setSetting(.tips, state)
         return show
     }
 }
