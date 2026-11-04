@@ -24,7 +24,13 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     enum Action: String, CaseIterable {
         case explain, summarize, rewrite
 
-        var title: String { rawValue.capitalized }
+        var title: String {
+            switch self {
+            case .explain: L("Explain")
+            case .summarize: L("Summarize")
+            case .rewrite: L("Rewrite")
+            }
+        }
     }
 
     /// Asks the core: the action, the question (empty for an action alone), and the turns so far.
@@ -46,6 +52,9 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     private let input = NSTextField()
     private let hint = Design.label("", size: 10.5, color: .tertiaryLabelColor)
     private var turns: [[String: String]] = []
+    /// What the conversation began with (an action, or "ask" for a question); follow-ups keep it, so
+    /// the model still sees the material framed the same way.
+    private var conversationAction = "ask"
     private var lastAnswer: String?
     private var material = AskMaterial()
     private var request: Task<Void, Never>?
@@ -155,6 +164,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     /// Everything `present` does but show the panel.
     func prepare(_ material: AskMaterial) {
         request?.cancel()
+        stopStreaming()
         self.material = material
         turns = []
         lastAnswer = nil
@@ -181,6 +191,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     func close() {
         guard panel.isVisible else { return }
         request?.cancel()
+        stopStreaming()
         onCancel?()
         panel.orderOut(nil)
     }
@@ -194,6 +205,7 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
         guard !material.isEmpty else { return }
         turns = []
         transcript.string = ""
+        conversationAction = action.rawValue
         ask(action: action.rawValue, question: "", shown: action.title)
     }
 
@@ -205,7 +217,8 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
             return
         }
         input.stringValue = ""
-        ask(action: "ask", question: question, shown: question)
+        if turns.isEmpty { conversationAction = "ask" }
+        ask(action: conversationAction, question: question, shown: question)
     }
 
     func ask(action: String, question: String, shown: String) {
@@ -221,7 +234,8 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
             do {
                 let answer = try await onAsk?(action, question, previous) ?? ""
                 guard !Task.isCancelled else { return }
-                turns = previous + [["role": "user", "content": question.isEmpty ? shown : question], ["role": "assistant", "content": answer]]
+                // An action alone asks nothing: its user turn is empty, and the action frames the material.
+                turns = previous + [["role": "user", "content": question], ["role": "assistant", "content": answer]]
                 lastAnswer = answer
                 finishStreaming(answer, style: .answer)
             } catch {
@@ -242,6 +256,12 @@ final class AskPanel: NSObject, NSTextFieldDelegate {
     func streamed(_ text: String) {
         guard let range = streaming else { return }
         streaming = replace(range, with: formatted(text, style: .answer))
+    }
+
+    /// A cancelled answer's slot is left as it is and nothing more streams into it.
+    private func stopStreaming() {
+        streaming = nil
+        spinner.stopAnimation(nil)
     }
 
     private func finishStreaming(_ text: String, style: Style) {

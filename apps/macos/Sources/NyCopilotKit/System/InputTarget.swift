@@ -215,7 +215,7 @@ final class InputTarget: @unchecked Sendable {
                 guard let app = NSRunningApplication(processIdentifier: self.processIdentifier), !app.isTerminated else {
                     throw Failure.targetChanged
                 }
-                guard app.isActive || app.activate(options: [.activateIgnoringOtherApps]) else {
+                guard app.isActive || app.activate() else {
                     throw InputFocusHandoff.Failure.restorationFailed
                 }
             },

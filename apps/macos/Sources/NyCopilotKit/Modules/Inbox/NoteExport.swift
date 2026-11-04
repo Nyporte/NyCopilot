@@ -35,7 +35,8 @@ enum NoteExport {
 
         var title: String {
             let first = text.split(whereSeparator: \.isNewline).first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
-            return first.isEmpty ? (image == nil ? "Note" : "Screenshot") : String(first.prefix(200))
+            let picture = image?.pathExtension.lowercased() == "gif" ? L("Recording") : L("Screenshot")
+            return first.isEmpty ? (image == nil ? L("Note") : picture) : String(first.prefix(200))
         }
 
         var body: String {
@@ -99,7 +100,7 @@ enum NoteExport {
         }
         if !content.source.isEmpty {
             let link = content.address.map { "<a href=\"\(escape($0.absoluteString))\">\(escape(content.source))</a>" } ?? escape(content.source)
-            html += "<div><br></div><div><i>From \(link)</i></div>"
+            html += "<div><br></div><div><i>\(L("From %@", link))</i></div>"
         }
         let script = "tell application \"Notes\" to make new note with properties {body:\"\(appleScriptString(html))\"}"
         // NSAppleScript belongs on the main thread; Notes answers within a moment.

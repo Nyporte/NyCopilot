@@ -782,3 +782,8 @@
 "The label must be city, abbreviation, offset, custom, or none." = "標籤必須是 city、abbreviation、offset、custom 或 none。";
 "The clock’s name must be one line of at most 40 characters." = "時鐘的名稱只能是一行，最多 40 個字元。";
 "File numbers start at 1." = "檔案編號從 1 開始。";
+"Explain" = "解釋";
+"Summarize" = "摘要";
+"Rewrite" = "改寫";
+"Note" = "筆記";
+"From %@" = "來自 %@";

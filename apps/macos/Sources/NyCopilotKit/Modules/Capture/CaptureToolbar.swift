@@ -473,8 +473,9 @@ private final class Swatch: NSView {
 extension NSColor {
     /// `#RRGGBB` → color; nil for anything else.
     convenience init?(hex: String) {
-        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        guard hex.hasPrefix("#") else { return nil }
+        let digits = hex.dropFirst()
+        guard digits.count == 6, digits.allSatisfy(\.isHexDigit), let value = UInt32(digits, radix: 16) else { return nil }
         self.init(srgbRed: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255,
                   blue: CGFloat(value & 0xFF) / 255, alpha: 1)
     }

@@ -63,7 +63,6 @@ final class InboxShell: ModuleShell {
     /// One timer, for the next snoozed note that's due — none while nothing is snoozed.
     private func scheduleAlarm() {
         alarm?.invalidate()
-        snoozeObservers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
         alarm = nil
         struct Snoozed: Decodable { let until: Int64? }
         let page = try? services.core.call(.recordsList, ["collection": CoreCollection.inboxSnoozed.rawValue, "limit": 500],
@@ -97,6 +96,7 @@ final class InboxShell: ModuleShell {
 
     func shutdown() {
         alarm?.invalidate()
+        snoozeObservers.forEach { NotificationCenter.default.removeObserver($0); NSWorkspace.shared.notificationCenter.removeObserver($0) }
         bar.close(returningFocus: false)
         window?.forgetUndo()
     }
@@ -155,11 +155,12 @@ final class InboxShell: ModuleShell {
     }
 
     /// A GIF recording, copied in beside the screenshots.
+    /// The file moves into the inbox's folder: it's a temporary recording no one else keeps.
     private func send(file url: URL, context: SourceContext) {
         let name = "\(UUID().uuidString).\(url.pathExtension.lowercased())"
         do {
             try FileManager.default.createDirectory(at: Self.images.url, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: url, to: Self.images.file(name))
+            try FileManager.default.moveItem(at: url, to: Self.images.file(name))
         } catch {
             services.toast.show(L("Couldn’t add the recording to the inbox"), detail: error.localizedDescription, style: .warning)
             return

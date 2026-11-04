@@ -782,3 +782,8 @@
 "The label must be city, abbreviation, offset, custom, or none." = "Die Beschriftung muss city, abbreviation, offset, custom oder none sein.";
 "The clock’s name must be one line of at most 40 characters." = "Der Name der Uhr darf nur eine Zeile mit höchstens 40 Zeichen sein.";
 "File numbers start at 1." = "Dateinummern beginnen bei 1.";
+"Explain" = "Erklären";
+"Summarize" = "Zusammenfassen";
+"Rewrite" = "Umschreiben";
+"Note" = "Notiz";
+"From %@" = "Aus %@";

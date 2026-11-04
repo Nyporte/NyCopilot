@@ -11,18 +11,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var settingsWindow: SettingsWindow?
     private var welcomeWindow: WelcomeWindow?
 
-    /// Every module this build ships, in menu order. Add new module shells here.
-    private func makeModules() -> [ModuleShell] {
-        [TranslateShell(services: services), WindowsShell(services: services), CaptureShell(services: services),
-         ClipboardShell(services: services), InboxShell(services: services), AskShell(services: services), MouseShell(services: services),
-         ClockShell(services: services), MenuBarShell(services: services)]
+    /// Every module this build ships, in menu order, by id. Add new module shells here. A shell is
+    /// made only when its core module exists, since making one starts its work (hotkeys, devices).
+    private func makeModules(available: Set<String>) -> [ModuleShell] {
+        let makers: [(id: String, make: (CopilotServices) -> ModuleShell)] = [
+            ("translate", { TranslateShell(services: $0) }), ("windows", { WindowsShell(services: $0) }), ("capture", { CaptureShell(services: $0) }),
+            ("clipboard", { ClipboardShell(services: $0) }), ("inbox", { InboxShell(services: $0) }), ("ask", { AskShell(services: $0) }),
+            ("mouse", { MouseShell(services: $0) }), ("clock", { ClockShell(services: $0) }), ("menubar", { MenuBarShell(services: $0) })
+        ]
+        return makers.filter { available.contains($0.id) }.map { $0.make(services) }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let identifier = Bundle.main.bundleIdentifier,
            let existing = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
             .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
-            existing.activate(options: [.activateIgnoringOtherApps])
+            existing.activate()
             NSApp.terminate(nil)
             return
         }
@@ -51,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let available = Set((try? core.call(.coreInfo) as? [String: Any])?["modules"] as? [String] ?? [])
         // Old deletion markers go and the log is folded in, off the launch path.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [core] in _ = try? core?.call(.coreCompact) }
-        modules = makeModules().filter { available.contains($0.id) }
+        modules = makeModules(available: available)
         for module in modules { module.hotKeyActions.forEach(services.hotKeys.add) }
         services.hotKeys.add(.init(id: Self.showShortcutsAction, title: L("Show all keyboard shortcuts"),
                                    defaultCombination: .init(keyCode: 44, modifiers: HotKeyCombination.option | HotKeyCombination.command), // ⌥⌘/
@@ -70,7 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         modules.forEach { $0.shutdown() }
-        _ = try? services.core.call(.coreCompact)
+        // Nil when launch stopped early (another copy is running, or the core couldn't open).
+        _ = try? core?.call(.coreCompact)
     }
 
     // MARK: Menus

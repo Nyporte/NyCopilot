@@ -46,7 +46,11 @@ final class CaptureView: NSView, NSTextViewDelegate {
     var clearFlash: DispatchWorkItem?
     var shiftWasDown = false
     let recent: [CGRect]
-    lazy var pixelated = CaptureRenderer.pixelate(frozen.image, blockSize: 12 * frozen.scale)
+    lazy var pixelatedScreen = CaptureRenderer.pixelate(frozen.image, blockSize: 12 * frozen.scale)
+    /// The whole display pixelated, which takes a moment: made only once a mosaic mark needs it.
+    var pixelated: CGImage? {
+        annotations.contains { $0.tool == .mosaic } || current?.tool == .mosaic ? pixelatedScreen : nil
+    }
     let toolbar: CaptureToolbar
     /// Another display has the selection. Becoming the active one keeps what's outlined, so the
     /// click that started it can still take it.

@@ -77,6 +77,8 @@ final class HotKeyCenter {
 
     /// Apply many shortcuts at once. Every changing action is released first, so actions can swap
     /// keys without colliding with each other. Returns failures (for example, a key another app owns).
+    /// Unlike `set(_:for:)`, each choice is kept even when it can't be registered now: a whole key
+    /// scheme stays as chosen, and the failed key shows its problem rather than silently reverting.
     @discardableResult
     func set(_ changes: [String: HotKeyCombination?]) -> [String: String] {
         let ids = changes.keys.filter { keys[$0] != nil }.sorted()
