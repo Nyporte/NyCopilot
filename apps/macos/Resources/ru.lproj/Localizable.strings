@@ -781,3 +781,8 @@
 "Hours must be 12, 24, or system." = "Часы должны быть 12, 24 или system.";
 "The label must be city, abbreviation, offset, custom, or none." = "Подпись должна быть city, abbreviation, offset, custom или none.";
 "The clock’s name must be one line of at most 40 characters." = "Название часов — одна строка не длиннее 40 символов.";
+"Explain" = "Объяснить";
+"Summarize" = "Кратко";
+"Rewrite" = "Переписать";
+"Note" = "Заметка";
+"From %@" = "Из %@";

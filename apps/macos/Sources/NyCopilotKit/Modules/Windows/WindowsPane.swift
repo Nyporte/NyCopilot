@@ -10,7 +10,7 @@ final class WindowsPane: SettingsPane {
     private static let repeatModes = [("cycle_sizes", L("Cycle sizes (½ → ⅔ → ⅓)")),
                                       ("move_across_displays", L("Move to the next display")),
                                       ("nothing", L("Do nothing"))]
-    private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 40, target: nil, action: nil)
+    private let gapSlider = NSSlider(value: 0, minValue: 0, maxValue: 60, target: nil, action: nil)
     private let gapValue = Design.label("", size: 12, color: .secondaryLabelColor)
     private lazy var shortcuts = ShortcutEditor(services: services)
     private let importNote = Design.wrapping("", size: 11.5)

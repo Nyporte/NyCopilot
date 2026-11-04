@@ -18,13 +18,16 @@ final class CaptureShell: ModuleShell {
     private let services: CopilotServices
     private let board = PinBoard()
     private var session: CaptureSession?
+    /// Between the shortcut and the overlay appearing, while the screens freeze.
+    private var isStarting = false
     private var scrolling: ScrollCapture?
     /// The app in front when capture started, to return to afterwards.
     private var previousApp: NSRunningApplication?
 
     init(services: CopilotServices) {
         self.services = services
-        board.onSave = { [weak self] image in self?.saveWithPanel(image, region: nil) }
+        // A pin is saved long after its capture: return to whichever app is in front now.
+        board.onSave = { [weak self] image in self?.saveWithPanel(image, region: nil, returningTo: Self.otherFrontApp()) }
         board.onVerb = { [weak services] verb, pin in services?.act(verb, text: nil, image: pin.displayedImage, near: pin.frame) }
         services.pinOnScreen = { [weak self] text, image in self?.pin(text: text, image: image) }
         board.restore()
@@ -73,6 +76,9 @@ final class CaptureShell: ModuleShell {
     /// Pins stay open across launches: where they are now is written down, and they come back.
     func shutdown() {
         session?.close()
+        scrolling?.cancel()
+        recording?.cancel()
+        preview?.close()
         board.persist()
     }
 
@@ -92,20 +98,21 @@ final class CaptureShell: ModuleShell {
     func startCapture() {
         // With a recording armed or running, the shortcut starts or stops it.
         if let recording, recording.isActive { recording.shortcutPressed(); return }
-        guard session == nil else { return }
+        // A scrolling capture owns its keys and stream until it's finished or cancelled.
+        guard session == nil, scrolling == nil, !isStarting else { return }
         guard ScreenGrabber.hasPermission else {
             ScreenGrabber.requestPermission()
             services.toast.show(L("Allow Screen Recording to capture"), detail: L("Turn on NyCopilot in System Settings → Privacy & Security → Screen Recording, then press the shortcut again."), style: .warning)
             return
         }
-        // Nil when NyCopilot itself was in front: then nothing needs the focus back.
-        let front = NSWorkspace.shared.frontmostApplication
-        previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+        previousApp = Self.otherFrontApp()
         CaptureView.showsKeysTip = Tips.due("capture.keys", after: 2, times: 3)
         let pressed = Date()
         CaptureView.pressedAt = pressed
+        isStarting = true
         Task { [weak self] in
             guard let self else { return }
+            defer { isStarting = false }
             do {
                 let frozen = try await ScreenGrabber.freezeAll(hidingOwnWindows: services.core.setting(.hideOwnWindows, default: false))
                 let froze = Date()
@@ -179,7 +186,7 @@ final class CaptureShell: ModuleShell {
             end()
         case .save:
             end()
-            saveWithPanel(image, region: (region, screen))
+            saveWithPanel(image, region: (region, screen), returningTo: previousApp)
         case .quickSave:
             end()
             if let url = write(image, to: nextFileURL()) {
@@ -211,6 +218,8 @@ final class CaptureShell: ModuleShell {
 
     private var recording: GifRecording?
     private var preview: GifPreview?
+    /// The clip last copied: the clipboard points at its file, so it stays until the next copy.
+    private var copiedClip: URL?
 
     private func startRecording(_ region: CGRect, on screen: NSScreen) {
         let core = services.core
@@ -231,6 +240,11 @@ final class CaptureShell: ModuleShell {
     }
 
     private func review(_ clip: GifClip, region: NSRect, screen: NSScreen) {
+        // A preview left open from an earlier recording goes, with its clip.
+        if let earlier = preview {
+            earlier.close()
+            try? FileManager.default.removeItem(at: earlier.clip.url)
+        }
         let preview = GifPreview(clip: clip, near: region, on: screen)
         preview.onAction = { [weak self] action, clip in
             self?.preview = nil
@@ -245,9 +259,13 @@ final class CaptureShell: ModuleShell {
     }
 
     /// Copy puts the file on the clipboard (chat apps take it as an animated GIF) along with its data.
+    /// Otherwise the clip's temporary file goes once it's saved or filed.
     private func finish(_ action: GifAction, clip: GifClip, near region: NSRect) {
+        let discard = { try? FileManager.default.removeItem(at: clip.url) }
         switch action {
         case .copy:
+            if let earlier = copiedClip, earlier != clip.url { try? FileManager.default.removeItem(at: earlier) }
+            copiedClip = clip.url
             let item = NSPasteboardItem()
             if let data = try? Data(contentsOf: clip.url) { item.setData(data, forType: NSPasteboard.PasteboardType("com.compuserve.gif")) }
             item.setString(clip.url.absoluteString, forType: .fileURL)
@@ -265,6 +283,7 @@ final class CaptureShell: ModuleShell {
             panel.begin { [weak self] response in
                 // Saved or not, back to the app you were in.
                 if let app = self?.previousApp, !app.isTerminated { app.activate(options: []) }
+                defer { discard() }
                 guard response == .OK, let url = panel.url else { return }
                 self?.move(clip, to: url)
             }
@@ -273,6 +292,7 @@ final class CaptureShell: ModuleShell {
             if move(clip, to: url) {
                 services.toast.show(L("Saved “%@”", url.lastPathComponent), detail: url.deletingLastPathComponent().path, style: .success)
             }
+            discard()
         case .inbox:
             services.sendFileToInbox(clip.url, previousApp)
         }
@@ -372,7 +392,13 @@ final class CaptureShell: ModuleShell {
         }
     }
 
-    private func saveWithPanel(_ image: NSImage, region: (CGRect, NSScreen)?) {
+    /// The app in front, unless it's NyCopilot itself: then nothing needs the focus back.
+    private static func otherFrontApp() -> NSRunningApplication? {
+        let front = NSWorkspace.shared.frontmostApplication
+        return front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+    }
+
+    private func saveWithPanel(_ image: NSImage, region: (CGRect, NSScreen)?, returningTo app: NSRunningApplication?) {
         NSApp.bringForward()
         let panel = NSSavePanel()
         panel.directoryURL = saveFolder
@@ -383,7 +409,7 @@ final class CaptureShell: ModuleShell {
         panel.begin { [weak self] response in
             guard let self else { return }
             // Saved or not, back to the app you were in.
-            if let app = previousApp, !app.isTerminated { app.activate(options: []) }
+            if let app, !app.isTerminated { app.activate(options: []) }
             guard response == .OK, let url = panel.url else { return }
             if write(image, to: url) != nil, let (rect, screen) = region { record(image, region: rect, screen: screen, path: url.path) }
         }

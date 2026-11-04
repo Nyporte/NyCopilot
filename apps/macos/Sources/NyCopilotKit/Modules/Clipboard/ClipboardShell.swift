@@ -194,7 +194,7 @@ final class ClipboardShell: ModuleShell {
             board.clearContents()
             board.setString(text, forType: .string)
             lastChange = board.changeCount
-            add(["text": text])
+            add(["text": text, "app": entry.app ?? ""])
             return true
         }
         guard let name = entry.image, let png = try? Data(contentsOf: Self.images.file(name)) else {

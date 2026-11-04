@@ -781,3 +781,8 @@
 "Hours must be 12, 24, or system." = "小时制必须是 12、24 或 system。";
 "The label must be city, abbreviation, offset, custom, or none." = "标签必须是 city、abbreviation、offset、custom 或 none。";
 "The clock’s name must be one line of at most 40 characters." = "时钟的名字只能是一行，最多 40 个字符。";
+"Explain" = "解释";
+"Summarize" = "总结";
+"Rewrite" = "改写";
+"Note" = "笔记";
+"From %@" = "来自 %@";

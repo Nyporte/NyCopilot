@@ -37,10 +37,12 @@ enum ScrollArea {
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(app, Float(point.x), Float(point.y), &hit) == .success, var element = hit else { return nil }
         for _ in 0..<40 {
+            // Each element answers with its own timeout, not the app's.
+            AXUIElementSetMessagingTimeout(element, 0.25)
             if string(element, kAXRoleAttribute) == kAXScrollAreaRole as String, let frame = frame(of: element), frame.height >= 40 {
                 return frame
             }
-            guard let parent = value(element, kAXParentAttribute) else { return nil }
+            guard let parent = value(element, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { return nil }
             element = parent as! AXUIElement
         }
         return nil

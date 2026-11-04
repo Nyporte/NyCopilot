@@ -20,6 +20,8 @@ final class PointerDevices {
     var onChange: () -> Void = {}
 
     private let client: IOHIDEventSystemClient
+    /// Takes the client off the run loop when this object goes: the callbacks hold an unretained pointer to it.
+    private var scheduling: Scheduling?
     /// Each mouse's own resolution and linear setting from before NyCopilot first wrote to it.
     private var originals: [UInt64: (resolution: Double?, linear: Int?)] = [:]
     /// Mice NyCopilot changed, so `restore` leaves untouched ones alone.
@@ -54,7 +56,20 @@ final class PointerDevices {
                 MainActor.assumeIsolated { Unmanaged<PointerDevices>.fromOpaque(target).takeUnretainedValue().systemChanged() }
             }, target, nil)
         }
-        calls.schedule(client, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        scheduling = Scheduling(client: client, calls: calls)
+    }
+
+    private final class Scheduling: @unchecked Sendable {
+        private let client: IOHIDEventSystemClient
+        private let calls: Calls
+
+        init(client: IOHIDEventSystemClient, calls: Calls) {
+            self.client = client
+            self.calls = calls
+            calls.schedule(client, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
+        }
+
+        deinit { calls.unschedule?(client, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) }
     }
 
     /// The mice connected now: anything that moves the pointer with mouse-style acceleration.
@@ -131,7 +146,7 @@ final class PointerDevices {
 
     /// The calls a full event system client needs: IOKit exports them, but only the read-mostly
     /// simple client is declared in the SDK, and it can't reach pointer resolution.
-    private struct Calls {
+    private struct Calls: Sendable {
         typealias ServiceCallback = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, IOHIDServiceClient?) -> Void
         typealias PropertyCallback = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, CFString?, CFTypeRef?) -> Void
         let create: @convention(c) (CFAllocator?) -> Unmanaged<IOHIDEventSystemClient>?
@@ -139,6 +154,8 @@ final class PointerDevices {
         let registerDeviceMatching: @convention(c) (IOHIDEventSystemClient, ServiceCallback, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
         let registerPropertyChanged: @convention(c) (IOHIDEventSystemClient, CFString, PropertyCallback, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
         let schedule: @convention(c) (IOHIDEventSystemClient, CFRunLoop, CFString) -> Void
+        /// Undoes `schedule`, so no callback reaches a client that's gone.
+        let unschedule: (@convention(c) (IOHIDEventSystemClient, CFRunLoop, CFString) -> Void)?
     }
 
     private static let calls: Calls? = {
@@ -156,7 +173,8 @@ final class PointerDevices {
             Diagnostics.note("mouse", "the HID event system calls aren’t available")
             return nil
         }
-        return Calls(create: create, setMatchingMultiple: matching, registerDeviceMatching: device,
-                     registerPropertyChanged: property, schedule: schedule)
+        return Calls(create: create, setMatchingMultiple: matching, registerDeviceMatching: device, registerPropertyChanged: property,
+                     schedule: schedule,
+                     unschedule: symbol("IOHIDEventSystemClientUnscheduleWithRunLoop", as: (@convention(c) (IOHIDEventSystemClient, CFRunLoop, CFString) -> Void).self))
     }()
 }
