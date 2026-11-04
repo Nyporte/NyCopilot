@@ -12,7 +12,7 @@ final class GifPreview {
     var onAction: ((GifAction, GifClip) -> Void)?
     var onDiscard: ((GifClip) -> Void)?
 
-    private let clip: GifClip
+    let clip: GifClip
     let panel: PreviewPanel
 
     init(clip: GifClip, near region: NSRect, on screen: NSScreen) {

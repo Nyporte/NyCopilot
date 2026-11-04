@@ -82,6 +82,11 @@ extension CaptureView {
         case (126, true): rect.size.height = max(4, rect.height - 1)
         default: break
         }
+        // Moving stops at the edge; growing is cut off there.
+        if !resize {
+            rect.origin.x = min(max(rect.minX, bounds.minX), bounds.maxX - rect.width)
+            rect.origin.y = min(max(rect.minY, bounds.minY), bounds.maxY - rect.height)
+        }
         selection = rect.intersection(bounds)
         placeToolbar()
         selectionSettled()

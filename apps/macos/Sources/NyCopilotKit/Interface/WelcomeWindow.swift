@@ -167,8 +167,8 @@ final class WelcomeWindow: NSWindowController, NSWindowDelegate {
             : L("Any OpenAI-compatible endpoint, hosted or local. Translation and Ask AI need it, or Google or Volcengine for translation.")
         let schemeKeys = chosenScheme.combinations
         for row in goalRows {
-            let combination = row.goal.action.flatMap { schemeKeys[$0] ?? services.hotKeys.combination(for: $0)
-                ?? services.hotKeys.actions.first(where: { action in action.id == row.goal.action })?.defaultCombination }
+            // `combination(for:)` is already the default unless the shortcut was turned off.
+            let combination = row.goal.action.flatMap { schemeKeys[$0] ?? services.hotKeys.combination(for: $0) }
             row.keys.stringValue = row.goal.fixedKeys ?? combination.map(KeyNames.display) ?? ""
             row.keys.alphaValue = row.box.state == .on ? 1 : 0.35
         }

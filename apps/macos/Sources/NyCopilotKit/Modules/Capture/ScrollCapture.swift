@@ -140,14 +140,19 @@ final class ScrollCapture {
         }
     }
 
+    /// The outline and panel go at once; a tall image can take a moment to assemble, so that happens
+    /// on the stitching queue.
     private func finish(_ action: CaptureAction) {
-        guard let image = frames?.image() ?? still else { return }
+        guard !isOver, let still else { return }
+        let frames = frames, scale = frozen.scale
         stop()
-        onFinish?(action, NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / screen.backingScaleFactor,
-                                                               height: CGFloat(image.height) / screen.backingScaleFactor)))
+        Task { [weak self] in
+            let image = await frames?.image() ?? still
+            self?.onFinish?(action, NSImage(cgImage: image, size: NSSize(width: CGFloat(image.width) / scale, height: CGFloat(image.height) / scale)))
+        }
     }
 
-    private func cancel() {
+    func cancel() {
         stop()
         onCancel?()
     }
@@ -240,6 +245,9 @@ private final class ScrollPace {
         tap = nil
         source = nil
     }
+
+    // The tap holds an unretained pointer to this object, so it must not outlive it.
+    deinit { stop() }
 }
 
 /// Receives stream frames on its own queue and stitches them there, so the main thread only ever
@@ -290,7 +298,11 @@ private final class FrameStitcher: NSObject, SCStreamOutput, @unchecked Sendable
     }
 
     /// Nil until the first frame.
-    func image() -> CGImage? { queue.sync { stitcher.height > 0 ? stitcher.makeImage() : nil } }
+    func image() async -> CGImage? {
+        await withCheckedContinuation { done in
+            queue.async { [self] in done.resume(returning: stitcher.height > 0 ? stitcher.makeImage() : nil) }
+        }
+    }
 
     /// An image redrawn as BGRA rows of exactly the stream's size.
     private static func frame(from image: CGImage, size: (width: Int, height: Int)) -> PixelFrame? {
