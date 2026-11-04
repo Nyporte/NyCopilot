@@ -781,6 +781,7 @@
 "Hours must be 12, 24, or system." = "Hours must be 12, 24, or system.";
 "The label must be city, abbreviation, offset, custom, or none." = "The label must be city, abbreviation, offset, custom, or none.";
 "The clock’s name must be one line of at most 40 characters." = "The clock’s name must be one line of at most 40 characters.";
+"File numbers start at 1." = "File numbers start at 1.";
 "Explain" = "Explain";
 "Summarize" = "Summarize";
 "Rewrite" = "Rewrite";

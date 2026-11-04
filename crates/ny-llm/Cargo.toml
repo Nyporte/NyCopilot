@@ -12,3 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
 ureq.workspace = true
+
+[features]
+# The loopback HTTP stand-in (`stand_in`), for other crates' tests.
+test-support = []
